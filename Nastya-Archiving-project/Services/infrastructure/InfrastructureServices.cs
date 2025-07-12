@@ -119,7 +119,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
         public async Task<(GroupsResponseDTOs? group, string? error)> PostGroup(GroupViewForm req)
         {
             var userId =await _systemInfoServices.GetRealName();
-            if(userId.Id == null) 
+            if(userId.RealName == null) 
                 return (null , userId.error);
 
             // Check if the group name already exists
@@ -134,7 +134,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             var newGroup = new Usersgroup
             {
                 Groupdscrp = req.groupDscrp,
-                Editor = userId.Id.ToString(), // Assuming Editor is a string representation of the user ID
+                Editor = userId.RealName.ToString(), // Assuming Editor is a string representation of the user ID
                 AccountUnitId = req.AccountUnitId,
                 EditDate = DateOnly.FromDateTime(DateTime.Now),
             };

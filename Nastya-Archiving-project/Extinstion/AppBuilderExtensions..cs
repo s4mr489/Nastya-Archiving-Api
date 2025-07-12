@@ -1,5 +1,6 @@
 ﻿using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Helper;
+using Nastya_Archiving_project.Services.encrpytion;
 using Swashbuckle.AspNetCore.SwaggerUI;
 
 namespace Nastya_Archiving_project.Extinstion
@@ -73,10 +74,11 @@ namespace Nastya_Archiving_project.Extinstion
         {
             using (var scope = app.ApplicationServices.CreateScope())
             {
-                var dataContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();  // Make sure AppData is your context type
-                var seeder = new Seeder(dataContext);
+                var dataContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var encryptcontext = scope.ServiceProvider.GetRequiredService<IEncryptionServices>();// Make sure AppData is your context type
+                var seeder = new Seeder(dataContext , encryptcontext);
 
-                await seeder.SeedSuperAdmin("SuperAdmin", "SuperAdmin"); // You can add a password for the SuperAdmin
+                await seeder.SeedSuperAdmin("SuperAdmin", "AdminSuper"); // You can add a password for the SuperAdmin
             }
 
             return app;

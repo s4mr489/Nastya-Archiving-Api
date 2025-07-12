@@ -5,5 +5,6 @@ namespace Nastya_Archiving_project.Services.auth
     public interface IAuthServices
     {
         Task<string> Login(LoginFormDTO form, bool IsAdmin);
+        Task<(RegisterResponseDTOs user,string? error)> Register(RegisterViewForm form, bool IsAdmin = false);
     }
 }

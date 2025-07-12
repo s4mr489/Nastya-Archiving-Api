@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Services.encrpytion;
 using Org.BouncyCastle.Tls.Crypto.Impl.BC;
 
 namespace Nastya_Archiving_project.Helper
@@ -8,9 +9,11 @@ namespace Nastya_Archiving_project.Helper
     public class Seeder
     {
         private readonly AppDbContext _context;
-        public Seeder(AppDbContext context)
+        private readonly IEncryptionServices _encryptionServices;
+        public Seeder(AppDbContext context, IEncryptionServices encryptionServices)
         {
             _context = context;
+            _encryptionServices = encryptionServices;
         }
 
         public async Task SeedSuperAdmin(string userName, string password)
@@ -22,11 +25,11 @@ namespace Nastya_Archiving_project.Helper
                 //create the super admin
                 var newUser = new User
                 {
-                    UserName = userName,
+                    UserName = _encryptionServices.EncryptString256Bit(userName),
                     UserPassword = BCrypt.Net.BCrypt.HashPassword(password),
-                    Adminst = "True",
-                    Realname = "System Administrator",
-                    Permtype = "Admin",
+                    Adminst = _encryptionServices.EncryptString256Bit("1"),
+                    Realname = _encryptionServices.EncryptString256Bit("System Administrator"),
+                    Permtype = _encryptionServices.EncryptString256Bit("Admin"),
                     Editor = "System",
                 };
                 _context.Users.Add(newUser);

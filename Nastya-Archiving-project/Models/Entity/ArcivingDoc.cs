@@ -5,7 +5,7 @@ namespace Nastya_Archiving_project.Models;
 
 public partial class ArcivingDoc
 {
-    public int Id { get; set; }
+     public int Id { get; set; }
 
     public string? RefrenceNo { get; set; }
 

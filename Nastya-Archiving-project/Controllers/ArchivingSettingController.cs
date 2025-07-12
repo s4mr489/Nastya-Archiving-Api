@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.ArchivingPoint;
@@ -10,6 +11,7 @@ using Nastya_Archiving_project.Services.ArchivingSettings;
 
 namespace Nastya_Archiving_project.Controllers
 {
+    [Authorize(Roles = "Admin,SuperAdmin,ArchivingManager,ArchivingStaff")]
     [Route("api/[controller]")]
     [ApiController]
     public class ArchivingSettingController : ControllerBase

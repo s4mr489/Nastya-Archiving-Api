@@ -4,8 +4,12 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Nastya_Archiving_project.Helper;
+using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs.ArchivingDocs;
+using Nastya_Archiving_project.Services.archivingDocs;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.auth;
+using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.Permmsions;
 using Nastya_Archiving_project.Services.SystemInfo;
@@ -105,7 +109,9 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<ISystemInfoServices, SystemInfoServices>();
             services.AddScoped<IPermissionsServices, PermissionsServices>();
             services.AddScoped<IArchivingSettingsServicers, ArchivingSettingsServices>();
+            services.AddScoped<IArchivingDocsSercvices, ArchivingDocsServices>();
             services.AddScoped<IUserInterfaceServices, UserInterfaceServices>();
+            services.AddScoped<IEncryptionServices, EncryptionServices>();
             services.AddScoped<InfrastructureServices>();
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();
@@ -120,7 +126,7 @@ namespace Nastya_Archiving_project.Extinstion
                 config.AddProfile<UserMappingProfile>();
 
                 //{{INSERTION_POINT}}
-                
+
             });
 
             return services;
