@@ -93,6 +93,54 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(result);
 
         }
+        [HttpPut("change-password")]
+        public async Task<IActionResult> ChangeUserPassword([FromBody] ChangePasswordViewFrom pass)
+        {
+            var result = await _authServices.ChangeUserPassword(pass);
+            return result switch
+            {
+                "404" => NotFound(new { error = "User not found." }),
+                "400" => BadRequest(new { error = "Current password is incorrect." }),
+                "200" => Ok(new { message = "Password changed successfully." }),
+                _ => StatusCode(500, new { error = "Unknown error." })
+            };
+        }
+
+        [HttpPut("edit-user/{id}")]
+        public async Task<IActionResult> EditUser(int id, [FromBody] RegisterViewForm form, [FromQuery] bool isAdmin = false)
+        {
+            var (user, error) = await _authServices.EditUser(id, form, isAdmin);
+            if (error != null)
+                return BadRequest(new { error });
+            return Ok(user);
+        }
+
+        [HttpGet("all-users")]
+        public async Task<IActionResult> GetAllUsers()
+        {
+            var (user, error) = await _authServices.GetAllUsers();
+            if (error != null)
+                return NotFound(new { error });
+            return Ok(user);
+        }
+
+        [HttpDelete("remove-user/{id}")]
+        public async Task<IActionResult> RemoveUser(int id)
+        {
+            var result = await _authServices.RemoveUser(id);
+            if (result == "400")
+                return NotFound(new { error = "User not found." });
+            return Ok(new { message = "User removed successfully." });
+        }
+
+        [HttpGet("search-users")]
+        public async Task<IActionResult> SearchUsers([FromQuery] string? realName, [FromQuery] string? userName)
+        {
+            var (user, error) = await _authServices.SearchUsers(realName, userName);
+            if (error != null)
+                return NotFound(new { error });
+            return Ok(user);
+        }
 
     }
 }

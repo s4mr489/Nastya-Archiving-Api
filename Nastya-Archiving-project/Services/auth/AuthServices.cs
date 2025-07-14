@@ -1,6 +1,8 @@
 ﻿using AutoMapper;
+using iText.StyledXmlParser.Css.Resolve.Shorthand.Impl;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
+using Nastya_Archiving_project.Extinstion;
 using Nastya_Archiving_project.Helper;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs.Auth;
@@ -9,10 +11,11 @@ using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.SystemInfo;
 using Org.BouncyCastle.Tls.Crypto.Impl.BC;
+using System.Net.WebSockets;
 
 namespace Nastya_Archiving_project.Services.auth
 {
-    public class AuthServices : BaseServices, IAuthServices
+    public class AuthServices : BaseServices, IAuthServices 
     {
         private readonly IConfiguration _configuration;
         private readonly IMapper _mapper;
@@ -39,7 +42,6 @@ namespace Nastya_Archiving_project.Services.auth
             _systemInfoServices = systemInfoServices;
         }
 
-
         public async Task<string> Login(LoginFormDTO form, bool IsAdmin)
         {
             //check the username and the password 
@@ -53,24 +55,32 @@ namespace Nastya_Archiving_project.Services.auth
             if (user.UserPassword != hashPassword)
                 return "400";
 
-            var JwtToken = new JwtToken(_context , _encryptionServices);
+            // Defensive: Check for nulls in required int fields
+            if (user.Id == 0 || user.Adminst == null)
+                return "500";
+
+            var JwtToken = new JwtToken(_context, _encryptionServices);
             //handle the user permissions and generate the JWT token
-            if (_encryptionServices.DecryptString256Bit(user.Adminst) == "1" && IsAdmin)
+            var adminstDecrypted = _encryptionServices.DecryptString256Bit(user.Adminst);
+            if (string.IsNullOrEmpty(adminstDecrypted))
+                return "500";
+
+            if (adminstDecrypted == "1" && IsAdmin)
             {
                 var token = JwtToken.GenToken(user.Id, "Admin", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
                 return token;
             }
-            if (_encryptionServices.DecryptString256Bit(user.Adminst) == "1" && !IsAdmin)
+            if (adminstDecrypted == "1" && !IsAdmin)
             {
                 var token = JwtToken.GenToken(user.Id, "User", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
                 return token;
             }
-            if (_encryptionServices.DecryptString256Bit(user.Adminst) == "0" && !IsAdmin)
+            if (adminstDecrypted == "0" && !IsAdmin)
             {
                 var token = JwtToken.GenToken(user.Id, "User", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
                 return token;
             }
-            if (_encryptionServices.DecryptString256Bit(user.Adminst) == "0" && IsAdmin)
+            if (adminstDecrypted == "0" && IsAdmin)
             {
                 return "403";
             }
@@ -129,6 +139,140 @@ namespace Nastya_Archiving_project.Services.auth
 
             return (result, null);
 
+        }
+
+        public async Task<string> ChangeUserPassword(ChangePasswordViewFrom pass)
+        {
+            var userId = 3;// _systemInfoServices.GetUserId().Id;
+            var passowrd = await _context.Users.FirstOrDefaultAsync(x => x.Id == userId);
+            if (passowrd == null)
+                return "404";
+            var hashCurrentPassword = _encryptionServices.EncryptString256Bit(pass.newPassword);
+            if (hashCurrentPassword != passowrd.UserPassword)
+                return "400";
+
+            passowrd.UserPassword = hashCurrentPassword;
+            
+            _context.Users.Update(passowrd);
+            await _context.SaveChangesAsync();
+
+            return "200";
+        }
+
+        public async Task<(UsersResponseDTOs? user, string? error)> GetAllUsers()
+        {
+            var users = await _context.Users.ToListAsync();
+
+            var usersDtoList = users.Select(u => _mapper.Map<UsersResponseDTOs>(u)).ToList();
+            var pagedList = new PagedList<UsersResponseDTOs>(usersDtoList, 1, users.Count, users.Count);
+
+            if (!pagedList.Items.Any())
+                return (null, "No users found.");
+
+            return (pagedList.Items.FirstOrDefault(), null);
+        }
+
+        public async Task<string> RemoveUser(int Id)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == Id);
+            if (user == null)
+                return "400";
+
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+
+            return "200";
+        }
+
+        public async Task<(RegisterResponseDTOs? user, string? error)> EditUser(int id, RegisterViewForm form, bool IsAdmin)
+        {
+            // Find the user by id
+            var user = await _context.Users.FirstOrDefaultAsync(e => e.Id == id);
+            if (user == null)
+                return (null, "User not found.");
+
+            // Validate related entities
+            if ((await _infrastructureServices.GetAccountUintById(form.AccountUnitId)).accountUnits == null)
+                return (null, "Account unit not found.");
+
+            if ((await _infrastructureServices.GetBranchById(form.BranchId)).Branch == null)
+                return (null, "Branch not found.");
+
+            if ((await _infrastructureServices.GetDepartmentById(form.DepariId)).Department == null)
+                return (null, "Depart not found.");
+
+            if ((await _infrastructureServices.GetGrouptById(form.GroupId)).group == null)
+                return (null, "Group not found.");
+
+            if ((await _infrastructureServices.GetJobTitleById(form.JobTitle)).Job == null)
+                return (null, "Job title not found.");
+
+            // Update user properties
+            user.AccountUnitId = form.AccountUnitId;
+            user.BranchId = form.BranchId;
+            user.DepariId = form.DepariId;
+            user.JobTitle = form.JobTitle;
+            user.Realname = _encryptionServices.EncryptString256Bit(form.Realname);
+            user.UserName = _encryptionServices.EncryptString256Bit(form.UserName);
+           // user.UserPassword = _encryptionServices.EncryptString256Bit(form.UserPassword);
+            user.GroupId = form.GroupId;
+            user.Permtype = _encryptionServices.EncryptString256Bit(form.Permtype);
+            user.Adminst = _encryptionServices.EncryptString256Bit(IsAdmin ? "1" : "0");
+            user.EditDate = DateOnly.FromDateTime(DateTime.Now);
+            user.Editor = (await _systemInfoServices.GetRealName()).RealName;
+            //user.AsmailCenter = form.AsmailCenter;
+            //user.AsWfuser = form.AsWfuser;
+            //user.DevisionId = form.DevisionId;
+            //user.GobStep = form.GobStep;
+
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+
+            var result = _mapper.Map<RegisterResponseDTOs>(user);
+
+            return (result, null);
+        }
+
+        public async Task<(UsersResponseDTOs? user, string? error)> SearchUsers(string? realName, string? userName)
+        {
+            // Start with the Users DbSet as IQueryable
+            var query = _context.Users.AsQueryable();
+
+            // Apply filters using IQueryableExtensions.WhereFilter if you have a BaseFilter
+            // Otherwise, filter manually for realName and userName
+            if (!string.IsNullOrEmpty(realName))
+            {
+                query = query.Where(u => u.Realname.Contains(_encryptionServices.EncryptString256Bit(realName)));
+            }
+            if (!string.IsNullOrEmpty(userName))
+            {
+                query = query.Where(u => u.UserName.Contains(_encryptionServices.EncryptString256Bit(userName)));
+            }
+
+            // Get the first matching user
+            var user = await query.FirstOrDefaultAsync();
+            if (user == null)
+                return (null, "No user found.");
+            
+
+            var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == user.BranchId);
+            var depart = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.DepariId);
+            var group  = await _context.Usersgroups.FirstOrDefaultAsync(g => g.Id == user.GroupId);
+            var jobTitle = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == user.JobTitle);
+            var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.AccountUnitId);
+
+            var userDto = new UsersResponseDTOs()
+            {
+                userName = _encryptionServices.DecryptString256Bit(user.UserName),
+                realName = _encryptionServices.DecryptString256Bit(user.Realname),
+                branch = branch?.Dscrp,
+                depart = depart?.Dscrp,
+                accountUnit = accountUnit?.Dscrp,
+                jobTitl = jobTitle?.Dscrp,
+                Id = user.Id,
+                permission = _encryptionServices.DecryptString256Bit(user.Adminst),
+            };
+            return (userDto, null);
         }
     }
 }
