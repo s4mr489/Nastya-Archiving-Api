@@ -4,7 +4,9 @@ using Microsoft.Identity.Client;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs;
+using Nastya_Archiving_project.Models.DTOs.file;
 using Nastya_Archiving_project.Services.ArchivingSettings;
+using Nastya_Archiving_project.Services.files;
 using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.SystemInfo;
 using System.Security.Claims;
@@ -19,12 +21,14 @@ namespace Nastya_Archiving_project.Services.archivingDocs
         private readonly IInfrastructureServices _infrastructureServices;
         private readonly IArchivingSettingsServicers _archivingSettingsServicers;
         private readonly IHttpContextAccessor _httpContext;
+        private readonly IFilesServices _fileServices;
         public ArchivingDocsServices(AppDbContext context,
                                     IMapper mapper,
                                     ISystemInfoServices systemInfoServices,
                                     IInfrastructureServices infrastructureServices,
                                     IArchivingSettingsServicers archivingSettingsServicers,
-                                    IHttpContextAccessor httpContext) : base(mapper, context)
+                                    IHttpContextAccessor httpContext,
+                                    IFilesServices fileServices) : base(mapper, context)
         {
             _context = context;
             _mapper = mapper;
@@ -32,6 +36,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             _infrastructureServices = infrastructureServices;
             _archivingSettingsServicers = archivingSettingsServicers;
             _httpContext = httpContext;
+            _fileServices = fileServices;
         }
 
         public Task<(List<ArchivingDocsResponseDTOs>? docs, string? error)> GetAllArchivingDocs()
@@ -44,7 +49,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             throw new NotImplementedException();
         }
 
-        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> PostArchivingDocs(ArchivingDocsViewForm req)
+        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> PostArchivingDocs(ArchivingDocsViewForm req ,FileViewForm file)
         {
             //check the docs if exists By docs  Number and docs type Id
             var docs =await  _context.ArcivingDocs.FirstOrDefaultAsync(e => e.DocNo== req.DocNo && e.DocType== req.DocType);
@@ -60,6 +65,10 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             string? accountUnitId = claimsIdentity.FindFirst("AccountUnitId")?.Value;
             string? fileType = claimsIdentity.FindFirst("FileType")?.Value;
 
+            var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
+            if (docTypeResponse.docsType == null)
+                return (null, "Invalid document type.");
+
 
             // If the claim is not found, you can set it to null or handle it as needed
             // that manual mapper to the ArcivingDoc model
@@ -67,13 +76,12 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             {
                 RefrenceNo = await _systemInfoServices.GetLastRefNo(),
                 DocNo = req.DocNo,
-                DocId = req.DocId,
                 DocDate = req.DocDate,
-                DocSize = req.DocSize,
+                DocSize = (await _fileServices.upload(file)).fileSize,
                 DocSource = req.DocSource,
                 DocTarget = req.DocTarget,
                 DocTitle = req.DocTitle,
-                DocType = req.DocType,
+                DocType = docTypeResponse.docsType.Id,
                 SubDocType = req.SubDocType,
                 DepartId = departId != null ? int.Parse(departId) : null,
                 BranchId = branchId != null ? int.Parse(branchId) : null,
@@ -82,14 +90,11 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 EditDate = DateTime.UtcNow,
                 Editor = (await _systemInfoServices.GetRealName()).RealName,
                 Ipaddress = (await _systemInfoServices.GetUserIpAddress()),
-                ImgUrl = req.ImgUrl,
+                ImgUrl =(await _fileServices.upload(file)).file,
                 FileType  = fileType != null ? int.Parse(fileType) : null,
                 Subject = req.Subject,
                 TheMonth = DateTime.UtcNow.Month,
                 Theyear = DateTime.UtcNow.Year,
-                TheWay = req.TheWay,
-                Fourth = req.Fourth,
-                Sequre = req.Sequre,
                 ReferenceTo = req.ReferenceTo,
                 Notes = req.Notes,
                 WordsTosearch = req.WordsTosearch,
@@ -111,6 +116,12 @@ namespace Nastya_Archiving_project.Services.archivingDocs
         public Task<string> DeleteArchivingDocs(int Id)
         {
             throw new NotImplementedException();
+        }
+
+        public async Task<string> GetNextRefernceNo()
+        {
+            var refe = await _systemInfoServices.GetLastRefNo();
+            return (refe);
         }
     }
 }

@@ -29,7 +29,7 @@ public partial class ArcivingDoc
 
     public string? BoxfileNo { get; set; }
 
-    public int? DocType { get; set; }
+    public int DocType { get; set; }
 
     public int? DepartId { get; set; }
 

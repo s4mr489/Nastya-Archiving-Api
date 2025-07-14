@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs;
+using Nastya_Archiving_project.Models.DTOs.file;
 using Nastya_Archiving_project.Services.archivingDocs;
 
 namespace Nastya_Archiving_project.Controllers
@@ -15,9 +16,9 @@ namespace Nastya_Archiving_project.Controllers
         }
 
         [HttpPost("Add-Docs-To-Archive")]
-        public async Task<IActionResult> PostArchivingDocs([FromBody] ArchivingDocsViewForm req)
+        public async Task<IActionResult> PostArchivingDocs([FromForm] FileViewForm file, [FromForm] ArchivingDocsViewForm req)
         {
-            var (docs, error) = await _archivingDocsSercvices.PostArchivingDocs(req);
+            var (docs, error) = await _archivingDocsSercvices.PostArchivingDocs(req, file);
             if (error != null)
                 return BadRequest(error);
             return Ok(docs);

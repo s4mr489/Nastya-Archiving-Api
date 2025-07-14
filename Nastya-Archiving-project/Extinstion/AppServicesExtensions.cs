@@ -10,6 +10,7 @@ using Nastya_Archiving_project.Services.archivingDocs;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.auth;
 using Nastya_Archiving_project.Services.encrpytion;
+using Nastya_Archiving_project.Services.files;
 using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.Permmsions;
 using Nastya_Archiving_project.Services.SystemInfo;
@@ -112,6 +113,7 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<IArchivingDocsSercvices, ArchivingDocsServices>();
             services.AddScoped<IUserInterfaceServices, UserInterfaceServices>();
             services.AddScoped<IEncryptionServices, EncryptionServices>();
+            services.AddScoped<IFilesServices, FileServices>();
             services.AddScoped<InfrastructureServices>();
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();

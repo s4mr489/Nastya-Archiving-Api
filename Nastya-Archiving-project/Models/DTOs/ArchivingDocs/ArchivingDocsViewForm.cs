@@ -3,9 +3,6 @@
     public class ArchivingDocsViewForm
     {
         public string? RefrenceNo { get; set; }
-
-        public int? DocId { get; set; }
-
         public string? DocNo { get; set; }
 
         public DateOnly? DocDate { get; set; }
@@ -17,8 +14,6 @@
         public string? Subject { get; set; }
 
         public string? WordsTosearch { get; set; }
-
-        public string? ImgUrl { get; set; }
 
         public string? DocTitle { get; set; }
 
@@ -36,12 +31,6 @@
 
         public int? Theyear { get; set; }
 
-        public int? TheWay { get; set; }
-
-        public string? SystemId { get; set; }
-
-        public int? Sequre { get; set; }
-
         public decimal? DocSize { get; set; }
 
         public int BranchId { get; set; }
@@ -53,8 +42,6 @@
         public int? TheMonth { get; set; }
 
         public int? SubDocType { get; set; }
-
-        public string? Fourth { get; set; }
 
         public string? Ipaddress { get; set; }
 
