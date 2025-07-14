@@ -115,13 +115,13 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(user);
         }
 
-        [HttpGet("all-users")]
-        public async Task<IActionResult> GetAllUsers()
+        [HttpGet("GetAllUsers")]
+        public async Task<IActionResult> GetAllUsers([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
         {
-            var (user, error) = await _authServices.GetAllUsers();
+            var (users, error) = await _authServices.GetAllUsers(pageNumber, pageSize);
             if (error != null)
-                return NotFound(new { error });
-            return Ok(user);
+                return NotFound(error);
+            return Ok(users);
         }
 
         [HttpDelete("remove-user/{id}")]

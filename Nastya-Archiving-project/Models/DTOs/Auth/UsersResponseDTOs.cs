@@ -10,6 +10,5 @@
         public string? depart { get; set; }
         public string? jobTitl { get; set; }
         public string? permission { get; set; }
-
     }
 }

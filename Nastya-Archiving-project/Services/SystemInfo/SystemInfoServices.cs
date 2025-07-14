@@ -27,7 +27,7 @@ namespace Nastya_Archiving_project.Services.SystemInfo
 
             // Increment the number and format it
             int newNumber = lastDelete+lastDoc + 1;
-            string newReferenceNo = $"Ch{newNumber:D8}"; // Format as "Ch00001"
+            string newReferenceNo = $"SYS-{newNumber:D8}"; // Format as "Ch00001"
 
             return newReferenceNo;
         }

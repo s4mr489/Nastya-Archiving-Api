@@ -70,12 +70,7 @@ namespace Nastya_Archiving_project.Services.auth
                 var token = JwtToken.GenToken(user.Id, "Admin", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
                 return token;
             }
-            if (adminstDecrypted == "1" && !IsAdmin)
-            {
-                var token = JwtToken.GenToken(user.Id, "User", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
-                return token;
-            }
-            if (adminstDecrypted == "0" && !IsAdmin)
+            if (adminstDecrypted == "1" && !IsAdmin || adminstDecrypted =="0" && !IsAdmin)
             {
                 var token = JwtToken.GenToken(user.Id, "User", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
                 return token;
@@ -159,17 +154,31 @@ namespace Nastya_Archiving_project.Services.auth
             return "200";
         }
 
-        public async Task<(UsersResponseDTOs? user, string? error)> GetAllUsers()
+        public async Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(int pageNumber = 1, int pageSize = 10)
         {
-            var users = await _context.Users.ToListAsync();
+            var usersQuery = _context.Users.AsQueryable();
 
-            var usersDtoList = users.Select(u => _mapper.Map<UsersResponseDTOs>(u)).ToList();
-            var pagedList = new PagedList<UsersResponseDTOs>(usersDtoList, 1, users.Count, users.Count);
-
-            if (!pagedList.Items.Any())
+            var totalCount = await usersQuery.CountAsync();
+            if (totalCount == 0)
                 return (null, "No users found.");
 
-            return (pagedList.Items.FirstOrDefault(), null);
+            var users = await usersQuery
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var usersDtoList = users
+                .Where(u => u != null)
+                .Select(u => _mapper.Map<UsersResponseDTOs>(u))
+                .Where(dto => dto != null)
+                .ToList();
+
+            if (usersDtoList == null || usersDtoList.Count == 0)
+                return (null, "No users found.");
+
+            var pagedList = new PagedList<UsersResponseDTOs>(usersDtoList, pageNumber, pageSize, totalCount);
+
+            return (pagedList, null);
         }
 
         public async Task<string> RemoveUser(int Id)

@@ -10,16 +10,15 @@ namespace Nastya_Archiving_project.Extinstion
         public UserMappingProfile()
         {
             CreateMap<ArcivingDoc, ArchivingDocsResponseDTOs>();
-
             CreateMap<User, UsersResponseDTOs>()
-                .ForMember(dest => dest.userName, opt => opt.MapFrom(src => src.UserName))
-                .ForMember(dest => dest.realName, opt => opt.MapFrom(src => src.Realname))
-                .ForMember(dest => dest.accountUnit, opt => opt.MapFrom(src => src.AccountUnitId.ToString()))
-                .ForMember(dest => dest.branch, opt => opt.MapFrom(src => src.BranchId.ToString()))
-                .ForMember(dest => dest.depart, opt => opt.MapFrom(src => src.DepariId.ToString()))
-                .ForMember(dest => dest.jobTitl, opt => opt.MapFrom(src => src.JobTitle.ToString()))
-                .ForMember(dest => dest.permission, opt => opt.MapFrom(src => src.Permtype));
+             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.Id))
+             .ForMember(dest => dest.realName, opt => opt.MapFrom(src => src.Realname))
+             .ForMember(dest => dest.userName, opt => opt.MapFrom(src => src.UserName))
+             .ForMember(dest => dest.accountUnit, opt => opt.Ignore()) // Set in service if needed
+             .ForMember(dest => dest.branch, opt => opt.Ignore())      // Set in service if needed
+             .ForMember(dest => dest.depart, opt => opt.Ignore())      // Set in service if needed
+             .ForMember(dest => dest.jobTitl, opt => opt.Ignore())     // Set in service if needed
+             .ForMember(dest => dest.permission, opt => opt.MapFrom(src => src.Adminst));
         }
-
     }
 }
