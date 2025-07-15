@@ -1,8 +1,11 @@
-﻿namespace Nastya_Archiving_project.Models.DTOs.ArchivingDocs
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace Nastya_Archiving_project.Models.DTOs.ArchivingDocs
 {
     public class ArchivingDocsViewForm
     {
         public string? RefrenceNo { get; set; }
+
         public string? DocNo { get; set; }
 
         public DateOnly? DocDate { get; set; }

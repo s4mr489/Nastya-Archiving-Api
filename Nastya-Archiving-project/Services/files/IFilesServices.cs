@@ -6,7 +6,7 @@ namespace Nastya_Archiving_project.Services.files
     public interface IFilesServices
     {
         Task<(string? file, long fileSize, string? error)> upload(FileViewForm fileForm);
-        Task<(List<string>? files, string? error)> upload(MultiFileFormViewForm filesForm);
+        Task<(List<(string filePath, string fileType, string? notice)> files, string? error)> uploadWithType(MultiFileFormViewForm filesForm);
         Task<(IActionResult, string? error)> DownloadPdf(MultiFileFormViewForm filesForm);
         Task<string> GetHtml(MultiFileFormViewForm filesForm);
 

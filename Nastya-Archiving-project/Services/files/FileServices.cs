@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.file;
+using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.SystemInfo;
 using PuppeteerSharp;
 using System.Security.Cryptography;
@@ -15,15 +17,18 @@ namespace Nastya_Archiving_project.Services.files
         private readonly IHttpContextAccessor _httpContext;
         private readonly ISystemInfoServices _systemInfo;
         private readonly IConfiguration _configuration;
+        private readonly IEncryptionServices _encryptionServices;
         public FileServices(AppDbContext context,
-                            IHttpContextAccessor httpcontext, 
-                            ISystemInfoServices systeminfo, 
-                            IConfiguration configuration) : base(null, context)
+                            IHttpContextAccessor httpcontext,
+                            ISystemInfoServices systeminfo,
+                            IConfiguration configuration,
+                            IEncryptionServices encryptionServices) : base(null, context)
         {
             _context = context;
             _httpContext = httpcontext;
             _systemInfo = systeminfo;
             _configuration = configuration;
+            _encryptionServices = encryptionServices;
         }
 
         //upload single pdf file and encrypt it using AES encryption
@@ -53,14 +58,14 @@ namespace Nastya_Archiving_project.Services.files
             }
 
             long fileSize = file.Length; // Get the file size in bytes
-
+            var storePath = await _context.PArcivingPoints.FirstOrDefaultAsync(s => s.AccountUnitId == user.AccountUnitId && s.DepartId == user.DepariId);
 
             string attachmentsDir = Path.Combine(
-                "Adminst" ,
+                storePath.StorePath,
                 DateTime.Now.Year.ToString(),
                 depr.Dscrp,
                 DateTime.Now.Month.ToString(),
-                group.Groupdscrp
+                _encryptionServices.DecryptString256Bit(group.Groupdscrp)
             );
 
             if (!Directory.Exists(attachmentsDir))
@@ -93,10 +98,10 @@ namespace Nastya_Archiving_project.Services.files
             }
 
             var webPath = Path.Combine(
+                storePath.StorePath.Replace(Path.DirectorySeparatorChar, '/'),
                 DateTime.Now.Year.ToString(),
                 depr.Dscrp,
-                DateTime.Now.Month.ToString(),
-                group.Groupdscrp,
+                _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 fileName
             ).Replace(Path.DirectorySeparatorChar, '/');
 
@@ -246,10 +251,10 @@ namespace Nastya_Archiving_project.Services.files
                 return (null, null, null, "fileName field is required.");
             }
 
-            var rootDir = Environment.GetEnvironmentVariable("FILE_STORAGE_PATH");
-            var fullPath = $"{rootDir}/{filePath}";
+            //var rootDir = Environment.GetEnvironmentVariable("FILE_STORAGE_PATH");
+            //var fullPath = $"{rootDir}/{filePath}";
 
-            if (!System.IO.File.Exists(fullPath))
+            if (!System.IO.File.Exists(filePath))
             {
                 return (null, null, null, "File not found.");
             }
@@ -258,17 +263,17 @@ namespace Nastya_Archiving_project.Services.files
             if (string.IsNullOrEmpty(keyString))
                 throw new InvalidOperationException("Encryption key is not configured. Please set FileEncrypt:key in appsettings.json.");
 
-            var contentType = GetContentType(fullPath);
+            var contentType = GetContentType(filePath);
             byte[] key = Convert.FromBase64String(keyString);
 
             try
             {
                 // Decrypt the file
-                MemoryStream decryptedStream = await DecryptFileAsync(fullPath, key);
+                MemoryStream decryptedStream = await DecryptFileAsync(filePath, key);
                 decryptedStream.Position = 0;
 
                 // If the file is compressed (ends with .gz), decompress it using the extension method
-                if (Path.GetExtension(fullPath).Equals(".gz", StringComparison.OrdinalIgnoreCase))
+                if (Path.GetExtension(filePath).Equals(".gz", StringComparison.OrdinalIgnoreCase))
                 {
                     var decompressedStream = await DecompressGZipAsync(decryptedStream);
                     decompressedStream.Position = 0;
@@ -296,7 +301,7 @@ namespace Nastya_Archiving_project.Services.files
 
 
         //upload multiy pdf
-        public async Task<(List<string> files, string? error)> upload(MultiFileFormViewForm filesForm)
+        public async Task<(List<(string filePath, string fileType, string? notice)> files, string? error)> uploadWithType(MultiFileFormViewForm filesForm)
         {
             var userId = (await _systemInfo.GetUserId()).Id;
             if (string.IsNullOrEmpty(userId))
@@ -306,22 +311,35 @@ namespace Nastya_Archiving_project.Services.files
 
             var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
 
-            var fileList = new List<string>();
-            // Save to wwwroot/Attachments/{UserName}
-            var wwwrootDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", $"{user.Realname}");
+            var fileList = new List<(string filePath, string fileType, string? notice)>();
+            var wwwrootDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", $"{_encryptionServices.DecryptString256Bit(user.Realname)}");
             if (!Directory.Exists(wwwrootDir))
                 Directory.CreateDirectory(wwwrootDir);
 
             foreach (var file in filesForm.Files)
             {
-                // Check for PDF by extension and content type
                 var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
                 var isPdf = extension == ".pdf" && file.ContentType == "application/pdf";
-                if (!isPdf)
+                var isWord = (extension == ".docx" && file.ContentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                          || (extension == ".doc" && file.ContentType == "application/msword");
+
+                string fileType;
+                string? notice = null;
+
+                if (isPdf)
                 {
-                    return (null, $"File '{file.FileName}' is not a PDF.");
+                    fileType = "pdf";
                 }
-                // Generate a unique file name to avoid collisions
+                else if (isWord)
+                {
+                    fileType = "word";
+                    notice = "Word file uploaded";
+                }
+                else
+                {
+                    return (null, $"File '{file.FileName}' is not a PDF or Word document.");
+                }
+
                 var newFileName = $"{file.FileName}";
                 var newFilePath = Path.Combine(wwwrootDir, newFileName);
 
@@ -330,9 +348,8 @@ namespace Nastya_Archiving_project.Services.files
                     await file.CopyToAsync(stream);
                 }
 
-                // Return relative path for web access
-                var relativePath = Path.Combine("Attachments", $"{user.Realname}", newFileName).Replace("\\", "/");
-                fileList.Add(relativePath);
+                var relativePath = Path.Combine("Attachments", $"{_encryptionServices.DecryptString256Bit(user.Realname)}", newFileName).Replace("\\", "/");
+                fileList.Add((relativePath, fileType, notice));
             }
             return (fileList, null);
         }

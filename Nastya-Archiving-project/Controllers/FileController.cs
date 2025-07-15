@@ -18,7 +18,7 @@ namespace Nastya_Archiving_project.Controllers
             _fileServices = fileServices;
         }
 
-        [HttpPost("upload")]
+        [HttpPost("Upload-single-file-To-DB")]
         public async Task<IActionResult> Upload([FromForm]FileViewForm fileForm)
         {
             var (file, fileSize, error) = await _fileServices.upload(fileForm);
@@ -26,11 +26,12 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(new { file, fileSize });
         }
 
-        [HttpPost("upload-multi")]
-        public async Task<IActionResult> UploadMulti([FromForm] MultiFileFormViewForm filesForm)
+        [HttpPost("Upload-multyi-TempFile-WithType")]
+        public async Task<IActionResult> UploadWithType([FromForm] MultiFileFormViewForm filesForm)
         {
-            var (files, error) = await _fileServices.upload(filesForm);
-            if (error != null) return BadRequest(error);
+            var (files, error) = await _fileServices.UploadWithType(filesForm);
+            if (error != null)
+                return BadRequest(error);
             return Ok(files);
         }
 
@@ -65,7 +66,7 @@ namespace Nastya_Archiving_project.Controllers
             return File(fileStream, contentType ?? "application/octet-stream");
         }
 
-        [HttpGet("decrypt")]
+        [HttpGet("GetDecrypted-by-Path")]
         public async Task<IActionResult> GetDecrypted([FromQuery] string filePath)
         {
             var (fileStream, fileName, contentType, error) = await _fileServices.GetDecryptedFileByPathAsync(filePath);

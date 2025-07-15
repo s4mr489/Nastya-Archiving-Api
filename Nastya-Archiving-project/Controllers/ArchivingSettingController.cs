@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.ArchivingPoint;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.DocsType;
@@ -8,6 +9,7 @@ using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.Precedence;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.SupDocsType;
 using Nastya_Archiving_project.Services.archivingDocs;
 using Nastya_Archiving_project.Services.ArchivingSettings;
+using Nastya_Archiving_project.Services.encrpytion;
 
 namespace Nastya_Archiving_project.Controllers
 {
@@ -17,7 +19,7 @@ namespace Nastya_Archiving_project.Controllers
     public class ArchivingSettingController : ControllerBase
     {
         private readonly IArchivingSettingsServicers _archivingSettings;
-        public ArchivingSettingController(IArchivingSettingsServicers archivingSettings)
+        public ArchivingSettingController(IArchivingSettingsServicers archivingSettings, AppDbContext context, IEncryptionServices encryptionServices)
         {
             _archivingSettings = archivingSettings;
         }

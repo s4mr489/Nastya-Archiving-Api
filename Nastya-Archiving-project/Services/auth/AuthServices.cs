@@ -169,7 +169,17 @@ namespace Nastya_Archiving_project.Services.auth
 
             var usersDtoList = users
                 .Where(u => u != null)
-                .Select(u => _mapper.Map<UsersResponseDTOs>(u))
+                .Select(u => new UsersResponseDTOs()
+                {
+                    Id = u.Id,
+                    userName = _encryptionServices.DecryptString256Bit(u.UserName),
+                    realName = _encryptionServices.DecryptString256Bit(u.Realname),
+                    branch = _context.GpBranches.FirstOrDefault(b => b.Id == u.BranchId)?.Dscrp,
+                    depart = _context.GpAccountingUnits.FirstOrDefault(a => a.Id == u.DepariId)?.Dscrp,
+                    accountUnit = _context.GpAccountingUnits.FirstOrDefault(a => a.Id == u.AccountUnitId)?.Dscrp,
+                    jobTitl = _context.PJobTitles.FirstOrDefault(j => j.Id == u.JobTitle)?.Dscrp,
+                    permission = _encryptionServices.DecryptString256Bit(u.Adminst)
+                })
                 .Where(dto => dto != null)
                 .ToList();
 

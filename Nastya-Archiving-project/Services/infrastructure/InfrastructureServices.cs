@@ -9,6 +9,7 @@ using Nastya_Archiving_project.Models.DTOs.Infrastruture.Group;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.GroupForm;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.JobTitle;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Organization;
+using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.SystemInfo;
 
 namespace Nastya_Archiving_project.Services.infrastructure
@@ -17,10 +18,12 @@ namespace Nastya_Archiving_project.Services.infrastructure
     {
         private readonly AppDbContext _context;
         private readonly ISystemInfoServices _systemInfoServices;
-        public InfrastructureServices(AppDbContext context, ISystemInfoServices systemInfoServices = null) : base(null, context)
+        private readonly IEncryptionServices _encryptionServices;
+        public InfrastructureServices(AppDbContext context, ISystemInfoServices systemInfoServices, IEncryptionServices encryptionServices) : base(null, context)
         {
             _context = context;
             _systemInfoServices = systemInfoServices;
+            _encryptionServices = encryptionServices;
         }
 
         public async Task<(AccountUnitResponseDTOs? accountUnit, string? error)> PostAccountUint(AccountUnitViewForm req)
@@ -145,7 +148,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             var response = new GroupsResponseDTOs
             {
                 groupId = newGroup.Id,
-                groupDscrp = newGroup.Groupdscrp,
+                groupDscrp = _encryptionServices.EncryptString256Bit(newGroup.Groupdscrp),
                 Editor = newGroup.Editor,
                 EditDate = newGroup.EditDate,
                 AccountUnitId = newGroup.AccountUnitId
@@ -174,7 +177,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 return (null, "400");
 
             // Update properties
-            group.Groupdscrp = req.groupDscrp;
+            group.Groupdscrp = _encryptionServices.EncryptString256Bit(req.groupDscrp);
             group.Editor = userId.Id.ToString();
             group.AccountUnitId = req.AccountUnitId;
             group.EditDate = DateOnly.FromDateTime(DateTime.Now);
@@ -185,7 +188,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             var response = new GroupsResponseDTOs
             {
                 groupId = group.Id,
-                groupDscrp = group.Groupdscrp,
+                groupDscrp = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 Editor = group.Editor,
                 EditDate = group.EditDate,
                 AccountUnitId = group.AccountUnitId
@@ -203,7 +206,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             return (groups.Select(e => new GroupsResponseDTOs
             {
                 groupId = e.Id,
-                groupDscrp = e.Groupdscrp,
+                groupDscrp = _encryptionServices.DecryptString256Bit(e.Groupdscrp),
                 Editor = e.Editor,
                 EditDate = e.EditDate,
                 AccountUnitId = e.AccountUnitId
@@ -220,7 +223,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             var response = new GroupsResponseDTOs
             {
                 groupId = group.Id,
-                groupDscrp = group.Groupdscrp,
+                groupDscrp = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 Editor = group.Editor,
                 EditDate = group.EditDate,
                 AccountUnitId = group.AccountUnitId
