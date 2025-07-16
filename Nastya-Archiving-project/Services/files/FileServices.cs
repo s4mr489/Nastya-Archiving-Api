@@ -1,6 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using DocumentFormat.OpenXml.Packaging;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.file;
 using Nastya_Archiving_project.Services.encrpytion;
@@ -34,30 +34,35 @@ namespace Nastya_Archiving_project.Services.files
         //upload single pdf file and encrypt it using AES encryption
         public async Task<(string? file, long fileSize, string? error)> upload(FileViewForm fileForm)
         {
+            // Get the user's info
             var userId = (await _systemInfo.GetUserId()).Id;
             if (string.IsNullOrEmpty(userId))
-            {
                 return (null, 0, "User ID is not available.");
-            }
 
             var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
-            if(user == null)
-            {
+            if (user == null)
                 return (null, 0, "User not found.");
-            }
+
             var group = _context.Usersgroups.FirstOrDefault(g => g.Id == user.GroupId);
             var depr = _context.GpDepartments.FirstOrDefault(d => d.Id == user.DepariId);
 
             var file = fileForm.File;
-
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-            var isPdf = extension == ".pdf" && file.ContentType == "application/pdf";
-            if (!isPdf)
-            {
-                return (null, 0, $"File '{file.FileName}' is not a PDF.");
-            }
 
-            long fileSize = file.Length; // Get the file size in bytes
+            // Accept PDF and Word files
+            var isPdf = extension == ".pdf" && file.ContentType == "application/pdf";
+            var isDocx = extension == ".docx" &&
+                (file.ContentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+                 file.ContentType == "application/octet-stream" ||
+                 file.ContentType == "application/zip");
+            var isDoc = extension == ".doc" &&
+                (file.ContentType == "application/msword" ||
+                 file.ContentType == "application/octet-stream");
+
+            if (!isPdf && !isDocx && !isDoc)
+                return (null, 0, $"File '{file.FileName}' is not a PDF or Word document.");
+
+            long fileSize = file.Length;
             var storePath = await _context.PArcivingPoints.FirstOrDefaultAsync(s => s.AccountUnitId == user.AccountUnitId && s.DepartId == user.DepariId);
 
             string attachmentsDir = Path.Combine(
@@ -69,9 +74,7 @@ namespace Nastya_Archiving_project.Services.files
             );
 
             if (!Directory.Exists(attachmentsDir))
-            {
                 Directory.CreateDirectory(attachmentsDir);
-            }
 
             var fileName = $"{await _systemInfo.GetLastRefNo()}-{Guid.NewGuid()}{extension}.gz";
             var filePath = Path.Combine(attachmentsDir, fileName);
@@ -79,21 +82,13 @@ namespace Nastya_Archiving_project.Services.files
             byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"]);
             byte[] iv = Convert.FromBase64String(_configuration["FileEncrypt:iv"]);
 
-            using (var aes = Aes.Create())
+            using (var inputStream = file.OpenReadStream())
             {
-                aes.Key = key;
-                aes.IV = iv;
-
-                using var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
-
-                using (var outFileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var compressedStream = new MemoryStream())
                 {
-                    await outFileStream.WriteAsync(aes.IV, 0, aes.IV.Length);
-                    using (var cryptoStream = new CryptoStream(outFileStream, encryptor, CryptoStreamMode.Write))
-                    using (var inputStream = file.OpenReadStream())
-                    {
-                        await CompressToStreamAsync(inputStream, cryptoStream);
-                    }
+                    await CompressToGZipAsync(inputStream, compressedStream);
+                    compressedStream.Position = 0;
+                    await EncryptStreamToFileAsync(compressedStream, filePath, key, iv);
                 }
             }
 
@@ -108,6 +103,8 @@ namespace Nastya_Archiving_project.Services.files
             return (webPath, fileSize, null);
         }
 
+
+
         public long GetFileSize(IFormFile file)
         {
             if (file == null)
@@ -119,7 +116,7 @@ namespace Nastya_Archiving_project.Services.files
         {
             var userId = (await _systemInfo.GetUserId()).Id;
             var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
-            var userFolder = user?.Realname ?? "UnknownUser";
+            var userFolder = _encryptionServices.DecryptString256Bit(user?.Realname )?? "UnknownUser";
 
             var tempDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", userFolder);
             if (!Directory.Exists(tempDir))
@@ -155,7 +152,7 @@ namespace Nastya_Archiving_project.Services.files
             return false;
         }
 
-        //merged two pdf files and return the merged file as byte array
+        // Merges two PDF files and returns the merged file as an encrypted and compressed byte array
         public async Task<(byte[]? MergedFile, string? Error)> MergeTwoPdfFilesAsync(MergePdfViewForm requestDTO)
         {
             if (string.IsNullOrWhiteSpace(requestDTO.OriginalFilePath) || requestDTO.File == null)
@@ -164,6 +161,7 @@ namespace Nastya_Archiving_project.Services.files
             string file2Path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.pdf");
             string tempDecryptedOriginalPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_decrypted.pdf");
             string tempMergedPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_merged.pdf");
+            string tempEncryptedCompressedPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_merged_encrypted.gz");
 
             try
             {
@@ -193,7 +191,9 @@ namespace Nastya_Archiving_project.Services.files
                     await File.WriteAllBytesAsync(tempDecryptedOriginalPath, decryptedStream.ToArray());
                 }
                 else
+                {
                     File.Copy(requestDTO.OriginalFilePath, tempDecryptedOriginalPath, true);
+                }
 
                 // Merge and save to tempMergedPath
                 using (var outputDoc = new PdfSharp.Pdf.PdfDocument())
@@ -206,7 +206,7 @@ namespace Nastya_Archiving_project.Services.files
                     outputDoc.Save(tempMergedPath);
                 }
 
-                // Encrypt the merged PDF and overwrite the original file
+                // Encrypt and compress the merged PDF using external helpers
                 var keyStr = _configuration["FileEncrypt:key"];
                 var ivStr = _configuration["FileEncrypt:iv"];
                 if (string.IsNullOrEmpty(keyStr) || string.IsNullOrEmpty(ivStr))
@@ -215,21 +215,17 @@ namespace Nastya_Archiving_project.Services.files
                 byte[] keyBytes = Convert.FromBase64String(keyStr);
                 byte[] ivBytes = Convert.FromBase64String(ivStr);
 
-                using (var aes = Aes.Create())
+                // Use streams for compression and encryption
+                await using (var mergedFileStream = new FileStream(tempMergedPath, FileMode.Open, FileAccess.Read))
+                await using (var compressedStream = new MemoryStream())
                 {
-                    aes.Key = keyBytes;
-                    aes.IV = ivBytes;
-                    using var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
-                    using var outFileStream = new FileStream(requestDTO.OriginalFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
-                    // Write IV first
-                    await outFileStream.WriteAsync(aes.IV, 0, aes.IV.Length);
-                    using var cryptoStream = new CryptoStream(outFileStream, encryptor, CryptoStreamMode.Write);
-                    var mergedBytes = await File.ReadAllBytesAsync(tempMergedPath);
-                    await cryptoStream.WriteAsync(mergedBytes, 0, mergedBytes.Length);
+                    await CompressToGZipAsync(mergedFileStream, compressedStream);
+                    compressedStream.Position = 0;
+                    await EncryptStreamToFileAsync(compressedStream, tempEncryptedCompressedPath, keyBytes, ivBytes);
                 }
 
-                // Return the encrypted merged file as bytes
-                var encryptedMergedBytes = await File.ReadAllBytesAsync(requestDTO.OriginalFilePath);
+                // Return the encrypted and compressed merged file as bytes
+                var encryptedMergedBytes = await File.ReadAllBytesAsync(tempEncryptedCompressedPath);
                 return (encryptedMergedBytes, null);
             }
             catch (Exception ex)
@@ -238,26 +234,80 @@ namespace Nastya_Archiving_project.Services.files
             }
             finally
             {
-                foreach (var path in new[] { file2Path, tempDecryptedOriginalPath, tempMergedPath })
+                foreach (var path in new[] { file2Path, tempDecryptedOriginalPath, tempMergedPath, tempEncryptedCompressedPath })
                     if (File.Exists(path)) File.Delete(path);
             }
         }
+        //this method to merge docx files and return the merged file as bytes
+        public async Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxFilesAsync(List<IFormFile> files)
+        {
+            if (files == null || files.Count < 2)
+                return (null, null, "At least two .docx files are required.");
 
+            var tempPaths = new List<string>();
+            try
+            {
+                // Save uploaded files to temp
+                foreach (var file in files)
+                {
+                    if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".docx")
+                        return (null, null, "All files must be .docx format.");
+
+                    var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.docx");
+                    using (var stream = new FileStream(tempPath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+                    tempPaths.Add(tempPath);
+                }
+
+                // Use the directory of the first temp file as the origin path
+                var originDir = Path.GetDirectoryName(tempPaths[0])!;
+                var mergedFileName = $"merged_{Guid.NewGuid()}.docx";
+                var outputFile = Path.Combine(originDir, mergedFileName);
+
+                // Merge using your existing logic
+                File.Copy(tempPaths[0], outputFile, true);
+                using (WordprocessingDocument mainDoc = WordprocessingDocument.Open(outputFile, true))
+                {
+                    var mainBody = mainDoc.MainDocumentPart.Document.Body;
+                    for (int i = 1; i < tempPaths.Count; i++)
+                    {
+                        using (WordprocessingDocument tempDoc = WordprocessingDocument.Open(tempPaths[i], true))
+                        {
+                            foreach (var element in tempDoc.MainDocumentPart.Document.Body.Elements())
+                            {
+                                mainBody.Append(element.CloneNode(true));
+                            }
+                        }
+                    }
+                    mainDoc.MainDocumentPart.Document.Save();
+                }
+
+                // Return the merged file as bytes and its file name
+                var mergedBytes = await File.ReadAllBytesAsync(outputFile);
+                return (mergedBytes, mergedFileName, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, null, $"Error merging Word documents: {ex.Message}");
+            }
+            finally
+            {
+                foreach (var path in tempPaths)
+                    if (File.Exists(path)) File.Delete(path);
+                // Optionally, delete the merged file after reading
+                // if (File.Exists(outputFile)) File.Delete(outputFile);
+            }
+        }
         // Method to get a decrypted file by its path
         public async Task<(Stream? fileStream, string? fileName, string? contentType, string? error)> GetDecryptedFileByPathAsync(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath))
-            {
                 return (null, null, null, "fileName field is required.");
-            }
-
-            //var rootDir = Environment.GetEnvironmentVariable("FILE_STORAGE_PATH");
-            //var fullPath = $"{rootDir}/{filePath}";
 
             if (!System.IO.File.Exists(filePath))
-            {
                 return (null, null, null, "File not found.");
-            }
 
             var keyString = _configuration["FileEncrypt:key"];
             if (string.IsNullOrEmpty(keyString))
@@ -268,12 +318,12 @@ namespace Nastya_Archiving_project.Services.files
 
             try
             {
-                // Decrypt the file
-                MemoryStream decryptedStream = await DecryptFileAsync(filePath, key);
+                // Decrypt using helper
+                var decryptedStream = await DecryptFileAsync(filePath, key);
                 decryptedStream.Position = 0;
 
-                // If the file is compressed (ends with .gz), decompress it using the extension method
-                if (Path.GetExtension(filePath).Equals(".gz", StringComparison.OrdinalIgnoreCase))
+                // Decompress if needed using helper
+                if (IsGZipFile(filePath))
                 {
                     var decompressedStream = await DecompressGZipAsync(decryptedStream);
                     decompressedStream.Position = 0;
@@ -286,6 +336,12 @@ namespace Nastya_Archiving_project.Services.files
             {
                 return (null, null, null, $"Error reading or decrypting the file: {ex.Message}");
             }
+        }
+
+        // Helper to check if file is GZip
+        private static bool IsGZipFile(string filePath)
+        {
+            return Path.GetExtension(filePath).Equals(".gz", StringComparison.OrdinalIgnoreCase);
         }
 
         // Helper to get content type (you can move this to a utility class if needed)
@@ -305,14 +361,15 @@ namespace Nastya_Archiving_project.Services.files
         {
             var userId = (await _systemInfo.GetUserId()).Id;
             if (string.IsNullOrEmpty(userId))
-            {
                 return (null, "User ID is not available.");
-            }
 
             var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
+            if (user == null)
+                return (null, "User not found.");
 
             var fileList = new List<(string filePath, string fileType, string? notice)>();
-            var wwwrootDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", $"{_encryptionServices.DecryptString256Bit(user.Realname)}");
+            var userFolder = _encryptionServices.DecryptString256Bit(user.Realname);
+            var wwwrootDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", userFolder);
             if (!Directory.Exists(wwwrootDir))
                 Directory.CreateDirectory(wwwrootDir);
 
@@ -320,8 +377,14 @@ namespace Nastya_Archiving_project.Services.files
             {
                 var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
                 var isPdf = extension == ".pdf" && file.ContentType == "application/pdf";
-                var isWord = (extension == ".docx" && file.ContentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                          || (extension == ".doc" && file.ContentType == "application/msword");
+                // Accept common Word MIME types and fallback to extension check
+                var isWord = (extension == ".docx" &&
+                                (file.ContentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+                                 file.ContentType == "application/octet-stream" ||
+                                 file.ContentType == "application/zip")) ||
+                             (extension == ".doc" &&
+                                (file.ContentType == "application/msword" ||
+                                 file.ContentType == "application/octet-stream"));
 
                 string fileType;
                 string? notice = null;
@@ -340,21 +403,20 @@ namespace Nastya_Archiving_project.Services.files
                     return (null, $"File '{file.FileName}' is not a PDF or Word document.");
                 }
 
-                var newFileName = $"{file.FileName}";
-                var newFilePath = Path.Combine(wwwrootDir, newFileName);
+                // Sanitize and uniquify file name
+                var safeFileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}_{Guid.NewGuid()}{extension}";
+                var newFilePath = Path.Combine(wwwrootDir, safeFileName);
 
                 await using (var stream = new FileStream(newFilePath, FileMode.Create))
                 {
                     await file.CopyToAsync(stream);
                 }
 
-                var relativePath = Path.Combine("Attachments", $"{_encryptionServices.DecryptString256Bit(user.Realname)}", newFileName).Replace("\\", "/");
+                var relativePath = Path.Combine("Attachments", userFolder, safeFileName).Replace("\\", "/");
                 fileList.Add((relativePath, fileType, notice));
             }
             return (fileList, null);
         }
-
-
 
         public async Task<(Stream? fileStream, string? contentType, string? error)> GetFileAsync(string relativePath)
         {
@@ -420,7 +482,25 @@ namespace Nastya_Archiving_project.Services.files
                 return (new BadRequestObjectResult(ex.Message), ex.Message);
             }
         }
-
+        public void MergeDocxFiles(string[] sourceFiles, string outputFile)
+        {
+            File.Copy(sourceFiles[0], outputFile, true);
+            using (WordprocessingDocument mainDoc = WordprocessingDocument.Open(outputFile, true))
+            {
+                var mainBody = mainDoc.MainDocumentPart.Document.Body;
+                for (int i = 1; i < sourceFiles.Length; i++)
+                {
+                    using (WordprocessingDocument tempDoc = WordprocessingDocument.Open(sourceFiles[i], true))
+                    {
+                        foreach (var element in tempDoc.MainDocumentPart.Document.Body.Elements())
+                        {
+                            mainBody.Append(element.CloneNode(true));
+                        }
+                    }
+                }
+                mainDoc.MainDocumentPart.Document.Save();
+            }
+        }
         public async Task<string> GetHtml(MultiFileFormViewForm filesForm)
         {
             var path = Path.Combine(Directory.GetCurrentDirectory(), "Forms", "documents_form.html");
@@ -502,7 +582,7 @@ namespace Nastya_Archiving_project.Services.files
                 await input.CopyToAsync(gzipStream);
             }
         }
-
+        //Method To DeCompress a stream To GZip Format
         private static async Task<MemoryStream> DecompressGZipAsync(Stream compressedStream)
         {
             var decompressedStream = new MemoryStream();
@@ -512,6 +592,30 @@ namespace Nastya_Archiving_project.Services.files
             }
             decompressedStream.Position = 0;
             return decompressedStream;
+        }
+
+        // Compress a stream to GZip format
+        private async Task CompressToGZipAsync(Stream input, Stream output)
+        {
+            using (var gzipStream = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+            {
+                await input.CopyToAsync(gzipStream);
+            }
+        }
+
+        // Encrypt a stream and write to a file using AES
+        private async Task EncryptStreamToFileAsync(Stream input, string filePath, byte[] key, byte[] iv)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = key;
+                aes.IV = iv;
+                using var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+                using var outFileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                await outFileStream.WriteAsync(aes.IV, 0, aes.IV.Length);
+                using var cryptoStream = new CryptoStream(outFileStream, encryptor, CryptoStreamMode.Write);
+                await input.CopyToAsync(cryptoStream);
+            }
         }
     }
 }
