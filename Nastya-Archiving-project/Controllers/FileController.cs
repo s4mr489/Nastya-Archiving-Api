@@ -29,7 +29,7 @@ namespace Nastya_Archiving_project.Controllers
         [HttpPost("Upload-multyi-TempFile-WithType")]
         public async Task<IActionResult> UploadWithType([FromForm] MultiFileFormViewForm filesForm)
         {
-            var (files, error) = await _fileServices.UploadWithType(filesForm);
+            var (files, error) = await _fileServices.uploadWithType(filesForm);
             if (error != null)
                 return BadRequest(error);
             return Ok(files);

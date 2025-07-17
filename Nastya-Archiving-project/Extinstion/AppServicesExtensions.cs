@@ -13,6 +13,7 @@ using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.files;
 using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.Permmsions;
+using Nastya_Archiving_project.Services.search;
 using Nastya_Archiving_project.Services.SystemInfo;
 using Nastya_Archiving_project.Services.userInterface;
 using Nastya_Archiving_project.Swagger;
@@ -115,6 +116,7 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<IEncryptionServices, EncryptionServices>();
             services.AddScoped<IFilesServices, FileServices>();
             services.AddScoped<InfrastructureServices>();
+            services.AddScoped<ISearchServices , SearchServices>();
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();
 

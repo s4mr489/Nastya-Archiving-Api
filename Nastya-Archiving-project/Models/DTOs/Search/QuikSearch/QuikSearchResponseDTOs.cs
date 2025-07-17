@@ -1,0 +1,15 @@
+﻿namespace Nastya_Archiving_project.Models.DTOs.Search.QuikSearch
+{
+    public class QuikSearchResponseDTOs
+    {
+        public int Id { get; set; }
+        public string? file { get; set; }
+        public string? docsNumber { get; set; }
+        public DateOnly? docsDate { get; set; }
+        public DateTime? editDate { get; set; }
+        public string? subject { get; set; }
+        public string? source { get; set; }
+        public string? ReferenceTo { get; set; }
+        public string? fileType { get; set; }
+    }
+}
