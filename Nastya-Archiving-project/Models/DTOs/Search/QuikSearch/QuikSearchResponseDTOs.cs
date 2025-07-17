@@ -2,6 +2,7 @@
 {
     public class QuikSearchResponseDTOs
     {
+        public string? systemId { get; set; }
         public int Id { get; set; }
         public string? file { get; set; }
         public string? docsNumber { get; set; }
