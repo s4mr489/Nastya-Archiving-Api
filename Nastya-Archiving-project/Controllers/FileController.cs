@@ -58,6 +58,17 @@ namespace Nastya_Archiving_project.Controllers
             return File(mergedFile, "application/pdf");
         }
 
+        [HttpPut("merge-word")]
+        public async Task<IActionResult> MergeDocx([FromForm] List<IFormFile> files)
+        {
+            var (mergedFile, fileName, error) = await _fileServices.MergeDocxFilesAsync(files);
+            if (mergedFile == null)
+                return BadRequest(error);
+
+            return File(mergedFile, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName ?? "merged.docx");
+        }
+
+
         [HttpGet("download")]
         public async Task<IActionResult> Download([FromQuery] string relativePath)
         {
