@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace Nastya_Archiving_project.Models;
 
 public partial class Usersgroup
 {
-    public int Id { get; set; }
+    [Key]
+    public int groupid { get; set; }
 
     public string? Groupdscrp { get; set; }
 

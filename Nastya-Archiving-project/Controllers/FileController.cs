@@ -8,7 +8,7 @@ namespace Nastya_Archiving_project.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
+    [Authorize(Roles = "Admin,User")]
     public class FileController : ControllerBase
     {
         private readonly IFilesServices _fileServices;
@@ -91,6 +91,24 @@ namespace Nastya_Archiving_project.Controllers
             var (file, error) = await _fileServices.SaveToWwwrootAsync(fileForm);
             if (error != null) return BadRequest(error);
             return Ok(file);
+        }
+
+        [HttpGet("get-Temp-file")]
+        public async Task<IActionResult> GetFile([FromQuery] string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return BadRequest("File path is required.");
+
+            var result = await _fileServices.GetFileAsync(filePath);
+
+            if (result.error != null)
+                return NotFound(result.error);
+
+            if (result.fileStream == null)
+                return NotFound("File not found.");
+
+            return File(result.fileStream, result.contentType ?? "application/octet-stream");
+
         }
     }
 }

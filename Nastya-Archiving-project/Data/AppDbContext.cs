@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.Entity;
@@ -89,6 +90,7 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<TMailTarget> TMailTargets { get; set; }
 
     public virtual DbSet<TWritedDocument> TWritedDocuments { get; set; }
+    public virtual DbSet<T_JoinedDoc> JoinedDocs { get; set; }
 
     public virtual DbSet<TmpCorroptedDocument> TmpCorroptedDocuments { get; set; }
 
@@ -785,7 +787,7 @@ public partial class AppDbContext : DbContext
         {
             entity.ToTable("usersgroups");
 
-            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.groupid).HasColumnName("groupid");
             entity.Property(e => e.AccountUnitId).HasColumnName("AccountUnitID");
             entity.Property(e => e.Editor).HasMaxLength(172);
             entity.Property(e => e.Groupdscrp)
@@ -970,6 +972,17 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.DepartId).HasColumnName("DepartID");
             entity.Property(e => e.Dscrp).HasMaxLength(50);
             entity.Property(e => e.Structures).HasMaxLength(512);
+        });
+
+
+        modelBuilder.Entity<T_JoinedDoc>(entity =>
+        {
+            entity.ToTable("T_JoinedDoc"); // <-- Changed from "JoinedDocs" to "T_JoinedDoc"
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.ParentRefrenceNO).HasMaxLength(100);
+            entity.Property(e => e.ChildRefrenceNo).HasMaxLength(100);
+            entity.Property(e => e.BreafcaseNo);
         });
 
         OnModelCreatingPartial(modelBuilder);

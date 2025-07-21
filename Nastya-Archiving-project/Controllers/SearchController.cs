@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
+using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Services.search;
 
 namespace Nastya_Archiving_project.Controllers
@@ -40,6 +41,34 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> DeletedDocsSearch([FromQuery]SearchDeletedDocsViewForm search)
         {
             var result = await _searchServices.DeletedDocsSearch(search);
+            return Ok(result);
+        }
+
+        [HttpGet("arciving-docs")]
+        public async Task<IActionResult> GetArcivingDocs(
+        string? docsNumber,
+        string? subject,
+        string? source,
+        string? referenceTo,
+        int? fileType,
+        DateOnly? from,
+        DateOnly? to,
+        int pageNumber = 1,
+        int pageSize = 20)
+        {
+            var (docs, error) = await _searchServices.GetArcivingDocsAsync(
+                docsNumber, subject, source, referenceTo, fileType, from, to, pageNumber, pageSize);
+
+            if (error != null)
+                return BadRequest(new { error });
+
+            return Ok(docs);
+        }
+
+        [HttpGet("permission-search")]
+        public async Task<IActionResult> PermissionSearch([FromQuery] UsersSearchViewForm search)
+        {
+            var result = await _searchServices.PermissionSearch(search);
             return Ok(result);
         }
     }

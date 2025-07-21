@@ -276,7 +276,7 @@ namespace Nastya_Archiving_project.Services.auth
 
             var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == user.BranchId);
             var depart = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.DepariId);
-            var group  = await _context.Usersgroups.FirstOrDefaultAsync(g => g.Id == user.GroupId);
+            var group  = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == user.GroupId);
             var jobTitle = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == user.JobTitle);
             var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.AccountUnitId);
 

@@ -29,7 +29,7 @@ namespace Nastya_Archiving_project.Services.Permmsions
                 var groupPermission = new Userspermission
                 {
                     Pageid = permission.Id.ToString(),
-                    Groupid = group.Id
+                    Groupid = group.groupid
                 };
                 _context.Userspermissions.Add(groupPermission);
             }
@@ -45,7 +45,7 @@ namespace Nastya_Archiving_project.Services.Permmsions
 
             // Fetch all permissions for the group, then filter in memory
             var permissions = await _context.Userspermissions
-                .Where(p => p.Groupid == group.Id)
+                .Where(p => p.Groupid == group.groupid)
                 .ToListAsync();
 
             var permissionsToRemove = permissions
@@ -65,7 +65,7 @@ namespace Nastya_Archiving_project.Services.Permmsions
             if (group == null)
                 return (null, "404"); // GroupId Not Found
             var permissions = await _context.Userspermissions
-                .Where(p => p.Groupid == group.Id && p.Pageid != null)
+                .Where(p => p.Groupid == group.groupid && p.Pageid != null)
                 .Select(p => p.Pageid)
                 .ToListAsync();
             if (permissions.Count == 0)

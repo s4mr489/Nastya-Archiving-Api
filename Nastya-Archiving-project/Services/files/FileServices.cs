@@ -1,6 +1,7 @@
 ﻿using DocumentFormat.OpenXml.Packaging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Identity.Client;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.file;
 using Nastya_Archiving_project.Services.encrpytion;
@@ -43,7 +44,9 @@ namespace Nastya_Archiving_project.Services.files
             if (user == null)
                 return (null, 0, "User not found.");
 
-            var group = _context.Usersgroups.FirstOrDefault(g => g.Id == user.GroupId);
+            var group = _context.Usersgroups.FirstOrDefault(g => g.groupid == user.GroupId);
+            if(group == null)
+                return (null, 0, "User group not found.");
             var depr = _context.GpDepartments.FirstOrDefault(d => d.Id == user.DepariId);
 
             var file = fileForm.File;
@@ -132,17 +135,25 @@ namespace Nastya_Archiving_project.Services.files
         // Removes a file from the user's temp folder
         public bool RemoveTempUserFile(string fileName)
         {
-            var user = _systemInfo.GetUserId().Result.Id;
-            var realName = _context.Users.FirstOrDefault(u => u.Id.ToString() == user)?.Realname ?? "UnknownUser";
-
             if (string.IsNullOrWhiteSpace(fileName))
                 return false;
 
-            //var fullPath = $"C:/Users/gcc/source/repos/archiving_system_api/archiving_system_api/wwwroot/{fileName}";
-            var fullPath = $"{Directory.GetCurrentDirectory()}/wwwroot/{fileName}";
-            var safeRealName = string.Concat(realName.Split(Path.GetInvalidFileNameChars()));
-            var tempDir = Path.Combine(Path.GetTempPath(), "ArchivingTempFiles", safeRealName);
-            var filePath = Path.Combine(tempDir, fullPath);
+            // Get user info
+            var userId = _systemInfo.GetUserId().Result.Id;
+            var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
+            if (user == null)
+                return false;
+
+            var decryptedRealName = _encryptionServices.DecryptString256Bit(user.Realname ?? "UnknownUser");
+            var userName = user.UserName ?? "UnknownUser";
+
+            // Build the full path: wwwroot/Attachments/{decryptedRealName}/{userName}/{fileName}
+            var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", decryptedRealName);
+            var filePath = Path.Combine(wwwrootPath, fileName);
+
+            // Optional: Prevent directory traversal
+            if (fileName.Contains("..") || Path.IsPathRooted(fileName))
+                return false;
 
             if (File.Exists(filePath))
             {
@@ -427,7 +438,8 @@ namespace Nastya_Archiving_project.Services.files
             try
             {
                 // Convert relative path to full path
-                var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", $"{user.Realname}", relativePath);
+                var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", $"{_encryptionServices.DecryptString256Bit(user.Realname)
+                    }", relativePath);
 
                 if (!System.IO.File.Exists(fullPath))
                 {

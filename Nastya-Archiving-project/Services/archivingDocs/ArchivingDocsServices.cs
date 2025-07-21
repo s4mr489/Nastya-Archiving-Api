@@ -4,9 +4,12 @@ using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Identity.Client;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs;
+using Nastya_Archiving_project.Models.DTOs.ArchivingDocs.JoinedDocs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs.Linkdocuments;
 using Nastya_Archiving_project.Models.DTOs.file;
+using Nastya_Archiving_project.Models.Entity;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.files;
 using Nastya_Archiving_project.Services.infrastructure;
@@ -104,11 +107,62 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             return (response, null);
         }
 
-        public Task<(ArchivingDocsResponseDTOs? docs, string? error)> EditArchivingDocs(ArchivingDocsViewForm req, int Id)
+
+        //edit the arhciving docs by Id 
+        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> EditArchivingDocs(ArchivingDocsViewForm req, int Id, FileViewForm? file)
         {
-            throw new NotImplementedException();
+            var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(e => e.Id == Id);
+            if (docs == null)
+                return (null, "Document not found.");
+
+            var claimsIdentity = (ClaimsIdentity)_httpContext.HttpContext.User.Identity;
+            string? branchId = claimsIdentity.FindFirst("BranchId")?.Value;
+            string? departId = claimsIdentity.FindFirst("DepartId")?.Value;
+            string? accountUnitId = claimsIdentity.FindFirst("AccountUnitId")?.Value;
+            string? fileType = claimsIdentity.FindFirst("FileType")?.Value;
+
+            var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
+            if (docTypeResponse.docsType == null)
+                return (null, "Invalid document type.");
+            var SupDocTypeResponse = await _archivingSettingsServicers.GetSupDocsTypeById(req.SubDocType);
+            if(SupDocTypeResponse.supDocsType == null)
+                return (null, "Invalid sub-document type.");
+            // Update properties
+            docs.DocNo = req.DocNo;
+            docs.DocDate = req.DocDate;
+            docs.DocSource = req.DocSource;
+            docs.DocTarget = req.DocTarget;
+            docs.DocTitle = req.DocTitle;
+            docs.DocType = docTypeResponse.docsType.Id;
+            docs.SubDocType = SupDocTypeResponse.supDocsType.Id;
+            docs.DepartId = departId != null ? int.Parse(departId) : null;
+            docs.BranchId = branchId != null ? int.Parse(branchId) : null;
+            docs.AccountUnitId = accountUnitId != null ? int.Parse(accountUnitId) : null;
+            docs.BoxfileNo = req.BoxfileNo;
+            docs.EditDate = DateTime.UtcNow;
+            docs.Editor = (await _systemInfoServices.GetRealName()).RealName;
+            docs.Ipaddress = (await _systemInfoServices.GetUserIpAddress());
+            docs.Subject = req.Subject;
+            docs.ReferenceTo = req.ReferenceTo;
+            docs.Notes = req.Notes;
+            docs.WordsTosearch = req.WordsTosearch;
+
+            if (file != null)
+            {
+                var uploadResult = await _fileServices.upload(file);
+                docs.ImgUrl = uploadResult.file;
+                docs.DocSize = uploadResult.fileSize;
+                docs.FileType = fileType != null ? int.Parse(fileType) : null;
+            }
+
+            await _context.SaveChangesAsync();
+
+            var response = _mapper.Map<ArchivingDocsResponseDTOs>(docs);
+            return (response, null);
         }
 
+
+        //delete the archiving docs by Id
         public async Task<string> DeleteArchivingDocs(int Id)
         {
             var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.Id == Id);
@@ -157,16 +211,22 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             return ("200");//remove successfully
         }
 
+
+        // that implementation used to get the next reference number
         public async Task<string> GetNextRefernceNo()
         {
             var refe = await _systemInfoServices.GetLastRefNo();
             return (refe);
         }
 
+
+        //not implemented yet
         public Task<(LinkdocumentsResponseDTOs? docs, string? error)> Linkdocuments(LinkdocumentsViewForm req, int Id)
         {
             throw new NotImplementedException();
         }
+
+        // that implementation used to get all the archiving docs
         public Task<(List<ArchivingDocsResponseDTOs>? docs, string? error)> GetAllArchivingDocs()
         {
             throw new NotImplementedException();
@@ -179,7 +239,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             throw new NotImplementedException();
         }
 
-
+        // that implementation used to Restore the docs from the archive
         public async Task<string> RestoreDeletedDocuments(int Id)
         {
             var docs = await _context.ArcivingDocsDeleteds.FirstOrDefaultAsync(d => d.Id == Id);
@@ -226,6 +286,37 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             return "200";// restore Docs Successfully
 
+        }
+
+        public async Task<BaseResponseDTOs> JoinDocsFromArchive(JoinedDocsViewForm req)
+        {
+            var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.RefrenceNo == req.parentReferenceId);
+            if (docs == null)
+                return new BaseResponseDTOs(null, 404, "not Found Parent Docs");
+
+            var joineDocs = await _context.JoinedDocs.FirstOrDefaultAsync(d => d.ParentRefrenceNO == req.parentReferenceId && d.ChildRefrenceNo == req.childReferenceId);
+            if (joineDocs != null)
+                return new BaseResponseDTOs(null, 400, "The Docs Already joind");
+
+
+            var joinedDocs = new T_JoinedDoc
+            {
+                BreafcaseNo = req.BreafcaseNo,
+                ParentRefrenceNO = req.parentReferenceId,
+                ChildRefrenceNo = req?.childReferenceId,
+            };
+
+            var response = new JoinedDocsResponseDTOs
+            {
+                Breifexplanation = joinedDocs.BreafcaseNo,
+                ReferenceTo = joinedDocs.ParentRefrenceNO,
+                RefrenceNo = joinedDocs.ChildRefrenceNo,
+            };
+
+            _context.JoinedDocs.Add(joinedDocs);
+            await _context.SaveChangesAsync();
+
+            return new BaseResponseDTOs(response, 200, "Docs Joined Successfully");
         }
     }
 }

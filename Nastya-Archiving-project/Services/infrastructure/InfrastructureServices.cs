@@ -147,7 +147,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
             var response = new GroupsResponseDTOs
             {
-                groupId = newGroup.Id,
+                groupId = newGroup.groupid,
                 groupDscrp = _encryptionServices.EncryptString256Bit(newGroup.Groupdscrp),
                 Editor = newGroup.Editor,
                 EditDate = newGroup.EditDate,
@@ -166,7 +166,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 return (null, userId.error);
 
             // Find the existing group by Id
-            var group = await _context.Usersgroups.FirstOrDefaultAsync(e => e.Id == Id);
+            var group = await _context.Usersgroups.FirstOrDefaultAsync(e => e.groupid == Id);
             if (group == null)
                 return (null, "404");
 
@@ -187,7 +187,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
             var response = new GroupsResponseDTOs
             {
-                groupId = group.Id,
+                groupId = group.groupid,
                 groupDscrp = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 Editor = group.Editor,
                 EditDate = group.EditDate,
@@ -205,7 +205,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
             return (groups.Select(e => new GroupsResponseDTOs
             {
-                groupId = e.Id,
+                groupId = e.groupid,
                 groupDscrp = _encryptionServices.DecryptString256Bit(e.Groupdscrp),
                 Editor = e.Editor,
                 EditDate = e.EditDate,
@@ -216,13 +216,13 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<(GroupsResponseDTOs? group, string? error)> GetGrouptById(int groupId)
         {
-            var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.Id == groupId);
+            var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == groupId);
             if(group == null)
                 return (null, "404"); // Group not found
 
             var response = new GroupsResponseDTOs
             {
-                groupId = group.Id,
+                groupId = group.groupid,
                 groupDscrp = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 Editor = group.Editor,
                 EditDate = group.EditDate,
@@ -233,7 +233,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<string> DeleteGroup(int groupId)
         {
-             var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.Id == groupId);
+             var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == groupId);
             if (group == null)
                 return "404"; // Group not found
 

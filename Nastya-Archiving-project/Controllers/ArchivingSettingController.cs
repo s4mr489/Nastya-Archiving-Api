@@ -13,7 +13,7 @@ using Nastya_Archiving_project.Services.encrpytion;
 
 namespace Nastya_Archiving_project.Controllers
 {
-    [Authorize(Roles = "Admin,SuperAdmin,ArchivingManager,ArchivingStaff")]
+    [Authorize(Roles = "Admin,User")]
     [Route("api/[controller]")]
     [ApiController]
     public class ArchivingSettingController : ControllerBase
