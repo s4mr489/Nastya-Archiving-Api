@@ -3,6 +3,6 @@
     public class ArchivingPermissionResponseDTOs
     {
         public int? archivingPointId { get; set; }
-        public int? archivingPointDscrp { get; set; }
+        public string? archivingPointDscrp { get; set; }
     }
 }

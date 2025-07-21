@@ -329,64 +329,64 @@ namespace Nastya_Archiving_project.Services.search
         //}
 
 
-        //public async Task<BaseResponseDTOs> PermissionSearch(UsersSearchViewForm search)
-        //{
-        //    var query = _context.Users.AsQueryable();
+        public async Task<BaseResponseDTOs> PermissionSearch(UsersSearchViewForm search)
+        {
+            var query = _context.Users.AsQueryable();
 
-        //    // Filtering by account unit, branch, department
-        //    if (search.accountUnitId.HasValue)
-        //        query = query.Where(d => d.AccountUnitId == search.accountUnitId.Value);
-        //    if (search.branchId.HasValue)
-        //        query = query.Where(d => d.BranchId == search.branchId.Value);
-        //    if (search.departmentId.HasValue)
-        //        query = query.Where(d => d.DepariId == search.departmentId.Value);
-
-
-        //    int pageNumber = search.pageNumber != null && search.pageNumber > 0 ? search.pageNumber.Value : 1;
-        //    int pageSize = search.pageSize != null && search.pageSize > 0 ? search.pageSize.Value : 20;
+            // Filtering by account unit, branch, department
+            if (search.accountUnitId.HasValue)
+                query = query.Where(d => d.AccountUnitId == search.accountUnitId.Value);
+            if (search.branchId.HasValue)
+                query = query.Where(d => d.BranchId == search.branchId.Value);
+            if (search.departmentId.HasValue)
+                query = query.Where(d => d.DepariId == search.departmentId.Value);
 
 
-        //    var users = await query
-        //    .OrderByDescending(d => d.Id)
-        //    .Skip((pageNumber - 1) * pageSize)
-        //    .Take(pageSize)
-        //    .ToListAsync();
+            int pageNumber = search.pageNumber != null && search.pageNumber > 0 ? search.pageNumber.Value : 1;
+            int pageSize = search.pageSize != null && search.pageSize > 0 ? search.pageSize.Value : 20;
 
-        //    var userIds = users.Select(u => u.Id).ToList();
 
-        //    var optionPermissions = await _context.UsersOptionPermissions
-        //        .Where(p => userIds.Contains(p.UserId ?? 0))
-        //        .ToListAsync();
+            var users = await query
+            .OrderByDescending(d => d.Id)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
 
-        //    var archivingPoints = await _context.UsersArchivingPointsPermissions
-        //        .Where(p => userIds.Contains(p.UserId ?? 0))
-        //        .ToListAsync();
-        //    var archivingPointIds = archivingPoints
-        //        .Select(p => p.ArchivingpointId ?? 0)
-        //        .ToList();
+            var userIds = users.Select(u => u.Id).ToList();
 
-        //    var archivingPointNames = await _context.PArcivingPoints
-        //        .Where(a => archivingPointIds.Contains(a.Id))
-        //        .ToListAsync();
-        //    var result = users.Select(d => new UsersSearchResponseDTOs
-        //    {
-        //        userId = d.Id,
-        //        fileType = d.AsWfuser,
-        //        usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == d.Id),
-        //        archivingPoint = archivingPoints
-        //            .Where(p => p.UserId == d.Id)
-        //            .Select(p => new ArchivingPermissionResponseDTOs
-        //            {
-        //                archivingPointId = p.ArchivingpointId ?? 0,
-        //                archivingPointDscrp = archivingPointNames
-        //            .Where(a => a.Id == d.Id)
-        //            .Select(a => a.Dscrp)
-        //            .FirstOrDefault()
-        //            })
-        //            .ToList(),
-        //    }).ToList();
+            var optionPermissions = await _context.UsersOptionPermissions
+                .Where(p => userIds.Contains(p.UserId ?? 0))
+                .ToListAsync();
 
-        //    return new BaseResponseDTOs(result, 200);
-        //}
+            var archivingPoints = await _context.UsersArchivingPointsPermissions
+                .Where(p => userIds.Contains(p.UserId ?? 0))
+                .ToListAsync();
+            var archivingPointIds = archivingPoints
+                .Select(p => p.ArchivingpointId ?? 0)
+                .ToList();
+
+            var archivingPointNames = await _context.PArcivingPoints
+                .Where(a => archivingPointIds.Contains(a.Id))
+                .ToListAsync();
+            var result = users.Select(d => new UsersSearchResponseDTOs
+            {
+                userId = d.Id,
+                fileType = d.AsWfuser,
+                usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == d.Id),
+                archivingPoint = archivingPoints
+                    .Where(p => p.UserId == d.Id)
+                    .Select(p => new ArchivingPermissionResponseDTOs
+                    {
+                        archivingPointId = p.ArchivingpointId ?? 0,
+                        archivingPointDscrp = archivingPointNames
+                    .Where(a => a.Id == p.ArchivingpointId)
+                    .Select(a => a.Dscrp)
+                    .FirstOrDefault()
+                    })
+                    .ToList(),
+            }).ToList();
+
+            return new BaseResponseDTOs(result, 200);
+        }
     }
 }
