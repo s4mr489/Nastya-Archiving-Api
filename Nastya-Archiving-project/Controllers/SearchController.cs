@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
@@ -65,11 +67,13 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(docs);
         }
 
-        [HttpGet("permission-search")]
-        public async Task<IActionResult> PermissionSearch([FromQuery] UsersSearchViewForm search)
-        {
-            var result = await _searchServices.PermissionSearch(search);
-            return Ok(result);
-        }
+
+        //Not Used anyMore 
+        //[HttpGet("permission-search")]
+        //public async Task<IActionResult> PermissionSearch([FromQuery] UsersSearchViewForm search)
+        //{
+        //    var result = await _searchServices.PermissionSearch(search);
+        //    return Ok(result);
+        //}
     }
 }

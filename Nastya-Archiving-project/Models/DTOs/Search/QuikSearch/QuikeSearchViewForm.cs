@@ -13,14 +13,16 @@ namespace Nastya_Archiving_project.Models.DTOs.Search.QuikSearch
         public bool? editDate { get; set; }
         public DateTime? from { get; set; }
         public DateTime? to { get; set; }
+        public int? departId { get; set; }
         public string? subject { get; set; }
-        public string? docsType { get; set; }
-        public string? supDocsType { get; set; }
-        public string? source { get; set; }
-        public string? ReferenceTo { get; set; }
+        public int? docsType { get; set; }
+        public int? supDocsType { get; set; }
+        public int? source { get; set; }
+        public int? ReferenceTo { get; set; }
         public string? wordToSearch { get; set; } 
         public string? boxFile { get; set; }
         public EFileType? fileType { get; set; }
+        public bool exactMatch { get; set; } = false;
         public int pageNumber { get; set; }
         public int pageSize { get; set; }
     }

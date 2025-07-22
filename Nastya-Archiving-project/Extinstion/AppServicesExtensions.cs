@@ -16,6 +16,7 @@ using Nastya_Archiving_project.Services.Permmsions;
 using Nastya_Archiving_project.Services.search;
 using Nastya_Archiving_project.Services.SystemInfo;
 using Nastya_Archiving_project.Services.userInterface;
+using Nastya_Archiving_project.Services.usersPermission;
 using Nastya_Archiving_project.Swagger;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -117,6 +118,7 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<IFilesServices, FileServices>();
             services.AddScoped<InfrastructureServices>();
             services.AddScoped<ISearchServices , SearchServices>();
+            services.AddScoped<IUserPermissionsServices, UserPermissionServices>();
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();
 

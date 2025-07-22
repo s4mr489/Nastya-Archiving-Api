@@ -10,7 +10,10 @@ namespace Nastya_Archiving_project.Models.DTOs.Search.UsersSearch
 
         public int? pageSize { get; set; }
         public int? pageNumber { get; set; }
+    }
 
-
+    public class UsersViewForm
+    {
+        public int? Id { get; set; }
     }
 }

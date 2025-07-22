@@ -22,7 +22,7 @@ namespace Nastya_Archiving_project.Services.search
                int pageNumber = 1,
                int pageSize = 20);
         Task<List<BaseResponseDTOs>> DeletedDocsSearch(SearchDeletedDocsViewForm search);
-
+        //Note: this method is Nout used in the current codebase, but it is kept for case if we need it .
         Task<BaseResponseDTOs> PermissionSearch(UsersSearchViewForm search);
     }
 }

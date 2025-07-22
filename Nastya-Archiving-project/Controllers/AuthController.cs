@@ -142,5 +142,15 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(user);
         }
 
+
+        [HttpGet("Depart-for-user/{userId}")]
+        public async Task<IActionResult> GetDepartForUsers(int userId)
+        {
+            var response = await _authServices.GetDepartForUsers(userId);
+            if (response == null || response.StatusCode == 404)
+                return NotFound(response);
+
+            return Ok(response);
+        }
     }
 }

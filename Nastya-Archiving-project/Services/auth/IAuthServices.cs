@@ -1,4 +1,5 @@
 ﻿using Nastya_Archiving_project.Helper;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Auth;
 using System.Runtime.CompilerServices;
 
@@ -13,5 +14,6 @@ namespace Nastya_Archiving_project.Services.auth
         Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(int pageNumber = 1, int pageSize = 10);
         Task<(UsersResponseDTOs? user, string? error)> SearchUsers(string? realName ,string? userName);
         Task<(RegisterResponseDTOs? user, string? error)> EditUser(int id, RegisterViewForm form, bool IsAdmin);
+        Task<BaseResponseDTOs> GetDepartForUsers(int userId);
     }
 }

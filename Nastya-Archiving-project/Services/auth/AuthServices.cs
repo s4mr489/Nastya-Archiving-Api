@@ -1,11 +1,14 @@
 ﻿using AutoMapper;
 using iText.StyledXmlParser.Css.Resolve.Shorthand.Impl;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Scaffolding;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Extinstion;
 using Nastya_Archiving_project.Helper;
 using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Auth;
+using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.infrastructure;
@@ -292,6 +295,38 @@ namespace Nastya_Archiving_project.Services.auth
                 permission = _encryptionServices.DecryptString256Bit(user.Adminst),
             };
             return (userDto, null);
+        }
+
+        public async Task<BaseResponseDTOs> GetDepartForUsers(int userId)
+        {
+            // Get all archiving point permissions for the user
+            var archivingPoints = await _context.UsersArchivingPointsPermissions
+                .Where(p => p.UserId == userId)
+                .ToListAsync();
+
+            if (archivingPoints == null || archivingPoints.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No archiving points found for the user.");
+
+            var archivingPointIds = archivingPoints
+                .Select(p => p.ArchivingpointId ?? 0)
+                .ToList();
+
+            var archivingPointNames = await _context.PArcivingPoints
+                .Where(a => archivingPointIds.Contains(a.Id))
+                .ToListAsync();
+
+            var result = archivingPoints
+                .Select(p => new ArchivingPermissionResponseDTOs
+                {
+                    archivingPointId = p.ArchivingpointId ?? 0,
+                    archivingPointDscrp = archivingPointNames
+                        .Where(a => a.Id == p.ArchivingpointId)
+                        .Select(a => a.Dscrp)
+                        .FirstOrDefault()
+                })
+                .ToList();
+
+            return new BaseResponseDTOs(result, 200);
         }
     }
 }
