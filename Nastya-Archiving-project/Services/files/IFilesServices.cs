@@ -37,5 +37,7 @@ namespace Nastya_Archiving_project.Services.files
         long GetFileSize(IFormFile file);
         //this is used to merge docx files into one file
         Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxFilesAsync(List<IFormFile> files);
+        //this is used to remove all the temporary files for a user
+        Task<(int removedCount, int totalCount)> RemoveAllTempFolderFilesAsync();
     }
 }
