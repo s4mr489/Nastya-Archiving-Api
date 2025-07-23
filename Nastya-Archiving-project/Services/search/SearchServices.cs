@@ -418,7 +418,6 @@ namespace Nastya_Archiving_project.Services.search
             var result = await pagedQuery
                 .Select(d => new DeletedDocsResponseDTOs
                 {
-                    Id = d.Id,
                     systemId = d.RefrenceNo,
                     docNO = d.DocNo,
                     docDate = d.DocDate,

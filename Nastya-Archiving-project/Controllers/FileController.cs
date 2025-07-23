@@ -110,13 +110,5 @@ namespace Nastya_Archiving_project.Controllers
             return File(result.fileStream, result.contentType ?? "application/octet-stream");
 
         }
-
-
-        [HttpDelete("tempfiles/remove-all")]
-        public async Task<IActionResult> RemoveAllTempFiles()
-        {
-            var (removedCount, totalCount) = await _fileServices.RemoveAllTempFolderFilesAsync();
-            return Ok(new { removedCount, totalCount });
-        }
     }
 }

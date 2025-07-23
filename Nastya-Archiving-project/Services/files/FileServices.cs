@@ -131,36 +131,6 @@ namespace Nastya_Archiving_project.Services.files
 
             return files;
         }
-        public async Task<(int removedCount, int totalCount)> RemoveAllTempFolderFilesAsync()
-        {
-            var userId = (await _systemInfo.GetUserId()).Id;
-            var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
-            var userFolder = _encryptionServices.DecryptString256Bit(user?.Realname) ?? "UnknownUser";
-
-            var tempDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", userFolder);
-            if (!Directory.Exists(tempDir))
-                return (0, 0);
-
-            var files = Directory.GetFiles(tempDir);
-            int total = files.Length;
-            int removed = 0;
-
-            // Use parallel deletion for speed if there are many files
-            Parallel.ForEach(files, file =>
-            {
-                try
-                {
-                    File.Delete(file);
-                    Interlocked.Increment(ref removed);
-                }
-                catch
-                {
-                    // Optionally log or handle errors
-                }
-            });
-
-            return (removed, total);
-        }
 
         // Removes a file from the user's temp folder
         public bool RemoveTempUserFile(string fileName)
