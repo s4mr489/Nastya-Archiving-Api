@@ -115,18 +115,43 @@ namespace Nastya_Archiving_project.Services.files
             return file.Length;
         }
 
-        public async Task<List<string>> GetTempFolderFilesAsync()
+        public async Task<bool> RemoveAllTempFolderFilesAsync()
         {
             var userId = (await _systemInfo.GetUserId()).Id;
             var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
-            var userFolder = _encryptionServices.DecryptString256Bit(user?.Realname )?? "UnknownUser";
+            var userFolder = _encryptionServices.DecryptString256Bit(user?.Realname) ?? "UnknownUser";
 
             var tempDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", userFolder);
             if (!Directory.Exists(tempDir))
-                return new List<string>();
+                return true; // Nothing to delete
+
+            try
+            {
+                var files = Directory.GetFiles(tempDir);
+                Parallel.ForEach(files, file =>
+                {
+                    try { File.Delete(file); } catch { /* Ignore errors for individual files */ }
+                });
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<List<(string FileName, long FileSize)>> GetTempFolderFilesAsync()
+        {
+            var userId = (await _systemInfo.GetUserId()).Id;
+            var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
+            var userFolder = _encryptionServices.DecryptString256Bit(user?.Realname) ?? "UnknownUser";
+
+            var tempDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", userFolder);
+            if (!Directory.Exists(tempDir))
+                return new List<(string, long)>();
 
             var files = Directory.GetFiles(tempDir)
-                .Select(f => Path.GetFileName(f))
+                .Select(f => (FileName: Path.GetFileName(f), FileSize: new FileInfo(f).Length))
                 .ToList();
 
             return files;

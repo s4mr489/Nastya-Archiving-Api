@@ -4,6 +4,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch
 {
     public class DeletedDocsResponseDTOs
     {
+        public int? Id { get; set; }
         public string? systemId { get; set; }
         public string? docNO { get; set; }
         public DateTime? docDate { get; set; }

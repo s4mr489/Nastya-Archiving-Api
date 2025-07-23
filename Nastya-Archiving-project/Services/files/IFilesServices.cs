@@ -28,7 +28,7 @@ namespace Nastya_Archiving_project.Services.files
         //that use to remove file from the temp folder for the user after uploading it 
         bool RemoveTempUserFile(string fileName);
         // that use to get all the tempFolder for user when he open the archivign page
-        Task<List<string>> GetTempFolderFilesAsync();
+        Task<List<(string FileName, long FileSize)>> GetTempFolderFilesAsync();
         //taht implement to read the file from the temp folder for the user 
         Task<(Stream? fileStream, string? contentType, string? error)> GetFileAsync(string relativePath);
         // that use when we need to update the docs file and insert new pdf to the old pdf
@@ -37,5 +37,7 @@ namespace Nastya_Archiving_project.Services.files
         long GetFileSize(IFormFile file);
         //this is used to merge docx files into one file
         Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxFilesAsync(List<IFormFile> files);
+        //this is used to remove all the temp folder files for the user
+        Task<bool> RemoveAllTempFolderFilesAsync();
     }
 }

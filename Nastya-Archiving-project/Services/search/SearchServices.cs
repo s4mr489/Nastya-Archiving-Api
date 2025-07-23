@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using DocumentFormat.OpenXml.Office2010.Excel;
 using FYP.Extentions;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
@@ -418,6 +419,7 @@ namespace Nastya_Archiving_project.Services.search
             var result = await pagedQuery
                 .Select(d => new DeletedDocsResponseDTOs
                 {
+                    Id = d.Id,
                     systemId = d.RefrenceNo,
                     docNO = d.DocNo,
                     docDate = d.DocDate,

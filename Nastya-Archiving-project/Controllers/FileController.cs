@@ -39,7 +39,9 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> GetTempFiles()
         {
             var files = await _fileServices.GetTempFolderFilesAsync();
-            return Ok(files);
+            // Return as a list of objects with FileName and FileSize properties
+            var result = files.Select(f => new { FileName = f.FileName, FileSize = f.FileSize }).ToList();
+            return Ok(result);
         }
 
         [HttpDelete("temp-files/{fileName}")]
@@ -109,6 +111,15 @@ namespace Nastya_Archiving_project.Controllers
 
             return File(result.fileStream, result.contentType ?? "application/octet-stream");
 
+        }
+
+        [HttpDelete("temp-files")]
+        public async Task<IActionResult> RemoveAllTempFolderFiles()
+        {
+            var result = await _fileServices.RemoveAllTempFolderFilesAsync();
+            if (result)
+                return Ok(new { success = true, message = "All temp files removed successfully." });
+            return StatusCode(500, new { success = false, message = "Failed to remove temp files." });
         }
     }
 }

@@ -45,7 +45,11 @@ app.UseCustomSwaggerWithAuth("Nastya-Archiving-Swagger");
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
-
+app.MapGet("/", context =>
+{
+    context.Response.Redirect("/swagger");
+    return Task.CompletedTask;
+});
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}"
