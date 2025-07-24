@@ -8,5 +8,8 @@ namespace Nastya_Archiving_project.Services.reports
     {
        // Task<BaseResponseDTOs> GeneralResponse(ReportsViewForm req);
         Task<BaseResponseDTOs> GeneralReport(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetDepartmentDocumentCountsAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetDepartmentDocumentsWithDetailsAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetDepartmentEditorDocumentCountsPagedAsync(ReportsViewForm req);
     }
 }

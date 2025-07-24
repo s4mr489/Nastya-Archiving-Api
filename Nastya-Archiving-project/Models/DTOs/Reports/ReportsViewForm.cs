@@ -15,7 +15,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Reports
         public int? sourceId { get; set; }
         public int? toId { get; set; }
 
-        public List<int?> departmentId { get; set; }
+        public List<int?>? departmentId { get; set; }
         public EReportType? reportType { get; set; }
         public EResultType? resultType { get; set; }
 
