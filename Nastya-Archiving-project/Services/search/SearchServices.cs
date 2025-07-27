@@ -144,7 +144,7 @@ namespace Nastya_Archiving_project.Services.search
                 }
                 if (!string.IsNullOrWhiteSpace(req.systemId))
                 {
-                    query = query.Where(d => d.SystemId != null && d.SystemId == req.systemId);
+                    query = query.Where(d => d.RefrenceNo != null && d.RefrenceNo == req.systemId);
                 }
                 if (req.docsType.HasValue)
                 {
@@ -185,12 +185,20 @@ namespace Nastya_Archiving_project.Services.search
                 int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
                 int pageSize = req.pageSize > 0 ? req.pageSize : 20;
 
-                var pagedQuery = query
+                var pagedDocs = await query
                     .OrderByDescending(d => d.Id)
                     .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize);
+                    .Take(pageSize)
+                    .ToListAsync();
 
-                var result = await pagedQuery.Select(d => new QuikSearchResponseDTOs
+                // Get all doc types for mapping id to name
+                var docTypeIds = pagedDocs.Select(d => d.DocType).Distinct().ToList();
+                var docTypes = await _context.ArcivDocDscrps
+                    .Where(dt => docTypeIds.Contains(dt.Id))
+                    .ToListAsync();
+                var docTypeNames = docTypes.ToDictionary(x => x.Id, x => x.Dscrp);
+
+                var result = pagedDocs.Select(d => new QuikSearchResponseDTOs
                 {
                     systemId = d.RefrenceNo,
                     Id = d.Id,
@@ -201,8 +209,10 @@ namespace Nastya_Archiving_project.Services.search
                     subject = d.Subject,
                     source = d.DocSource != null ? d.DocSource.ToString() : null,
                     ReferenceTo = d.ReferenceTo,
-                    fileType = d.FileType != null ? d.FileType.ToString() : null
-                }).ToListAsync();
+                    fileType = d.FileType != null ? d.FileType.ToString() : null,
+                    // Add doctypeName to the response
+                    docsTitle = docTypeNames.ContainsKey(d.DocType) ? docTypeNames[d.DocType] : null
+                }).ToList();
 
                 if (result == null || result.Count == 0)
                     return (null, "No documents found matching the criteria.");

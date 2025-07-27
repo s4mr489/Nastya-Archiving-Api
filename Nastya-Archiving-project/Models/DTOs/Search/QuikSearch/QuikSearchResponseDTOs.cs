@@ -8,6 +8,7 @@
         public string? docsNumber { get; set; }
         public DateOnly? docsDate { get; set; }
         public DateTime? editDate { get; set; }
+        public string? docsTitle { get; set; }
         public int? departId { get; set; }
         public string? subject { get; set; }
         public string? source { get; set; }

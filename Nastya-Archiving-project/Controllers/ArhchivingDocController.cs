@@ -61,10 +61,9 @@ namespace Nastya_Archiving_project.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> EditArchivingDoc(
         int id,
-        [FromForm] ArchivingDocsViewForm req,
-        [FromForm] FileViewForm? file)
+        [FromForm] ArchivingDocsViewForm req)
         {
-            var (docs, error) = await _archivingDocsSercvices.EditArchivingDocs(req, id, file);
+            var (docs, error) = await _archivingDocsSercvices.EditArchivingDocs(req, id);
             if (error != null)
                 return BadRequest(new { error });
 

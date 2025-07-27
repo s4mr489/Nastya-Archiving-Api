@@ -109,7 +109,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
 
         //edit the arhciving docs by Id 
-        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> EditArchivingDocs(ArchivingDocsViewForm req, int Id, FileViewForm? file)
+        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> EditArchivingDocs(ArchivingDocsViewForm req, int Id)
         {
             var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(e => e.Id == Id);
             if (docs == null)
@@ -146,14 +146,6 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             docs.ReferenceTo = req.ReferenceTo;
             docs.Notes = req.Notes;
             docs.WordsTosearch = req.WordsTosearch;
-
-            if (file != null)
-            {
-                var uploadResult = await _fileServices.upload(file);
-                docs.ImgUrl = uploadResult.file;
-                docs.DocSize = uploadResult.fileSize;
-                docs.FileType = fileType != null ? int.Parse(fileType) : null;
-            }
 
             await _context.SaveChangesAsync();
 

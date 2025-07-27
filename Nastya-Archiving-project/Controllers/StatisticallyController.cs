@@ -41,5 +41,38 @@ namespace Nastya_Archiving_project.Controllers
             result = await _statisticallyServices.GetDocumentBySupDocTpye(req);
             return StatusCode(result.StatusCode, result);
         }
+
+        [HttpGet("Get-Statistical-ByDocType")]
+        public async Task<IActionResult> GetStatisticalByDocType([FromQuery]StatisticallyViewForm req)
+        {
+            BaseResponseDTOs result;
+            result = await _statisticallyServices.GetDocumentByDocType(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
+
+        [HttpGet("Get-Statistical-ByEditor")]
+        public async Task<IActionResult> GetStatisticalByEditor([FromQuery]StatisticallyViewForm req)
+        {
+            BaseResponseDTOs result;
+            result = await _statisticallyServices.GetFileCountByEditorAsync(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Get-Statistical-ByOrgnization")]
+        public async Task<IActionResult> GetStatisticalByOrgnization([FromQuery]StatisticallyViewForm req)
+        {
+            BaseResponseDTOs result;
+            result = await _statisticallyServices.GetDocumentByOrgniztion(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Get-Statistical-ByDocTarget")]
+        public async Task<IActionResult> GetStatisticalByDocTarget([FromQuery]StatisticallyViewForm req)
+        {
+            BaseResponseDTOs result;
+            result = await _statisticallyServices.GetDocumentByDocTargetAsync(req);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }
