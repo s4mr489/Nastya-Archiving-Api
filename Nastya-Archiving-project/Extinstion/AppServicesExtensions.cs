@@ -15,6 +15,7 @@ using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.Permmsions;
 using Nastya_Archiving_project.Services.reports;
 using Nastya_Archiving_project.Services.search;
+using Nastya_Archiving_project.Services.statistically;
 using Nastya_Archiving_project.Services.SystemInfo;
 using Nastya_Archiving_project.Services.userInterface;
 using Nastya_Archiving_project.Services.usersPermission;
@@ -121,9 +122,10 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<ISearchServices , SearchServices>();
             services.AddScoped<IUserPermissionsServices, UserPermissionServices>();
             services.AddScoped<IReportServices, ResportServices>();
+            services.AddScoped<IStatisticallyServices , StatisticallyServices>();
+            services.AddScoped<InfrastructureServices>();
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();
-
 
             return services;
         }

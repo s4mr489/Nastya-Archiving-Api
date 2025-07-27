@@ -32,7 +32,7 @@ namespace Nastya_Archiving_project.Extinstion
                 opt.InjectStylesheet("/swagger/swagger-dark.css");
                 opt.InjectJavascript("/swagger/theme-switcher.js");
 
-                opt.DocumentTitle = "VotingSystem";
+                opt.DocumentTitle = "ArchiveSystem";
                 opt.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
                 opt.DisplayRequestDuration();
 

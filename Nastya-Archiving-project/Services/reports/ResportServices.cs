@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using DocumentFormat.OpenXml.Bibliography;
+using DocumentFormat.OpenXml.Office.PowerPoint.Y2021.M06.Main;
 using DocumentFormat.OpenXml.Office.Word;
 using iText.Forms.Fields.Merging;
 using iText.Kernel.Crypto;
@@ -9,10 +10,12 @@ using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs;
+using Nastya_Archiving_project.Models.DTOs.Infrastruture.Organization;
 using Nastya_Archiving_project.Models.DTOs.Reports;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.infrastructure;
+using Org.BouncyCastle.Asn1.X509;
 
 namespace Nastya_Archiving_project.Services.reports
 {
@@ -35,6 +38,51 @@ namespace Nastya_Archiving_project.Services.reports
             _archivingSettingsServicers = archivingSettingsServicers;
             _encryptionServices = encryptionServices;
         }
+
+       
+
+        //this implementation of the GeneralReport method provides a comprehensive report generation service that filters, paginates, enriches, and groups documents based on various criteria specified in the ReportsViewForm request.
+        public async Task<BaseResponseDTOs> GeneralReport(ReportsViewForm req)
+        {
+            var query = BuildFilteredQuery(req);
+
+            int page = req.pageNumber > 0 ? req.pageNumber : 1;
+            int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+            int totalCount = await query.CountAsync();
+            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            if (totalCount == 0)
+            {
+                return new BaseResponseDTOs(new
+                {
+                    Data = new List<object>(),
+                    TotalCount = 0,
+                    TotalPages = 0,
+                    PageNumber = page,
+                    PageSize = pageSize
+                }, 200, null);
+            }
+
+            var docs = await PaginateQuery(query, page, pageSize);
+
+            var enrichedDocs = await EnrichDocumentsAsync(docs);
+
+            var grouped = GroupByDepartment(enrichedDocs);
+
+            var response = new
+            {
+                Data = grouped,
+                TotalCount = totalCount,
+                TotalPages = totalPages,
+                PageNumber = page,
+                PageSize = pageSize
+            };
+
+            return new BaseResponseDTOs(response, 200, null);
+        }
+
+        //this is the etiles Report for the Users based on the deparment 
         public async Task<BaseResponseDTOs> GetDepartmentEditorDocumentCountsPagedDetilesAsync(ReportsViewForm req)
         {
             if (req.resultType == EResultType.Detailed)
@@ -110,6 +158,7 @@ namespace Nastya_Archiving_project.Services.reports
             return new BaseResponseDTOs(null, 400, "any thing");
         }
 
+        //this is the sticitcs Report for the Users based on the deparment 
         public async Task<BaseResponseDTOs> GetDepartmentEditorDocumentCountsPagedAsync(ReportsViewForm req)
         {
             // 1. Get all departments
@@ -136,7 +185,7 @@ namespace Nastya_Archiving_project.Services.reports
             // 4. Get paged documents
             var pagedDocs = await PaginateQuery(query, page, pageSize);
 
-            // 5. Group paged documents by department and editor
+            // 5. Group paged documents by department and editor, only return department, editor, editor count, and department total
             var grouped = filteredDepartments.Select(dept =>
             {
                 var editorGroups = pagedDocs
@@ -145,13 +194,6 @@ namespace Nastya_Archiving_project.Services.reports
                     .Select(g => new
                     {
                         Editor = g.Key,
-                        Documents = pagedDocs.Where(d => d.DepartId == dept.Id).Select(d => new
-                        {
-                            d.DocDate,
-                            d.EditDate,
-                            d.DocNo,
-                            d.Subject,
-                        }),
                         DocumentCount = g.Count()
                     }).ToList();
 
@@ -234,7 +276,7 @@ namespace Nastya_Archiving_project.Services.reports
             return new BaseResponseDTOs(response, 200, null);
         }
 
-       
+
 
         public async Task<BaseResponseDTOs> GetDepartmentDocumentCountsAsync(ReportsViewForm req)
         {
@@ -275,46 +317,461 @@ namespace Nastya_Archiving_project.Services.reports
             return new BaseResponseDTOs(result, 200, null);
         }
 
-        //this implementation of the GeneralReport method provides a comprehensive report generation service that filters, paginates, enriches, and groups documents based on various criteria specified in the ReportsViewForm request.
-        public async Task<BaseResponseDTOs> GeneralReport(ReportsViewForm req)
+        //that implementation provides a statistical report of monthly documents for each department, including document counts grouped by month and department, with pagination and filtering capabilities.
+
+        public async Task<BaseResponseDTOs> GetDepartmentMonthlyDocumentCountsPagedAsync(ReportsViewForm req)
         {
-            var query = BuildFilteredQuery(req);
-
-            int page = req.pageNumber > 0 ? req.pageNumber : 1;
-            int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-
-            int totalCount = await query.CountAsync();
-            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-            if (totalCount == 0)
+            if (req.resultType == EResultType.statistical)
             {
-                return new BaseResponseDTOs(new
+                // 1. Get all departments
+                var (departments, error) = await _infrastructureServices.GetAllDepartment();
+                if (departments == null)
                 {
-                    Data = new List<object>(),
-                    TotalCount = 0,
-                    TotalPages = 0,
+                    return new BaseResponseDTOs(null, 500, error ?? "Failed to fetch departments");
+                }
+
+                // 2. Filter departments if departmentId filter is set
+                var filteredDepartments = (req.departmentId != null && req.departmentId.Count > 0)
+                    ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
+                    : departments;
+
+                // 3. Get filtered documents using the same filter as GeneralReport
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 4. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 5. Group paged documents by department and month
+                var grouped = filteredDepartments.Select(dept =>
+                {
+                    var monthGroups = pagedDocs
+                        .Where(d => d.DepartId == dept.Id && d.DocDate.HasValue)
+                        .GroupBy(d => new { d.EditDate.Value.Year, d.EditDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Year = g.Key.Year,
+                            Month = g.Key.Month,
+                            DocumentCount = g.Count()
+                        })
+                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                        .ToList();
+
+                    int departmentTotal = monthGroups.Sum(m => m.DocumentCount);
+
+                    return new
+                    {
+                        DepartmentName = dept.DepartmentName,
+                        DepartmentId = dept.Id,
+                        Months = monthGroups,
+                        DepartmentTotal = departmentTotal
+                    };
+                }).ToList();
+
+                int totalForAllDepartments = grouped.Sum(r => r.DepartmentTotal);
+
+                var response = new
+                {
+                    Departments = grouped,
+                    TotalForAllDepartments = totalForAllDepartments,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
                     PageNumber = page,
-                    PageSize = pageSize
-                }, 200, null);
+                    PageSize = pageSize,
+                    TotalDocumentCount = pagedDocs.Count // Add total document count for this page
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
             }
-
-            var docs = await PaginateQuery(query, page, pageSize);
-
-            var enrichedDocs = await EnrichDocumentsAsync(docs);
-
-            var grouped = GroupByDepartment(enrichedDocs);
-
-            var response = new
-            {
-                Data = grouped,
-                TotalCount = totalCount,
-                TotalPages = totalPages,
-                PageNumber = page,
-                PageSize = pageSize
-            };
-
-            return new BaseResponseDTOs(response, 200, null);
+            return new BaseResponseDTOs(null, 400, "That is statistacal Report");
         }
+
+        //that implementation provides a detailed report of monthly documents for each department, including document counts grouped by month and department, with pagination and filtering capabilities.
+        public async Task<BaseResponseDTOs> GetDepartmentMonthlyDocumentDetailsPagedAsync(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.Detailed)
+            {
+                // 1. Get all departments
+                var (departments, error) = await _infrastructureServices.GetAllDepartment();
+                if (departments == null)
+                {
+                    return new BaseResponseDTOs(null, 500, error ?? "Failed to fetch departments");
+                }
+
+                // 2. Filter departments if departmentId filter is set
+                var filteredDepartments = (req.departmentId != null && req.departmentId.Count > 0)
+                    ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
+                    : departments;
+
+                // 3. Get filtered documents using the same filter as GeneralReport
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 4. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 5. Group paged documents by department and month
+                var grouped = filteredDepartments.Select(dept =>
+                {
+                    var monthGroups = pagedDocs
+                        .Where(d => d.DepartId == dept.Id && d.DocDate.HasValue)
+                        .GroupBy(d => new { d.EditDate.Value.Year, d.EditDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Year = g.Key.Year,
+                            Month = g.Key.Month,
+                            Documents = pagedDocs.Where(d => d.DepartId == dept.Id).Select(d => new
+                            {
+                                d.DocDate,
+                                d.EditDate,
+                                d.DocNo,
+                                d.Subject,
+                            }),
+                            DocumentCount = g.Count()
+                        })
+                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                        .ToList();
+
+                    int departmentTotal = monthGroups.Sum(m => m.DocumentCount);
+
+                    return new
+                    {
+                        DepartmentName = dept.DepartmentName,
+                        DepartmentId = dept.Id,
+                        Months = monthGroups,
+                        DepartmentTotal = departmentTotal
+                    };
+                }).ToList();
+
+                int totalForAllDepartments = grouped.Sum(r => r.DepartmentTotal);
+
+                var response = new
+                {
+                    Departments = grouped,
+                    TotalForAllDepartments = totalForAllDepartments,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    TotalDocumentCount = pagedDocs.Count // Add total document count for this page
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "That is statistacal Report");
+        }
+
+        public async Task<BaseResponseDTOs> GetSourceMonthlyDocumentCountsPagedAsync(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.statistical)
+            {
+                // 1. Get all sources (distinct DocSource values from filtered docs)
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 2. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 3. Get all sources for the paged docs
+                var sourceIds = pagedDocs
+                    .Where(d => d.DocSource.HasValue)
+                    .Select(d => d.DocSource.Value)
+                    .Distinct()
+                    .ToList();
+
+                // 4. Optionally, get source names from infrastructure service
+                var sources = await _infrastructureServices.GetAllPOrganizations();
+                var filteredSources = sources.POrganization?.Where(s => sourceIds.Contains(s.Id)).ToList() ?? new List<OrgniztionResponseDTOs>();
+                // 5. Group paged documents by source and month
+                var grouped = filteredSources.Select(src =>
+                {
+                    var monthGroups = pagedDocs
+                        .Where(d => d.DocSource == src.Id && d.DocDate.HasValue)
+                        .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Year = g.Key.Year,
+                            Month = g.Key.Month,
+                            DocumentCount = g.Count()
+                        })
+                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                        .ToList();
+
+                    int sourceTotal = monthGroups.Sum(m => m.DocumentCount);
+
+                    return new
+                    {
+                        SourceName = src.Dscrp,
+                        SourceId = src.Id,
+                        Months = monthGroups,
+                        SourceTotal = sourceTotal
+                    };
+                }).ToList();
+
+                int totalForAllSources = grouped.Sum(r => r.SourceTotal);
+
+                var response = new
+                {
+                    Sources = grouped,
+                    TotalForAllSources = totalForAllSources,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    TotalDocumentCount = pagedDocs.Count
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "That is statistical Report");
+        }
+
+
+        public async Task<BaseResponseDTOs> GetSourceMonthlyDocumentDetailsPagedAsync(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.Detailed)
+            {
+                // 1. Get all sources (distinct DocSource values from filtered docs)
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 2. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 3. Get all sources for the paged docs
+                var sourceIds = pagedDocs
+                    .Where(d => d.DocSource.HasValue)
+                    .Select(d => d.DocSource.Value)
+                    .Distinct()
+                    .ToList();
+
+                // 4. Optionally, get source names from infrastructure service
+                var sources = await _infrastructureServices.GetAllPOrganizations();
+                var filteredSources = sources.POrganization?.Where(s => sourceIds.Contains(s.Id)).ToList() ?? new List<OrgniztionResponseDTOs>();
+                // 5. Group paged documents by source and month
+                var grouped = filteredSources.Select(src =>
+                {
+                    var monthGroups = pagedDocs
+                        .Where(d => d.DocSource == src.Id && d.DocDate.HasValue)
+                        .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Year = g.Key.Year,
+                            Month = g.Key.Month,
+                            Documents = g.Select(d => new
+                            {
+                                d.DocDate,
+                                d.EditDate,
+                                d.DocNo,
+                                d.Subject,
+                            }),
+                            DocumentCount = g.Count()
+                        })
+                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                        .ToList();
+
+                    int sourceTotal = monthGroups.Sum(m => m.DocumentCount);
+
+                    return new
+                    {
+                        SourceName = src.Dscrp,
+                        SourceId = src.Id,
+                        Months = monthGroups,
+                        SourceTotal = sourceTotal
+                    };
+                }).ToList();
+
+                int totalForAllSources = grouped.Sum(r => r.SourceTotal);
+
+                var response = new
+                {
+                    Sources = grouped,
+                    TotalForAllSources = totalForAllSources,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    TotalDocumentCount = pagedDocs.Count
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "That is statistical Report");
+        }
+
+        public async Task<BaseResponseDTOs> GetTargeteMonthlyDocumentCountsPagedAsync(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.statistical)
+            {
+                // 1. Get all sources (distinct DocSource values from filtered docs)
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 2. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 3. Get all sources for the paged docs
+                var targetId = pagedDocs
+                    .Where(d => d.DocTarget.HasValue)
+                    .Select(d => d.DocTarget.Value)
+                    .Distinct()
+                    .ToList();
+
+                // 4. Optionally, get source names from infrastructure service
+                var sources = await _infrastructureServices.GetAllPOrganizations();
+                var filteredSources = sources.POrganization?.Where(s => targetId.Contains(s.Id)).ToList() ?? new List<OrgniztionResponseDTOs>();
+                // 5. Group paged documents by source and month
+                var grouped = filteredSources.Select(src =>
+                {
+                    var monthGroups = pagedDocs
+                        .Where(d => d.DocTarget == src.Id && d.DocTarget.HasValue)
+                        .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Year = g.Key.Year,
+                            Month = g.Key.Month,
+                            DocumentCount = g.Count()
+                        })
+                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                        .ToList();
+
+                    int sourceTotal = monthGroups.Sum(m => m.DocumentCount);
+
+                    return new
+                    {
+                        TargetName = src.Dscrp,
+                        TargetId = src.Id,
+                        Months = monthGroups,
+                        TargetTotal = sourceTotal
+                    };
+                }).ToList();
+
+                int totalForAllSources = grouped.Sum(r => r.TargetTotal);
+
+                var response = new
+                {
+                    Target = grouped,
+                    TotalForAllSources = totalForAllSources,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    TotalDocumentCount = pagedDocs.Count
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "That is statistical Report");
+        }
+
+
+        public async Task<BaseResponseDTOs> GetTargetMonthlyDocumentDetailsPagedAsync(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.Detailed)
+            {
+                // 1. Get all sources (distinct DocSource values from filtered docs)
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 2. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 3. Get all sources for the paged docs
+                var targetId = pagedDocs
+                    .Where(d => d.DocTarget.HasValue)
+                    .Select(d => d.DocTarget.Value)
+                    .Distinct()
+                    .ToList();
+
+                // 4. Optionally, get source names from infrastructure service
+                var sources = await _infrastructureServices.GetAllPOrganizations();
+                var filteredSources = sources.POrganization?.Where(s => targetId.Contains(s.Id)).ToList() ?? new List<OrgniztionResponseDTOs>();
+                // 5. Group paged documents by source and month
+                var grouped = filteredSources.Select(src =>
+                {
+                    var monthGroups = pagedDocs
+                        .Where(d => d.DocTarget == src.Id && d.DocTarget.HasValue)
+                        .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Year = g.Key.Year,
+                            Month = g.Key.Month,
+                            Documents = g.Select(d => new
+                            {
+                                d.DocDate,
+                                d.EditDate,
+                                d.DocNo,
+                                d.Subject,
+                            }),
+                            DocumentCount = g.Count()
+                        })
+                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                        .ToList();
+
+                    int sourceTotal = monthGroups.Sum(m => m.DocumentCount);
+
+                    return new
+                    {
+                        TargetName = src.Dscrp,
+                        TargetId = src.Id,
+                        Months = monthGroups,
+                        TargetTotal = sourceTotal
+                    };
+                }).ToList();
+
+                int totalForAllSources = grouped.Sum(r => r.TargetTotal);
+
+                var response = new
+                {
+                    Traget = grouped,
+                    TotalForAllSources = totalForAllSources,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    TotalDocumentCount = pagedDocs.Count
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "That is statistical Report");
+        }
+
+
+        //public async Task<BaseResponseDTOs> CheckFilesAsync(ReportsViewForm req)
+        //{
+        //    var file = await _context.ArcivingDocs.Where(f => f.stat)
+        //}
 
         // Filtering
         private IQueryable<ArcivingDoc> BuildFilteredQuery(ReportsViewForm req)
@@ -414,5 +871,4 @@ namespace Nastya_Archiving_project.Services.reports
                 .ToList<object>();
         }
     }
-    
 }

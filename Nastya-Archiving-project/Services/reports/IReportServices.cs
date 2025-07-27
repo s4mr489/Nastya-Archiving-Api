@@ -8,8 +8,24 @@ namespace Nastya_Archiving_project.Services.reports
     {
        // Task<BaseResponseDTOs> GeneralResponse(ReportsViewForm req);
         Task<BaseResponseDTOs> GeneralReport(ReportsViewForm req);
+
         Task<BaseResponseDTOs> GetDepartmentDocumentCountsAsync(ReportsViewForm req);
         Task<BaseResponseDTOs> GetDepartmentDocumentsWithDetailsAsync(ReportsViewForm req);
+
         Task<BaseResponseDTOs> GetDepartmentEditorDocumentCountsPagedAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetDepartmentEditorDocumentCountsPagedDetilesAsync(ReportsViewForm req);
+
+        Task<BaseResponseDTOs> GetDepartmentMonthlyDocumentCountsPagedAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetDepartmentMonthlyDocumentDetailsPagedAsync(ReportsViewForm req);
+
+        Task<BaseResponseDTOs> GetSourceMonthlyDocumentCountsPagedAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetSourceMonthlyDocumentDetailsPagedAsync(ReportsViewForm req);
+
+
+        Task<BaseResponseDTOs> GetTargeteMonthlyDocumentCountsPagedAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetTargetMonthlyDocumentDetailsPagedAsync(ReportsViewForm req);
+
+
+        //Task<BaseResponseDTOs> CheckFilesAsync(ReportsViewForm req);
     }
 }

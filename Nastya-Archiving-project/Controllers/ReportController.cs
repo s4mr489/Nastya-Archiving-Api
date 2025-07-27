@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using DocumentFormat.OpenXml.Office2016.Drawing.Command;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models.DTOs;
@@ -44,15 +45,57 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> DepartmentBuUserReport([FromQuery] ReportsViewForm req)
         {
             BaseResponseDTOs result;
-            if(req.resultType == EResultType.statistical)
+            if (req.resultType == EResultType.statistical)
             {
                 result = await _reportServices.GetDepartmentEditorDocumentCountsPagedAsync(req);
-                return StatusCode(result.StatusCode,result);
+                return StatusCode(result.StatusCode, result);
 
             }
 
-            return BadRequest("Not finshed yet");
+            result = await _reportServices.GetDepartmentEditorDocumentCountsPagedDetilesAsync(req);
+            return StatusCode(result.StatusCode, result);
+
         }
 
+        [HttpGet("Deparment-by-monthly-Report")]
+        public async Task<IActionResult> MonthlyDepartmenReport([FromQuery] ReportsViewForm req)
+        {
+            BaseResponseDTOs result;
+            if (req.resultType == EResultType.statistical)
+            {
+                result = await _reportServices.GetDepartmentMonthlyDocumentCountsPagedAsync(req);
+                return StatusCode(result.StatusCode, result);
+            }
+            result = await _reportServices.GetDepartmentMonthlyDocumentDetailsPagedAsync(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
+
+        [HttpGet("DocSource-Report")]
+        public async Task<IActionResult> DepartmentByDocSourceReport([FromQuery] ReportsViewForm req)
+        {
+            BaseResponseDTOs result;
+            if (req.resultType == EResultType.statistical)
+            {
+                result = await _reportServices.GetSourceMonthlyDocumentCountsPagedAsync(req);
+                return StatusCode(result.StatusCode, result);
+            }
+            result = await _reportServices.GetSourceMonthlyDocumentDetailsPagedAsync(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
+
+        [HttpGet("DocTarget-Report")]
+        public async Task<IActionResult> DepartmentByDocTargetReport([FromQuery] ReportsViewForm req)
+        {
+            BaseResponseDTOs result;
+            if (req.resultType == EResultType.statistical)
+            {
+                result = await _reportServices.GetTargeteMonthlyDocumentCountsPagedAsync(req);
+                return StatusCode(result.StatusCode, result);
+            }
+            result = await _reportServices.GetTargetMonthlyDocumentDetailsPagedAsync(req);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }
