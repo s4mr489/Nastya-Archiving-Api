@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using Microsoft.AspNetCore.Server.HttpSys;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Identity.Client;
@@ -297,13 +298,14 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 ParentRefrenceNO = req.parentReferenceId,
                 ChildRefrenceNo = req?.childReferenceId,
             };
-
+           
             var response = new JoinedDocsResponseDTOs
             {
                 Breifexplanation = joinedDocs.BreafcaseNo,
                 ReferenceTo = joinedDocs.ParentRefrenceNO,
                 RefrenceNo = joinedDocs.ChildRefrenceNo,
             };
+            docs.ReferenceTo = joinedDocs.ChildRefrenceNo;
 
             _context.JoinedDocs.Add(joinedDocs);
             await _context.SaveChangesAsync();

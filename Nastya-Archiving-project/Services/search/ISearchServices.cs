@@ -1,8 +1,10 @@
 ﻿using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs;
+using Nastya_Archiving_project.Models.DTOs.ArchivingDocs.JoinedDocs;
 using Nastya_Archiving_project.Models.DTOs.Search;
 using Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
+using Nastya_Archiving_project.Models.DTOs.Search.TreeSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 
 namespace Nastya_Archiving_project.Services.search
@@ -24,5 +26,16 @@ namespace Nastya_Archiving_project.Services.search
         Task<List<BaseResponseDTOs>> DeletedDocsSearch(SearchDeletedDocsViewForm search);
         //Note: this method is Nout used in the current codebase, but it is kept for case if we need it .
         Task<BaseResponseDTOs> PermissionSearch(UsersSearchViewForm search);
+         
+        /// <summary>This method is used to search for documents that the user has joined.</summary>
+        Task<BaseResponseDTOs> SearchForJoinedDocs(string systemId);
+        /// <summary>
+        /// taht implmention for search 
+        /// </summary>
+        /// <param name="req"></param>
+        /// <returns></returns>
+        Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req);
+        //that implmention used to return the search result like Tree 
+        Task<BaseResponseDTOs> TreeSearch(TreeSearchViewForm req);
     }
 }

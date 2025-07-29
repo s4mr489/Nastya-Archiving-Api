@@ -1,8 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using DocumentFormat.OpenXml.Bibliography;
+using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
+using Nastya_Archiving_project.Models.DTOs.Search.TreeSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Services.search;
 
@@ -66,14 +68,31 @@ namespace Nastya_Archiving_project.Controllers
 
             return Ok(docs);
         }
+        [HttpGet("Filter-Joined-docs")]
+        public async Task<IActionResult> SearchForTheJoinedDocs([FromQuery]QuikeSearchViewForm req)
+        {
+            var result = await _searchServices.SearchForJoinedDocsFilter(req);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return BadRequest(result);
+        }
 
+        [HttpGet("Joined-docs")]
+        public async Task<IActionResult> SearchForJoinedDocs([FromQuery] string systemId)
+        {
+            var result = await _searchServices.SearchForJoinedDocs(systemId);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return BadRequest(result);
+        }
 
-        //Not Used anyMore 
-        //[HttpGet("permission-search")]
-        //public async Task<IActionResult> PermissionSearch([FromQuery] UsersSearchViewForm search)
-        //{
-        //    var result = await _searchServices.PermissionSearch(search);
-        //    return Ok(result);
-        //}
+        [HttpGet("Tree-Search-docs")]
+        public async Task<IActionResult> TreeSearch([FromQuery] TreeSearchViewForm req)
+        {
+            var result = await _searchServices.TreeSearch(req);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return BadRequest(result);
+        }
     }
 }

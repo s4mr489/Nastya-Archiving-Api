@@ -26,6 +26,10 @@ namespace Nastya_Archiving_project.Services.reports
         Task<BaseResponseDTOs> GetTargetMonthlyDocumentDetailsPagedAsync(ReportsViewForm req);
 
 
+        Task<BaseResponseDTOs> GetReferncesDocsDetailsPagedAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetReferencedDocsCountsPagedAsync(ReportsViewForm req);
+
+        Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize);
         //Task<BaseResponseDTOs> CheckFilesAsync(ReportsViewForm req);
     }
 }

@@ -14,5 +14,6 @@
         public string? source { get; set; }
         public string? ReferenceTo { get; set; }
         public string? fileType { get; set; }
+        public string? docType { get; set; }
     }
 }

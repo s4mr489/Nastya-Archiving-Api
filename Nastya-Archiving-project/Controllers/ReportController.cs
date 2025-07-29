@@ -1,4 +1,5 @@
 ﻿using DocumentFormat.OpenXml.Office2016.Drawing.Command;
+using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Helper.Enums;
@@ -95,6 +96,26 @@ namespace Nastya_Archiving_project.Controllers
                 return StatusCode(result.StatusCode, result);
             }
             result = await _reportServices.GetTargetMonthlyDocumentDetailsPagedAsync(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Get-References-Docs")]
+        public async Task<IActionResult> GetReferencesDocs([FromQuery] ReportsViewForm req)
+        {
+            BaseResponseDTOs result;
+            if (req.resultType == EResultType.statistical)
+            {
+                result = await _reportServices.GetReferencedDocsCountsPagedAsync(req);
+                return StatusCode(result.StatusCode, result);
+            }
+            result = await _reportServices.GetReferncesDocsDetailsPagedAsync(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Check-Documents-File-Integrity")]
+        public async Task<IActionResult> CheckDocumentsFileIntegrity([FromQuery] int pageSize , [FromQuery] int pageNumber)
+        {
+            BaseResponseDTOs result = await _reportServices.CheckDocumentsFileIntegrityPagedAsync(pageNumber , pageSize);
             return StatusCode(result.StatusCode, result);
         }
     }

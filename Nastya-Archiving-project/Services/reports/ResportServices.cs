@@ -6,6 +6,7 @@ using iText.Forms.Fields.Merging;
 using iText.Kernel.Crypto;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.OpenApi.Writers;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models;
@@ -689,6 +690,113 @@ namespace Nastya_Archiving_project.Services.reports
             return new BaseResponseDTOs(null, 400, "That is statistical Report");
         }
 
+        public async Task<BaseResponseDTOs> GetReferncesDocsDetailsPagedAsync(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.Detailed)
+            {
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+                int skip = (page - 1) * pageSize;
+
+                // Apply filters to parent docs
+                var filteredParentDocs = BuildFilteredQuery(req);
+
+                var query =
+                    from parent in filteredParentDocs
+                    join reference in _context.ArcivDocsRefrences on parent.RefrenceNo equals reference.HeadReferenceNo
+                    join joined in _context.ArcivingDocs on reference.LinkedRfrenceNo equals joined.RefrenceNo
+                    join dept in _context.GpDepartments on joined.DepartId equals dept.Id
+                    join org in _context.POrganizations on joined.DocSource equals org.Id into orgJoin
+                    from org in orgJoin.DefaultIfEmpty()
+                    join docType in _context.ArcivDocDscrps on joined.DocType equals docType.Id into docTypeJoin
+                    from docType in docTypeJoin.DefaultIfEmpty()
+                    select new
+                    {
+                        DepartDscrp = dept.Dscrp,
+                        ParentDoc = parent.RefrenceNo,
+                        JoinedDoc = joined.RefrenceNo,
+                        joined.DocNo,
+                        joined.DocDate,
+                        Organization = org != null ? org.Dscrp : null,
+                        DocType = docType != null ? docType.Dscrp : null,
+                        joined.Subject,
+                        joined.BoxfileNo
+                    };
+
+                var totalCount = await query.CountAsync();
+                var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                var result = await query
+                    .OrderBy(x => x.DepartDscrp)
+                    .ThenByDescending(x => x.JoinedDoc)
+                    .Skip(skip)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                return new BaseResponseDTOs(new
+                {
+                    Data = result,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize
+                }, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "Invalid result type");
+        }
+
+        public async Task<BaseResponseDTOs> GetReferencedDocsCountsPagedAsync(ReportsViewForm req)
+        {
+            int page = req.pageNumber > 0 ? req.pageNumber : 1;
+            int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+            int skip = (page - 1) * pageSize;
+
+            // Filter ArcivingDocs
+            var filteredDocs = BuildFilteredQuery(req);
+
+            // Only docs that are referenced as children
+            var referencedDocs =
+                from doc in filteredDocs
+                join reference in _context.ArcivDocsRefrences on doc.RefrenceNo equals reference.LinkedRfrenceNo
+                join dept in _context.GpDepartments on doc.DepartId equals dept.Id
+                select new
+                {
+                    doc.Id,
+                    doc.DocNo,
+                    doc.RefrenceNo,
+                    doc.DepartId,
+                    DepartmentName = dept.Dscrp
+                };
+
+            // Group by department
+            var groupedQuery = referencedDocs
+                .GroupBy(x => new { x.DepartId, x.DepartmentName })
+                .Select(g => new
+                {
+                    DepartmentId = g.Key.DepartId,
+                    DepartmentName = g.Key.DepartmentName,
+                    DocsCount = g.Count(),
+                })
+                .OrderBy(x => x.DepartmentName);
+
+            int totalCount = await groupedQuery.CountAsync();
+            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            var pagedResult = await groupedQuery
+                .Skip(skip)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new BaseResponseDTOs(new
+            {
+                Data = pagedResult,
+                TotalCount = totalCount,
+                TotalPages = totalPages,
+                PageNumber = page,
+                PageSize = pageSize
+            }, 200, null);
+        }
+
 
         public async Task<BaseResponseDTOs> GetTargetMonthlyDocumentDetailsPagedAsync(ReportsViewForm req)
         {
@@ -768,10 +876,51 @@ namespace Nastya_Archiving_project.Services.reports
         }
 
 
-        //public async Task<BaseResponseDTOs> CheckFilesAsync(ReportsViewForm req)
-        //{
-        //    var file = await _context.ArcivingDocs.Where(f => f.stat)
-        //}
+        public async Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize)
+        {
+            // Ensure page is at least 1
+            page = page < 1 ? 1 : page;
+            int skip = (page - 1) * pageSize;
+            var query = _context.ArcivingDocs.OrderBy(x => x.Id);
+
+            int totalCount = await query.CountAsync();
+            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            var docs = await query.OrderByDescending(d => d.EditDate).Skip(skip).Take(pageSize).ToListAsync();
+
+            var result = new List<object>();
+            foreach (var doc in docs)
+            {
+                string filePath = doc.FileType != null ? doc.FileType.ToString() : null;
+                decimal? expectedSize = doc.DocSize;
+                long actualSize = -1;
+                bool isAffected = true;
+
+                if (!string.IsNullOrEmpty(filePath) && expectedSize != null && System.IO.File.Exists(filePath))
+                {
+                    actualSize = new System.IO.FileInfo(filePath).Length;
+                    isAffected = actualSize != (long)expectedSize;
+                }
+
+                result.Add(new
+                {
+                    DocumentId = doc.Id,
+                    FilePath = filePath,
+                    ExpectedSize = expectedSize,
+                    ActualSize = actualSize >= 0 ? (long?)actualSize : null,
+                    IsAffected = isAffected
+                });
+            }
+
+            return new BaseResponseDTOs(new
+            {
+                Data = result,
+                TotalCount = totalCount,
+                TotalPages = totalPages,
+                PageNumber = page,
+                PageSize = pageSize
+            }, 200, null);
+        }
 
         // Filtering
         private IQueryable<ArcivingDoc> BuildFilteredQuery(ReportsViewForm req)
