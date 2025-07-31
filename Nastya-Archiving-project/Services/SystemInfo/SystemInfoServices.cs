@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using ClosedXML.Excel;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Services.encrpytion;
@@ -27,7 +28,7 @@ namespace Nastya_Archiving_project.Services.SystemInfo
 
             // Increment the number and format it
             int newNumber = lastDelete+lastDoc + 1;
-            string newReferenceNo = $"SYS-{newNumber:D8}"; // Format as "Ch00001"
+            string newReferenceNo = $"SYS-{newNumber:D8}";
 
             return newReferenceNo;
         }
@@ -79,6 +80,53 @@ namespace Nastya_Archiving_project.Services.SystemInfo
         {
             var ip = _httpContext.HttpContext?.Connection.RemoteIpAddress?.ToString();
             return await Task.FromResult(ip);
+        }
+
+        // Backup the entire database to a .bak file (SQL Server example)
+        public void BackupDatabase(string backupDirectory)
+        {
+            var connection = _context.Database.GetDbConnection();
+            string dbName = connection.Database;
+            string backupFile = Path.Combine(backupDirectory, $"{dbName}_{DateTime.Now:yyyyMMddHHmmss}.bak");
+
+            using (var sqlConnection = new SqlConnection(connection.ConnectionString))
+            {
+                sqlConnection.Open();
+                var command = sqlConnection.CreateCommand();
+                command.CommandText = $"BACKUP DATABASE [{dbName}] TO DISK = '{backupFile}'";
+                command.ExecuteNonQuery();
+            }
+        }
+
+        // Export all rows from a table to Excel
+        public async Task<string> ExportTableToExcelAsync<T>(string filePath) where T : class
+        {
+            var data = await _context.Set<T>().ToListAsync();
+
+            using (var workbook = new XLWorkbook())
+            {
+                var worksheet = workbook.Worksheets.Add(typeof(T).Name);
+
+                // Add headers
+                var properties = typeof(T).GetProperties();
+                for (int i = 0; i < properties.Length; i++)
+                {
+                    worksheet.Cell(1, i + 1).Value = properties[i].Name;
+                }
+
+                // Add data
+                for (int row = 0; row < data.Count; row++)
+                {
+                    for (int col = 0; col < properties.Length; col++)
+                    {
+                        worksheet.Cell(row + 2, col + 1).Value = ClosedXML.Excel.XLCellValue.FromObject(properties[col].GetValue(data[row]));
+                    }
+                }
+
+                workbook.SaveAs(filePath);
+            }
+
+            return filePath;
         }
     }
 }

@@ -274,6 +274,24 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             return (response, null);
         }
 
+        public async Task<(DocTypeResponseDTOs? docsType, string? error)> GetDocsTypeByDepartId(int DepartId)
+        {
+            var docsType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(e => e.DepartId == DepartId);
+            if (docsType == null)
+                return (null, "404"); // Document type not found
+
+            var response = new DocTypeResponseDTOs
+            {
+                Id = docsType.Id,
+                docuName = docsType.Dscrp,
+                departmentId = docsType.DepartId ?? 0,
+                branchId = docsType.BranchId ?? 0,
+                AccountUnitId = docsType.AccountUnitId ?? 0,
+                isCode = docsType.IsoCode
+            };
+            return (response, null);
+        }
+
         public async Task<string> DeleteDocsType(int Id)
         {
             var point = await _context.ArcivDocDscrps.FindAsync(Id);

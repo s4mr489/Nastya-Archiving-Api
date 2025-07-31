@@ -114,6 +114,15 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(docsType);
         }
 
+        [HttpGet("Get-DocsType/{DepartId}")]
+        public async Task<IActionResult> GetDocsTypeByDepartId(int DepartId)
+        {
+            var (docsType, error) = await _archivingSettings.GetDocsTypeById(DepartId);
+            if (error == "404")
+                return NotFound();
+            return Ok(docsType);
+        }
+
         [HttpDelete("Delete-DocsType/{id}")]
         public async Task<IActionResult> DeleteDocsType(int id)
         {

@@ -19,7 +19,7 @@ namespace Nastya_Archiving_project.Helper
         public async Task SeedSuperAdmin(string userName, string password)
         {
             //check if the super admin alreaydy exists
-            var superAdmin = await _context.Users.FirstOrDefaultAsync(u => u.UserName == userName);
+            var superAdmin = await _context.Users.FirstOrDefaultAsync(u => u.UserName == _encryptionServices.EncryptString256Bit(userName));
             if (superAdmin == null)
             {
                 //create the super admin

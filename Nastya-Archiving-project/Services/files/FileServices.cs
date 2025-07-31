@@ -345,32 +345,57 @@ namespace Nastya_Archiving_project.Services.files
             if (!System.IO.File.Exists(filePath))
                 return (null, null, null, "File not found.");
 
-            var keyString = _configuration["FileEncrypt:key"];
-            if (string.IsNullOrEmpty(keyString))
-                throw new InvalidOperationException("Encryption key is not configured. Please set FileEncrypt:key in appsettings.json.");
-
             var contentType = GetContentType(filePath);
-            byte[] key = Convert.FromBase64String(keyString);
+            string originalFileName = Path.GetFileNameWithoutExtension(filePath);
+            string extension = Path.GetExtension(originalFileName);
+
+            // If filename ends with .enc or another encryption marker, remove it
+            if (string.IsNullOrEmpty(extension))
+            {
+                extension = ".pdf"; // Default extension if we can't determine it
+            }
+
+            // Create a temporary file for the decrypted content
+            string tempOutputPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{extension}");
 
             try
             {
-                // Decrypt using helper
-                var decryptedStream = await DecryptFileAsync(filePath, key);
-                decryptedStream.Position = 0;
-
-                // Decompress if needed using helper
-                if (IsGZipFile(filePath))
+                // Use the Decrypt method from IEncryptionServices
+                string decryptResult = _encryptionServices.Decrypt(filePath, tempOutputPath);
+                if (decryptResult != "0")
                 {
-                    var decompressedStream = await DecompressGZipAsync(decryptedStream);
-                    decompressedStream.Position = 0;
-                    return (decompressedStream, Path.GetFileNameWithoutExtension(filePath), contentType, null);
+                    return (null, null, null, $"Decryption failed: {decryptResult}");
                 }
 
-                return (decryptedStream, Path.GetFileName(filePath), contentType, null);
+                // Read the decrypted file into a memory stream to return
+                var memoryStream = new MemoryStream();
+                using (var fileStream = new FileStream(tempOutputPath, FileMode.Open, FileAccess.Read))
+                {
+                    await fileStream.CopyToAsync(memoryStream);
+                }
+
+                memoryStream.Position = 0;
+
+                // Get clean filename without encryption extensions
+                string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
+                if (originalFileName.EndsWith(".encrypted") || originalFileName.EndsWith(".enc"))
+                {
+                    cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
+                }
+
+                return (memoryStream, cleanFileName + extension, contentType, null);
             }
             catch (Exception ex)
             {
                 return (null, null, null, $"Error reading or decrypting the file: {ex.Message}");
+            }
+            finally
+            {
+                // Clean up the temporary file
+                if (File.Exists(tempOutputPath))
+                {
+                    File.Delete(tempOutputPath);
+                }
             }
         }
 

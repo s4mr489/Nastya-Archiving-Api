@@ -1,14 +1,19 @@
 ﻿using AutoMapper;
 using DocumentFormat.OpenXml.Office2010.Excel;
+using DocumentFormat.OpenXml.Wordprocessing;
 using FYP.Extentions;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
+using Nastya_Archiving_project.Extinstion;
+using Nastya_Archiving_project.Helper;
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Search;
+using Nastya_Archiving_project.Models.DTOs.Search.CasesSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.TreeSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
+using Nastya_Archiving_project.Models.Entity;
 using Nastya_Archiving_project.Services.encrpytion;
 using Org.BouncyCastle.Ocsp;
 
@@ -712,6 +717,47 @@ namespace Nastya_Archiving_project.Services.search
                 TotalPages = totalPages,
                 PageNumber = pageNumber,
                 PageSize = pageSize
+            }, 200, null);
+        }
+
+        public async Task<BaseResponseDTOs> CasesSearch(CasesSearchViewForm req)
+        {
+            var query = _context.JoinedDocs.AsQueryable();
+
+            if(req.CaseNumber.HasValue)
+                query = query.Where(q => q.BreafcaseNo ==  req.CaseNumber.Value);
+            if (req.from.HasValue)
+                query = query.Where(d => d.editDate.HasValue && d.editDate.Value >= req.from);
+            if (req.to.HasValue)
+                query = query.Where(d => d.editDate.HasValue && d.editDate.Value <= req.to);
+
+
+            var pagedList = await PagedList<T_JoinedDoc>.Create(
+                query.OrderBy(d => d.ParentRefrenceNO),
+                req.pageNumber,
+                req.pageSize);
+
+            var groupedResult = pagedList.Items
+               .GroupBy(d => d.ParentRefrenceNO)
+               .Select(g => new
+               {
+                   ParentRefrenceNO = g.Key,
+                   ChildDocuments = g.Select(j => new
+                   {
+                       j.ChildRefrenceNo,
+                       j.BreafcaseNo,
+                       j.editDate
+                   }).ToList()
+               })
+               .ToList();
+
+            return new BaseResponseDTOs(new
+            {
+                Data = groupedResult,
+                TotalCount = pagedList.TotalCount,
+                TotalPages = pagedList.TotalPages,
+                PageNumber = pagedList.PageNumber,
+                PageSize = pagedList.PageSize
             }, 200, null);
         }
 

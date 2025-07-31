@@ -24,6 +24,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         Task<(DocTypeResponseDTOs? docsType, string? error)> EditDocsType(DocTypeViewform req, int Id);
         Task<(List<DocTypeResponseDTOs>? docsTypes, string? error)> GetAllDocsTypes();
         Task<(DocTypeResponseDTOs? docsType, string? error)> GetDocsTypeById(int Id);
+        Task<(DocTypeResponseDTOs? docsType, string? error)> GetDocsTypeByDepartId(int DepartId);
         Task<string> DeleteDocsType(int Id);
 
 

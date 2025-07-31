@@ -69,6 +69,17 @@ namespace Nastya_Archiving_project.Controllers
 
             return Ok(docs);
         }
+        /// <summary>
+        /// Unbind and remove a document from the archive by its system reference number.
+        /// </summary>
+        [HttpDelete("Unbind-Doc-From-Archive/{systemId}")]
+        public async Task<IActionResult> UnbindDocFromArchive(string systemId)
+        {
+            var (docs, error) = await _archivingDocsSercvices.UnbindDoucFromTheArchive(systemId);
+            if (error != null)
+                return NotFound(new { error });
+            return Ok(docs);
+        }
 
         //<summary> This Implmention for joined the docs</summary>
         [HttpPost("join-docs-from-archive")]

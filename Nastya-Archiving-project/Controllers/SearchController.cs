@@ -2,11 +2,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs;
+using Nastya_Archiving_project.Models.DTOs.Search.CasesSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.TreeSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Services.search;
+using PdfSharp.Snippets.Font;
 
 namespace Nastya_Archiving_project.Controllers
 {
@@ -90,6 +92,16 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> TreeSearch([FromQuery] TreeSearchViewForm req)
         {
             var result = await _searchServices.TreeSearch(req);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return BadRequest(result);
+        }
+
+
+        [HttpGet("Cases-Search-Docs")]
+        public async Task<IActionResult> CasesSearch([FromQuery] CasesSearchViewForm req)
+        {
+            var result = await _searchServices.CasesSearch(req);
             if (result.StatusCode == 200)
                 return Ok(result);
             return BadRequest(result);

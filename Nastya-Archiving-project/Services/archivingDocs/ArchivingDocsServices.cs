@@ -226,10 +226,28 @@ namespace Nastya_Archiving_project.Services.archivingDocs
         }
 
 
-        // that implementation used to remove the document by Id
-        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> GetArchivingDocsById(int Id)
+        // that implementation used to remove the joined document by RefernceNo from the joinedDocs Entity and assigment the refernce to filed null
+        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> UnbindDoucFromTheArchive(string systemId)
         {
-            throw new NotImplementedException();
+          var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.RefrenceNo == systemId);
+            if (docs == null)
+                return (null, "Document not found.");
+
+            var JoinedDocs = await _context.JoinedDocs.FirstOrDefaultAsync(d => d.ChildRefrenceNo == systemId);
+           if (JoinedDocs != null)
+            {
+                // If the document is joined, remove the join entry
+                _context.JoinedDocs.Remove(JoinedDocs);
+                await _context.SaveChangesAsync();
+            }
+
+            docs.ReferenceTo = null; // Unbind the document by setting ReferenceTo to null
+
+            // Remove the document from the archive
+            _context.ArcivingDocs.Remove(docs);
+            await _context.SaveChangesAsync();
+            var response = _mapper.Map<ArchivingDocsResponseDTOs>(docs);
+            return (response, null);
         }
 
         // that implementation used to Restore the docs from the archive
@@ -297,6 +315,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 BreafcaseNo = req.BreafcaseNo,
                 ParentRefrenceNO = req.parentReferenceId,
                 ChildRefrenceNo = req?.childReferenceId,
+                editDate = DateTime.UtcNow,
             };
            
             var response = new JoinedDocsResponseDTOs

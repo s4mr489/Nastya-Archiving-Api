@@ -2,6 +2,7 @@
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs.JoinedDocs;
 using Nastya_Archiving_project.Models.DTOs.Search;
+using Nastya_Archiving_project.Models.DTOs.Search.CasesSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.DeletedDocsSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.TreeSearch;
@@ -37,5 +38,8 @@ namespace Nastya_Archiving_project.Services.search
         Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req);
         //that implmention used to return the search result like Tree 
         Task<BaseResponseDTOs> TreeSearch(TreeSearchViewForm req);
+        //that implmention for cases Serach that make filter on the realated document 
+        Task<BaseResponseDTOs> CasesSearch(CasesSearchViewForm req);
+
     }
 }
