@@ -921,6 +921,147 @@ namespace Nastya_Archiving_project.Services.reports
                 PageSize = pageSize
             }, 200, null);
         }
+        public async Task<BaseResponseDTOs> GetMontlyUsersDocumentDetailsPagedList(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.Detailed)
+            {
+                // 1. Get all departments
+                var (departments, error) = await _infrastructureServices.GetAllDepartment();
+                if (departments == null)
+                {
+                    return new BaseResponseDTOs(null, 500, error ?? "Failed to fetch departments");
+                }
+
+                // 2. Filter departments if departmentId filter is set
+                var filteredDepartments = (req.departmentId != null && req.departmentId.Count > 0)
+                    ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
+                    : departments;
+
+                // 3. Get filtered documents using the same filter as GeneralReport
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 4. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 5. Group paged documents by department and editor
+                var grouped = filteredDepartments.Select(dept =>
+                {
+                    var editorGroups = pagedDocs
+                        .Where(d => d.DepartId == dept.Id)
+                        .GroupBy(d => new { d.Editor , d.DocDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Editor = g.Key,
+                            Documents = pagedDocs.Where(d => d.DepartId == dept.Id).Select(d => new
+                            {
+                                d.DocDate,
+                                d.EditDate,
+                                d.DocNo,
+                                d.Subject,
+                            }),
+                            DocumentCount = g.Count()
+                        }).ToList();
+
+                    int departmentTotal = editorGroups.Sum(e => e.DocumentCount);
+
+                    return new
+                    {
+                        DepartmentName = dept.DepartmentName,
+                        DepartmentId = dept.Id,
+                        Editors = editorGroups,
+                        DepartmentTotal = departmentTotal
+                    };
+                }).ToList();
+
+                int totalForAllDepartments = grouped.Sum(r => r.DepartmentTotal);
+
+                var response = new
+                {
+                    Departments = grouped,
+                    TotalForAllDepartments = totalForAllDepartments,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "any thing");
+        }
+        public async Task<BaseResponseDTOs> GetMonthlyUsersDocumentCountPagedAsync(ReportsViewForm req)
+        {
+            if (req.resultType == EResultType.statistical)
+            {
+                // 1. Get all departments
+                var (departments, error) = await _infrastructureServices.GetAllDepartment();
+                if (departments == null)
+                {
+                    return new BaseResponseDTOs(null, 500, error ?? "Failed to fetch departments");
+                }
+
+                // 2. Filter departments if departmentId filter is set
+                var filteredDepartments = (req.departmentId != null && req.departmentId.Count > 0)
+                    ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
+                    : departments;
+
+                // 3. Get filtered documents using the same filter as GeneralReport
+                var query = BuildFilteredQuery(req);
+
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 4. Get paged documents
+                var pagedDocs = await PaginateQuery(query, page, pageSize);
+
+                // 5. Group paged documents by department and editor
+                var grouped = filteredDepartments.Select(dept =>
+                {
+                    var editorGroups = pagedDocs
+                        .Where(d => d.DepartId == dept.Id)
+                        .GroupBy(d => new { d.Editor, d.DocDate.Value.Month })
+                        .Select(g => new
+                        {
+                            Editor = g.Key,
+                            DocumentCount = g.Count()
+                        }).ToList();
+
+                    int departmentTotal = editorGroups.Sum(e => e.DocumentCount);
+
+                    return new
+                    {
+                        DepartmentName = dept.DepartmentName,
+                        DepartmentId = dept.Id,
+                        Editors = editorGroups,
+                        DepartmentTotal = departmentTotal
+                    };
+                }).ToList();
+
+                int totalForAllDepartments = grouped.Sum(r => r.DepartmentTotal);
+
+                var response = new
+                {
+                    Departments = grouped,
+                    TotalForAllDepartments = totalForAllDepartments,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            return new BaseResponseDTOs(null, 400, "any thing");
+        }
 
         // Filtering
         private IQueryable<ArcivingDoc> BuildFilteredQuery(ReportsViewForm req)
@@ -1019,5 +1160,7 @@ namespace Nastya_Archiving_project.Services.reports
                 })
                 .ToList<object>();
         }
+
+        
     }
 }

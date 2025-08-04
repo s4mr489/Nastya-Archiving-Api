@@ -112,6 +112,19 @@ namespace Nastya_Archiving_project.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
+        [HttpGet("Get-MonthlyUsers-Report")]
+        public async Task<IActionResult> GetMontlyUserReport([FromQuery] ReportsViewForm req)
+        {
+            BaseResponseDTOs result;
+            if (req.resultType == EResultType.statistical)
+            {
+                result = await _reportServices.GetMonthlyUsersDocumentCountPagedAsync(req);
+                return StatusCode(result.StatusCode, result);
+            }
+            result = await _reportServices.GetMontlyUsersDocumentDetailsPagedList(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
         [HttpGet("Check-Documents-File-Integrity")]
         public async Task<IActionResult> CheckDocumentsFileIntegrity([FromQuery] int pageSize , [FromQuery] int pageNumber)
         {

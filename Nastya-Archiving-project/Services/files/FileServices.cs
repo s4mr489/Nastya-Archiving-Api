@@ -337,67 +337,164 @@ namespace Nastya_Archiving_project.Services.files
             }
         }
         // Method to get a decrypted file by its path
-        public async Task<(Stream? fileStream, string? fileName, string? contentType, string? error)> GetDecryptedFileByPathAsync(string filePath)
+        public async Task<(byte[]? fileBytes, string? fileName, string? contentType, string? error)> GetDecryptedFileByPathAsync(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath))
-                return (null, null, null, "fileName field is required.");
+                return (null, null, null, "filePath is required.");
 
-            if (!System.IO.File.Exists(filePath))
-                return (null, null, null, "File not found.");
-
-            var contentType = GetContentType(filePath);
-            string originalFileName = Path.GetFileNameWithoutExtension(filePath);
-            string extension = Path.GetExtension(originalFileName);
-
-            // If filename ends with .enc or another encryption marker, remove it
-            if (string.IsNullOrEmpty(extension))
-            {
-                extension = ".pdf"; // Default extension if we can't determine it
-            }
-
-            // Create a temporary file for the decrypted content
-            string tempOutputPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{extension}");
+            string? tempOutputPath = null;
 
             try
             {
-                // Use the Decrypt method from IEncryptionServices
-                string decryptResult = _encryptionServices.Decrypt(filePath, tempOutputPath);
-                if (decryptResult != "0")
+                // Normalize slashes and handle potential non-ASCII characters
+                filePath = filePath.Replace('/', '\\').Trim();
+
+                try
                 {
-                    return (null, null, null, $"Decryption failed: {decryptResult}");
+                    filePath = Path.GetFullPath(filePath);
+                }
+                catch (Exception ex)
+                {
+                    return (null, null, null, $"Invalid file path: {ex.Message}");
                 }
 
-                // Read the decrypted file into a memory stream to return
-                var memoryStream = new MemoryStream();
-                using (var fileStream = new FileStream(tempOutputPath, FileMode.Open, FileAccess.Read))
+                if (!File.Exists(filePath))
+                    return (null, null, null, $"File not found: {filePath}");
+
+                var contentType = GetContentType(filePath);
+                string originalFileName = Path.GetFileName(filePath);
+                string extension = Path.GetExtension(originalFileName).ToLowerInvariant();
+
+                // Special handling for ZIP files - don't try to decrypt these
+                if (extension == ".zip")
                 {
-                    await fileStream.CopyToAsync(memoryStream);
+                    byte[] fileBytes = await File.ReadAllBytesAsync(filePath);
+                    return (fileBytes, originalFileName, "application/zip", null);
                 }
 
-                memoryStream.Position = 0;
+                bool isCompressed = extension == ".gz";
+                string finalExtension = isCompressed
+                    ? Path.GetExtension(Path.GetFileNameWithoutExtension(originalFileName))
+                    : extension;
 
-                // Get clean filename without encryption extensions
-                string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
-                if (originalFileName.EndsWith(".encrypted") || originalFileName.EndsWith(".enc"))
+                if (string.IsNullOrEmpty(finalExtension))
+                    finalExtension = ".pdf"; // Default extension
+
+                // APPROACH 1: Use encryption service
+                tempOutputPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{finalExtension}");
+
+                try
                 {
-                    cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
+                    string decryptResult = _encryptionServices.Decrypt(filePath, tempOutputPath);
+
+                    if (decryptResult == "0") // Success
+                    {
+                        byte[] fileBytes = await File.ReadAllBytesAsync(tempOutputPath);
+
+                        // Clean up filename
+                        string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
+                        if (isCompressed)
+                            cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
+
+                        return (fileBytes, cleanFileName + finalExtension, contentType, null);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log the error but continue to next approach
+                    System.Diagnostics.Debug.WriteLine($"Encryption service decrypt failed: {ex.Message}");
                 }
 
-                return (memoryStream, cleanFileName + extension, contentType, null);
+                // APPROACH 2: Direct AES decryption
+                try
+                {
+                    byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"]);
+
+                    using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                    {
+                        byte[] iv = new byte[16];
+                        await fileStream.ReadAsync(iv, 0, iv.Length);
+
+                        using (var aes = Aes.Create())
+                        {
+                            aes.Key = key;
+                            aes.IV = iv;
+                            aes.Mode = CipherMode.CBC;
+                            aes.Padding = PaddingMode.PKCS7;
+
+                            using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                            using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
+                            using var memoryStream = new MemoryStream();
+
+                            if (isCompressed)
+                            {
+                                using var gzipStream = new System.IO.Compression.GZipStream(
+                                    cryptoStream, System.IO.Compression.CompressionMode.Decompress);
+                                await gzipStream.CopyToAsync(memoryStream);
+                            }
+                            else
+                            {
+                                await cryptoStream.CopyToAsync(memoryStream);
+                            }
+
+                            // Clean up filename
+                            string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
+                            if (isCompressed)
+                                cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
+
+                            return (memoryStream.ToArray(), cleanFileName + finalExtension, contentType, null);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Direct AES decryption failed: {ex.Message}");
+
+                    // APPROACH 3: Handle as compressed or regular file
+                    try
+                    {
+                        if (isCompressed)
+                        {
+                            // Handle compressed file without decryption
+                            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                            using var gzipStream = new System.IO.Compression.GZipStream(
+                                fileStream, System.IO.Compression.CompressionMode.Decompress);
+                            using var memoryStream = new MemoryStream();
+
+                            await gzipStream.CopyToAsync(memoryStream);
+
+                            string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
+                            cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
+
+                            return (memoryStream.ToArray(), cleanFileName + finalExtension, contentType, null);
+                        }
+                        else
+                        {
+                            // Return file as-is
+                            byte[] fileBytes = await File.ReadAllBytesAsync(filePath);
+                            return (fileBytes, originalFileName, contentType, null);
+                        }
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        return (null, null, null, $"Failed to process file: {fallbackEx.Message}");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                return (null, null, null, $"Error reading or decrypting the file: {ex.Message}");
+                return (null, null, null, $"Error processing file: {ex.Message}");
             }
             finally
             {
-                // Clean up the temporary file
-                if (File.Exists(tempOutputPath))
+                // Clean up temp files
+                if (!string.IsNullOrEmpty(tempOutputPath) && File.Exists(tempOutputPath))
                 {
-                    File.Delete(tempOutputPath);
+                    try { File.Delete(tempOutputPath); } catch { /* ignore cleanup errors */ }
                 }
             }
         }
+
 
         // Helper to check if file is GZip
         private static bool IsGZipFile(string filePath)

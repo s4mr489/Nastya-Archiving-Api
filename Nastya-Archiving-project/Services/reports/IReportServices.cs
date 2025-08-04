@@ -6,7 +6,7 @@ namespace Nastya_Archiving_project.Services.reports
 {
     public interface IReportServices
     {
-       // Task<BaseResponseDTOs> GeneralResponse(ReportsViewForm req);
+      
         Task<BaseResponseDTOs> GeneralReport(ReportsViewForm req);
 
         Task<BaseResponseDTOs> GetDepartmentDocumentCountsAsync(ReportsViewForm req);
@@ -25,6 +25,8 @@ namespace Nastya_Archiving_project.Services.reports
         Task<BaseResponseDTOs> GetTargeteMonthlyDocumentCountsPagedAsync(ReportsViewForm req);
         Task<BaseResponseDTOs> GetTargetMonthlyDocumentDetailsPagedAsync(ReportsViewForm req);
 
+        Task<BaseResponseDTOs> GetMonthlyUsersDocumentCountPagedAsync(ReportsViewForm req);
+        Task<BaseResponseDTOs> GetMontlyUsersDocumentDetailsPagedList(ReportsViewForm req);
 
         Task<BaseResponseDTOs> GetReferncesDocsDetailsPagedAsync(ReportsViewForm req);
         Task<BaseResponseDTOs> GetReferencedDocsCountsPagedAsync(ReportsViewForm req);
