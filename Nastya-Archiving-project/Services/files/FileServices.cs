@@ -99,6 +99,7 @@ namespace Nastya_Archiving_project.Services.files
                 storePath.StorePath.Replace(Path.DirectorySeparatorChar, '/'),
                 DateTime.Now.Year.ToString(),
                 depr.Dscrp,
+                DateTime.Now.Month.ToString(),
                 _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 fileName
             ).Replace(Path.DirectorySeparatorChar, '/');
