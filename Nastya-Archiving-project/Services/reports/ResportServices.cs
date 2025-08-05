@@ -4,10 +4,12 @@ using DocumentFormat.OpenXml.Office.PowerPoint.Y2021.M06.Main;
 using DocumentFormat.OpenXml.Office.Word;
 using iText.Forms.Fields.Merging;
 using iText.Kernel.Crypto;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.OpenApi.Writers;
 using Nastya_Archiving_project.Data;
+using Nastya_Archiving_project.Helper;
 using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs;
@@ -16,7 +18,9 @@ using Nastya_Archiving_project.Models.DTOs.Reports;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.infrastructure;
+using Nastya_Archiving_project.Services.SystemInfo;
 using Org.BouncyCastle.Asn1.X509;
+using System.Drawing;
 
 namespace Nastya_Archiving_project.Services.reports
 {
@@ -27,20 +31,24 @@ namespace Nastya_Archiving_project.Services.reports
         private readonly IInfrastructureServices _infrastructureServices;
         private readonly IArchivingSettingsServicers _archivingSettingsServicers;
         private readonly IEncryptionServices _encryptionServices;
+        private readonly ReportGenerator _reportGenerator;
+        private readonly ISystemInfoServices _systemInfoServices;
         public ResportServices(IMapper mapper,
                                 AppDbContext context,
                                 IInfrastructureServices infrastructureServices,
                                 IArchivingSettingsServicers archivingSettingsServicers,
-                                IEncryptionServices encryptionServices) : base(mapper, context)
+                                IEncryptionServices encryptionServices,
+                                ISystemInfoServices systemInfoServices) : base(mapper, context)
         {
             _mapper = mapper;
             _context = context;
             _infrastructureServices = infrastructureServices;
             _archivingSettingsServicers = archivingSettingsServicers;
             _encryptionServices = encryptionServices;
+            _systemInfoServices = systemInfoServices;
         }
 
-       
+
 
         //this implementation of the GeneralReport method provides a comprehensive report generation service that filters, paginates, enriches, and groups documents based on various criteria specified in the ReportsViewForm request.
         public async Task<BaseResponseDTOs> GeneralReport(ReportsViewForm req)
@@ -954,7 +962,7 @@ namespace Nastya_Archiving_project.Services.reports
                 {
                     var editorGroups = pagedDocs
                         .Where(d => d.DepartId == dept.Id)
-                        .GroupBy(d => new { d.Editor , d.DocDate.Value.Month })
+                        .GroupBy(d => new { d.Editor, d.DocDate.Value.Month })
                         .Select(g => new
                         {
                             Editor = g.Key,
@@ -995,6 +1003,7 @@ namespace Nastya_Archiving_project.Services.reports
             }
             return new BaseResponseDTOs(null, 400, "any thing");
         }
+        
         public async Task<BaseResponseDTOs> GetMonthlyUsersDocumentCountPagedAsync(ReportsViewForm req)
         {
             if (req.resultType == EResultType.statistical)
@@ -1161,6 +1170,308 @@ namespace Nastya_Archiving_project.Services.reports
                 .ToList<object>();
         }
 
-        
+
+
+        public async Task<BaseResponseDTOs> GetDocumentDetailsReportWithFastReport(ReportsViewForm req)
+        {
+            try
+            {
+                if (req.resultType != EResultType.Detailed)
+                    return new BaseResponseDTOs(null, 400, "Invalid result type");
+
+                // 1. Get user information
+                var userId = (await _systemInfoServices.GetUserId()).Id;
+                var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
+                if (user == null)
+                    return new BaseResponseDTOs(null, 500, "User not found");
+
+                // 2. Build the query with filters
+                var query = BuildFilteredQuery(req);
+
+                // 3. Get total count for pagination info
+                int page = req.pageNumber > 0 ? req.pageNumber : 1;
+                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // 4. Get documents with related department data
+                var pagedDocs = await query
+                    .OrderByDescending(x => x.EditDate)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                // 5. Create data for FastReport
+                var reportData = new List<DocumentReportDto>();
+                foreach (var doc in pagedDocs)
+                {
+                    if (doc.FileType != null)
+                    {
+                        // Pre-fetch all department data needed for the documents in one query
+                        var departmentIds = pagedDocs
+                            .Where(d => d.DepartId.HasValue)
+                            .Select(d => d.DepartId.Value)
+                            .Distinct()
+                            .ToList();
+
+                        var departmentDict = await _context.GpDepartments
+                            .Where(d => departmentIds.Contains(d.Id))
+                            .ToDictionaryAsync(d => d.Id, d => d.Dscrp ?? "Unknown");
+
+                        // Then inside your loop, use the dictionary instead of making a DB call
+                        var department = doc.DepartId.HasValue && departmentDict.TryGetValue(doc.DepartId.Value, out var deptName)
+                            ? deptName
+                            : "Unknown";
+
+                        reportData.Add(new DocumentReportDto
+                        {
+                            DepartmentId = doc.DepartId ?? 0,
+                            DepartmentName = department,
+                            Editor = doc.Editor ?? "N/A",
+                            DocNo = doc.DocNo ?? "N/A",
+                            Subject = doc.Subject ?? "N/A",
+                            // Handle DateOnly to DateTime conversion
+                            DocDate = doc.DocDate.HasValue ?
+                                doc.DocDate.Value.ToDateTime(TimeOnly.MinValue) : null,
+                            EditDate = doc.EditDate,
+                            Month = doc.DocDate?.Month ?? 0,
+                            FilePath = doc.FileType.ToString() ?? string.Empty,
+                            DocType = await GetDocTypeName(doc.DocType)
+                        });
+                    }
+                }
+
+                // 6. Generate report based on requested format
+                if (req.outputFormat?.ToLower() == "pdf")
+                {
+                    byte[] reportBytes = GenerateDocumentReportWithFastReport(reportData, req.reportTitle ?? "Document Details Report");
+
+                    return new BaseResponseDTOs(new
+                    {
+                        PdfData = Convert.ToBase64String(reportBytes),
+                        FileName = "DocumentDetailsReport.pdf",
+                        ContentType = "application/pdf"
+                    }, 200, null);
+                }
+                else if (req.outputFormat?.ToLower() == "excel")
+                {
+                    // Generate PDF instead since Excel isn't supported/wanted
+                    byte[] reportBytes = GenerateDocumentReportWithFastReport(reportData,
+                        req.reportTitle ?? "Document Details Report (Excel not supported)");
+
+                    return new BaseResponseDTOs(new
+                    {
+                        PdfData = Convert.ToBase64String(reportBytes),
+                        FileName = "DocumentDetailsReport.pdf", // PDF extension instead of xlsx
+                        ContentType = "application/pdf"         // PDF content type
+                    }, 200, null);
+                }
+                else
+                {
+                    // Return JSON data for other formats
+                    return new BaseResponseDTOs(new
+                    {
+                        Data = reportData,
+                        TotalCount = totalCount,
+                        TotalPages = totalPages,
+                        PageNumber = page,
+                        PageSize = pageSize
+                    }, 200, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                return new BaseResponseDTOs(null, 500, $"Error generating report: {ex.Message}");
+            }
+        }
+
+        // Helper method to get document type name
+        private async Task<string> GetDocTypeName(int docTypeId)
+        {
+            var docType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(d => d.Id == docTypeId);
+            return docType?.Dscrp ?? "Unknown";
+        }
+
+        // Generate PDF report using FastReport
+        private byte[] GenerateDocumentReportWithFastReport(List<DocumentReportDto> data, string reportTitle)
+        {
+            using var report = new FastReport.Report();
+
+            // 1. Register data source
+            report.RegisterData(data, "Documents");
+
+            // 2. Load report template or create one programmatically
+            if (File.Exists("Reports/DocumentReport.frx"))
+            {
+                report.Load("Reports/DocumentReport.frx");
+            }
+            else
+            {
+                // Create report design programmatically
+                report.ReportInfo.Name = reportTitle;
+
+                // Add report page
+                var page = new FastReport.ReportPage();
+                report.Pages.Add(page);
+
+                // Add title band
+                var titleBand = new FastReport.DataBand();
+                titleBand.Height = 30;
+                page.Bands.Add(titleBand);
+
+                // Add title text
+                var titleText = new FastReport.TextObject();
+                titleText.Text = reportTitle;
+                titleText.Bounds = new RectangleF(0, 0, 720, 30);
+                titleText.HorzAlign = FastReport.HorzAlign.Center;
+                titleText.Font = new Font("Arial", 14, FontStyle.Bold);
+                titleBand.Objects.Add(titleText);
+
+                // Add header band
+                var headerBand = new FastReport.DataBand();
+                headerBand.Height = 30;
+                page.Bands.Add(headerBand);
+
+                // Add column headers
+                CreateHeaderCell(headerBand, "Dept", 0, 100);
+                CreateHeaderCell(headerBand, "Doc No", 100, 100);
+                CreateHeaderCell(headerBand, "Subject", 200, 200);
+                CreateHeaderCell(headerBand, "Date", 400, 80);
+                CreateHeaderCell(headerBand, "Editor", 480, 100);
+                CreateHeaderCell(headerBand, "Type", 580, 140);
+
+                // Add data band
+                var dataBand = new FastReport.DataBand();
+                dataBand.Height = 25;
+                dataBand.DataSource = report.GetDataSource("Documents");
+                page.Bands.Add(dataBand);
+
+                // Add data cells
+                CreateDataCell(dataBand, "[Documents.DepartmentName]", 0, 100);
+                CreateDataCell(dataBand, "[Documents.DocNo]", 100, 100);
+                CreateDataCell(dataBand, "[Documents.Subject]", 200, 200);
+                CreateDataCell(dataBand, "[Documents.DocDate]", 400, 80);
+                CreateDataCell(dataBand, "[Documents.Editor]", 480, 100);
+                CreateDataCell(dataBand, "[Documents.DocType]", 580, 140);
+            }
+
+            // 3. Prepare the report
+            report.Prepare();
+
+            // 4. Export to PDF
+            using var ms = new MemoryStream();
+            var pdfExport = new FastReport.Export.PdfSimple.PDFSimpleExport();
+            pdfExport.Export(report, ms);
+            return ms.ToArray();
+        }
+
+        // Helper method to create a header cell in FastReport
+        private void CreateHeaderCell(FastReport.DataBand band, string text, float left, float width)
+        {
+            var cell = new FastReport.TextObject();
+            cell.Text = text;
+            cell.Bounds = new RectangleF(left, 0, width, 25);
+            cell.Border.Lines = FastReport.BorderLines.All;
+            cell.HorzAlign = FastReport.HorzAlign.Center;
+            cell.VertAlign = FastReport.VertAlign.Center;
+            cell.Font = new Font("Arial", 10, FontStyle.Bold);
+            cell.FillColor = Color.LightGray;
+            band.Objects.Add(cell);
+        }
+
+        // Helper method to create a data cell in FastReport
+        private void CreateDataCell(FastReport.DataBand band, string dataField, float left, float width)
+        {
+            var cell = new FastReport.TextObject();
+            cell.Text = dataField;
+            cell.Bounds = new RectangleF(left, 0, width, 25);
+            cell.Border.Lines = FastReport.BorderLines.All;
+            cell.VertAlign = FastReport.VertAlign.Center;
+            cell.Font = new Font("Arial", 9);
+            band.Objects.Add(cell);
+        }
+
+        // Generate Excel report using FastReport
+        private byte[] GenerateExcelReportWithFastReport(List<DocumentReportDto> data, string reportTitle)
+        {
+            // Since Excel export is not desired, use PDF format instead
+            using var report = new FastReport.Report();
+            report.RegisterData(data, "Documents");
+
+            // Use the same report design as PDF
+            if (File.Exists("Reports/DocumentReport.frx"))
+            {
+                report.Load("Reports/DocumentReport.frx");
+            }
+            else
+            {
+                // Create report design programmatically (same as in PDF method)
+                report.ReportInfo.Name = reportTitle;
+
+                // Add report page
+                var page = new FastReport.ReportPage();
+                report.Pages.Add(page);
+
+                // Add title band
+                var titleBand = new FastReport.DataBand();
+                titleBand.Height = 30;
+                page.Bands.Add(titleBand);
+
+                // Add title text
+                var titleText = new FastReport.TextObject();
+                titleText.Text = reportTitle + " (PDF format - Excel export not supported)";
+                titleText.Bounds = new RectangleF(0, 0, 720, 30);
+                titleText.HorzAlign = FastReport.HorzAlign.Center;
+                titleText.Font = new Font("Arial", 14, FontStyle.Bold);
+                titleBand.Objects.Add(titleText);
+
+                // Add header and data components as in PDF method
+                var headerBand = new FastReport.DataBand();
+                headerBand.Height = 30;
+                page.Bands.Add(headerBand);
+
+                CreateHeaderCell(headerBand, "Dept", 0, 100);
+                CreateHeaderCell(headerBand, "Doc No", 100, 100);
+                CreateHeaderCell(headerBand, "Subject", 200, 200);
+                CreateHeaderCell(headerBand, "Date", 400, 80);
+                CreateHeaderCell(headerBand, "Editor", 480, 100);
+                CreateHeaderCell(headerBand, "Type", 580, 140);
+
+                var dataBand = new FastReport.DataBand();
+                dataBand.Height = 25;
+                dataBand.DataSource = report.GetDataSource("Documents");
+                page.Bands.Add(dataBand);
+
+                CreateDataCell(dataBand, "[Documents.DepartmentName]", 0, 100);
+                CreateDataCell(dataBand, "[Documents.DocNo]", 100, 100);
+                CreateDataCell(dataBand, "[Documents.Subject]", 200, 200);
+                CreateDataCell(dataBand, "[Documents.DocDate]", 400, 80);
+                CreateDataCell(dataBand, "[Documents.Editor]", 480, 100);
+                CreateDataCell(dataBand, "[Documents.DocType]", 580, 140);
+            }
+
+            // Prepare and export to PDF instead of Excel
+            report.Prepare();
+
+            using var ms = new MemoryStream();
+            var pdfExport = new FastReport.Export.PdfSimple.PDFSimpleExport();
+            pdfExport.Export(report, ms);
+            return ms.ToArray();
+        }
+
+        // DTO for FastReport data
+        public class DocumentReportDto
+        {
+            public int DepartmentId { get; set; }
+            public string DepartmentName { get; set; } = "";
+            public string Editor { get; set; } = "";
+            public string DocNo { get; set; } = "";
+            public string Subject { get; set; } = "";
+            public DateTime? DocDate { get; set; }
+            public DateTime? EditDate { get; set; }
+            public int Month { get; set; }
+            public string FilePath { get; set; } = "";
+            public string DocType { get; set; } = "";
+        }
     }
 }

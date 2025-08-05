@@ -338,161 +338,96 @@ namespace Nastya_Archiving_project.Services.files
             }
         }
         // Method to get a decrypted file by its path
-        public async Task<(byte[]? fileBytes, string? fileName, string? contentType, string? error)> GetDecryptedFileByPathAsync(string filePath)
+        public async Task<(Stream? fileStream, string? contentType, string? error)> GetDecryptedFileStreamAsync(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath))
-                return (null, null, null, "filePath is required.");
-
-            string? tempOutputPath = null;
+                return (null, null, "filePath is required.");
 
             try
             {
-                // Normalize slashes and handle potential non-ASCII characters
+                // Normalize and validate path
                 filePath = filePath.Replace('/', '\\').Trim();
 
-                try
-                {
-                    filePath = Path.GetFullPath(filePath);
-                }
-                catch (Exception ex)
-                {
-                    return (null, null, null, $"Invalid file path: {ex.Message}");
-                }
+                try { filePath = Path.GetFullPath(filePath); }
+                catch (Exception ex) { return (null, null, $"Invalid file path: {ex.Message}"); }
 
                 if (!File.Exists(filePath))
-                    return (null, null, null, $"File not found: {filePath}");
+                    return (null, null, $"File not found: {filePath}");
 
+                // Get content info
                 var contentType = GetContentType(filePath);
-                string originalFileName = Path.GetFileName(filePath);
-                string extension = Path.GetExtension(originalFileName).ToLowerInvariant();
-
-                // Special handling for ZIP files - don't try to decrypt these
-                if (extension == ".zip")
-                {
-                    byte[] fileBytes = await File.ReadAllBytesAsync(filePath);
-                    return (fileBytes, originalFileName, "application/zip", null);
-                }
-
+                string extension = Path.GetExtension(filePath).ToLowerInvariant();
                 bool isCompressed = extension == ".gz";
-                string finalExtension = isCompressed
-                    ? Path.GetExtension(Path.GetFileNameWithoutExtension(originalFileName))
-                    : extension;
 
-                if (string.IsNullOrEmpty(finalExtension))
-                    finalExtension = ".pdf"; // Default extension
+                // Special handling for ZIP files - don't decrypt
+                if (extension == ".zip")
+                    return (new FileStream(filePath, FileMode.Open, FileAccess.Read), "application/zip", null);
 
-                // APPROACH 1: Use encryption service
-                tempOutputPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{finalExtension}");
-
-                try
-                {
-                    string decryptResult = _encryptionServices.Decrypt(filePath, tempOutputPath);
-
-                    if (decryptResult == "0") // Success
-                    {
-                        byte[] fileBytes = await File.ReadAllBytesAsync(tempOutputPath);
-
-                        // Clean up filename
-                        string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
-                        if (isCompressed)
-                            cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
-
-                        return (fileBytes, cleanFileName + finalExtension, contentType, null);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Log the error but continue to next approach
-                    System.Diagnostics.Debug.WriteLine($"Encryption service decrypt failed: {ex.Message}");
-                }
-
-                // APPROACH 2: Direct AES decryption
+                // Try AES decryption
                 try
                 {
                     byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"]);
+                    var memoryStream = new MemoryStream();
 
                     using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
                     {
                         byte[] iv = new byte[16];
                         await fileStream.ReadAsync(iv, 0, iv.Length);
 
-                        using (var aes = Aes.Create())
-                        {
-                            aes.Key = key;
-                            aes.IV = iv;
-                            aes.Mode = CipherMode.CBC;
-                            aes.Padding = PaddingMode.PKCS7;
+                        using var aes = Aes.Create();
+                        aes.Key = key;
+                        aes.IV = iv;
+                        aes.Mode = CipherMode.CBC;
+                        aes.Padding = PaddingMode.PKCS7;
 
-                            using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-                            using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
-                            using var memoryStream = new MemoryStream();
+                        using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                        using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
 
-                            if (isCompressed)
-                            {
-                                using var gzipStream = new System.IO.Compression.GZipStream(
-                                    cryptoStream, System.IO.Compression.CompressionMode.Decompress);
-                                await gzipStream.CopyToAsync(memoryStream);
-                            }
-                            else
-                            {
-                                await cryptoStream.CopyToAsync(memoryStream);
-                            }
-
-                            // Clean up filename
-                            string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
-                            if (isCompressed)
-                                cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
-
-                            return (memoryStream.ToArray(), cleanFileName + finalExtension, contentType, null);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Direct AES decryption failed: {ex.Message}");
-
-                    // APPROACH 3: Handle as compressed or regular file
-                    try
-                    {
                         if (isCompressed)
                         {
-                            // Handle compressed file without decryption
-                            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
                             using var gzipStream = new System.IO.Compression.GZipStream(
-                                fileStream, System.IO.Compression.CompressionMode.Decompress);
-                            using var memoryStream = new MemoryStream();
-
+                                cryptoStream, System.IO.Compression.CompressionMode.Decompress);
                             await gzipStream.CopyToAsync(memoryStream);
-
-                            string cleanFileName = Path.GetFileNameWithoutExtension(originalFileName);
-                            cleanFileName = Path.GetFileNameWithoutExtension(cleanFileName);
-
-                            return (memoryStream.ToArray(), cleanFileName + finalExtension, contentType, null);
                         }
                         else
                         {
-                            // Return file as-is
-                            byte[] fileBytes = await File.ReadAllBytesAsync(filePath);
-                            return (fileBytes, originalFileName, contentType, null);
+                            await cryptoStream.CopyToAsync(memoryStream);
                         }
                     }
-                    catch (Exception fallbackEx)
+
+                    memoryStream.Position = 0;
+                    return (memoryStream, contentType, null);
+                }
+                catch
+                {
+                    // Fallback - try to handle as compressed or plain file
+                    if (isCompressed)
                     {
-                        return (null, null, null, $"Failed to process file: {fallbackEx.Message}");
+                        try
+                        {
+                            var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                            var memoryStream = new MemoryStream();
+
+                            using var gzipStream = new System.IO.Compression.GZipStream(
+                                fileStream, System.IO.Compression.CompressionMode.Decompress);
+                            await gzipStream.CopyToAsync(memoryStream);
+
+                            memoryStream.Position = 0;
+                            return (memoryStream, contentType, null);
+                        }
+                        catch
+                        {
+                            // If decompression fails, return as-is
+                        }
                     }
+
+                    // Return file as-is
+                    return (new FileStream(filePath, FileMode.Open, FileAccess.Read), contentType, null);
                 }
             }
             catch (Exception ex)
             {
-                return (null, null, null, $"Error processing file: {ex.Message}");
-            }
-            finally
-            {
-                // Clean up temp files
-                if (!string.IsNullOrEmpty(tempOutputPath) && File.Exists(tempOutputPath))
-                {
-                    try { File.Delete(tempOutputPath); } catch { /* ignore cleanup errors */ }
-                }
+                return (null, null, $"Error processing file: {ex.Message}");
             }
         }
 

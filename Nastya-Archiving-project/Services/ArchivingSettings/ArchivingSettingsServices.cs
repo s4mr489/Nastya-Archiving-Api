@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.ArchivingPoint;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.DocsType;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.Precedence;
@@ -126,7 +127,26 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
 
             return (response, null);
         }
+        public async Task<BaseResponseDTOs> GetArchivePointByDepartId(int departId)
+        {
+            var point = await _context.PArcivingPoints.FirstOrDefaultAsync(d => d.DepartId == departId);
 
+            if (point == null)
+                return new BaseResponseDTOs(null, 404, "there is not archivingPoint for this Depart");
+
+            var result = new ArchivingPointResponseDTOs
+            {
+                Id = point.Id,
+                backupPath = point.BackupPath,
+                accountUnitId = point.AccountUnitId,
+                branchId = point.BranchId,
+                departmentId = point.DepartId,
+                pointName = point.Dscrp,
+                startWith = point.StartWith
+            };
+            return new BaseResponseDTOs(result, 200, "Welcome any help ;");
+                
+        }
         public async Task<(List<ArchivingPointResponseDTOs>? points, string? error)> GetAllArchivingPoints()
         {
             var points = await _context.PArcivingPoints.ToListAsync();
@@ -256,6 +276,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
 
             return (response, null);
         }
+
         public async Task<(DocTypeResponseDTOs? docsType, string? error)> GetDocsTypeById(int Id)
         {
             var docsType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(e => e.Id == Id);

@@ -33,5 +33,7 @@ namespace Nastya_Archiving_project.Services.reports
 
         Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize);
         //Task<BaseResponseDTOs> CheckFilesAsync(ReportsViewForm req);
+
+        Task<BaseResponseDTOs> GetDocumentDetailsReportWithFastReport(ReportsViewForm req);
     }
 }

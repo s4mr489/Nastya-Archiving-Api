@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.file;
+using Nastya_Archiving_project.Models.DTOs.Reports;
 using Nastya_Archiving_project.Services.files;
 
 namespace Nastya_Archiving_project.Controllers
@@ -78,13 +80,13 @@ namespace Nastya_Archiving_project.Controllers
             if (error != null || fileStream == null) return NotFound(error);
             return File(fileStream, contentType ?? "application/octet-stream");
         }
-
+            
         [HttpGet("GetDecrypted-by-Path")]
         public async Task<IActionResult> GetDecrypted([FromQuery] string filePath)
         {
-            var (fileStream, fileName, contentType, error) = await _fileServices.GetDecryptedFileByPathAsync(filePath);
+            var (fileStream, contentType, error) = await _fileServices.GetDecryptedFileStreamAsync(filePath);
             if (error != null || fileStream == null) return NotFound(error);
-            return File(fileStream, contentType ?? "application/octet-stream", fileName);
+            return File(fileStream, contentType ?? "application/octet-stream");
         }
 
         [HttpPost("save-wwwroot")]

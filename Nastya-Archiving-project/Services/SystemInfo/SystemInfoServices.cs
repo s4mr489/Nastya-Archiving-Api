@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Services.encrpytion;
 using System.Security.Claims;
+using System.Text;
 
 namespace Nastya_Archiving_project.Services.SystemInfo
 {
@@ -82,21 +83,220 @@ namespace Nastya_Archiving_project.Services.SystemInfo
             return await Task.FromResult(ip);
         }
 
-        // Backup the entire database to a .bak file (SQL Server example)
-        public void BackupDatabase(string backupDirectory)
+        /// <summary>
+        /// Creates a backup of the specified database with advanced options
+        /// </summary>
+        /// <param name="databaseName">Name of the database to backup</param>
+        /// <param name="backupDirectory">Directory path where the backup will be stored</param>
+        /// <param name="backupName">Optional name for the backup (defaults to database name + timestamp)</param>
+        /// <returns>Result of the backup operation with file path</returns>
+        public async Task<(bool Success, string Message, string BackupFilePath)> CreateAdvancedDatabaseBackup(string backupDirectory)
         {
-            var connection = _context.Database.GetDbConnection();
-            string dbName = connection.Database;
-            string backupFile = Path.Combine(backupDirectory, $"{dbName}_{DateTime.Now:yyyyMMddHHmmss}.bak");
-
-            using (var sqlConnection = new SqlConnection(connection.ConnectionString))
+           string backupName = "Samer";
+           string databaseName = "Archiving";
+            try
             {
-                sqlConnection.Open();
-                var command = sqlConnection.CreateCommand();
-                command.CommandText = $"BACKUP DATABASE [{dbName}] TO DISK = '{backupFile}'";
-                command.ExecuteNonQuery();
+                // Validate inputs
+                if (string.IsNullOrWhiteSpace(databaseName))
+                    return (false, "Database name cannot be empty", string.Empty);
+
+                // Normalize path and create directory if needed
+                backupDirectory = Path.GetFullPath(backupDirectory);
+                if (!Directory.Exists(backupDirectory))
+                {
+                    Directory.CreateDirectory(backupDirectory);
+                }
+
+                // Generate backup file name with timestamp
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string fileName = $"{databaseName}_{timestamp}.bak";
+                string backupFilePath = Path.Combine(backupDirectory, fileName);
+
+                // Set backup name if not provided
+                backupName ??= $"{databaseName}-Full Database Backup";
+
+                // Escape backslashes in file path for SQL Server
+                string escapedPath = backupFilePath.Replace("\\", "\\\\");
+
+                // Build backup command with all the specified options
+                string backupCommand = $"BACKUP DATABASE [{databaseName}] TO DISK = N'{escapedPath}' " +
+                                      $"WITH NOFORMAT, NOINIT, NAME = N'{backupName}', SKIP, NOREWIND, NOUNLOAD, STATS = 10";
+
+                // Execute the backup command
+                using (var connection = new SqlConnection(_context.Database.GetDbConnection().ConnectionString))
+                {
+                    await connection.OpenAsync();
+                    using var command = new SqlCommand(backupCommand, connection);
+                    command.CommandTimeout = 600; // 10 minutes timeout
+                    await command.ExecuteNonQueryAsync();
+                }
+
+                return (true, $"Database '{databaseName}' successfully backed up to {backupFilePath}", backupFilePath);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Backup failed: {ex.Message}", string.Empty);
             }
         }
+
+        // Backup the entire database to a .bak file (SQL Server example)
+        public async Task<(bool Success, string Message, List<string> ExportedFiles)> ExportAllDatabaseData(string exportDirectory)
+        {
+            try
+            {
+                // Normalize path and ensure directory exists
+                exportDirectory = Path.GetFullPath(exportDirectory);
+                if (!Directory.Exists(exportDirectory))
+                {
+                    Directory.CreateDirectory(exportDirectory);
+                }
+
+                var exportedFiles = new List<string>();
+                var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+
+                // Get connection string
+                var connection = _context.Database.GetDbConnection();
+                var connectionString = connection.ConnectionString;
+
+                // Get all user databases
+                using (var masterConnection = new SqlConnection(connectionString))
+                {
+                    await masterConnection.OpenAsync();
+
+                    // Get current database name and tables
+                    using var dbCommand = masterConnection.CreateCommand();
+                    dbCommand.CommandText = "SELECT DB_NAME() as DatabaseName";
+                    string dbName = (await dbCommand.ExecuteScalarAsync())?.ToString() ?? "UnknownDB";
+
+                    // Create subfolder for this database
+                    string dbExportPath = Path.Combine(exportDirectory, dbName);
+                    Directory.CreateDirectory(dbExportPath);
+
+                    // Get all tables in the database
+                    using var tableCommand = masterConnection.CreateCommand();
+                    tableCommand.CommandText = @"
+                SELECT TABLE_SCHEMA, TABLE_NAME 
+                FROM INFORMATION_SCHEMA.TABLES 
+                WHERE TABLE_TYPE = 'BASE TABLE'";
+
+                    var tables = new List<(string Schema, string Name)>();
+                    using (var reader = await tableCommand.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            tables.Add((
+                                reader.GetString(0), // Schema
+                                reader.GetString(1)  // Name
+                            ));
+                        }
+                    }
+
+                    // Export each table to CSV
+                    foreach (var (schema, tableName) in tables)
+                    {
+                        try
+                        {
+                            string csvFile = Path.Combine(dbExportPath, $"{schema}_{tableName}_{timestamp}.csv");
+
+                            using var dataCommand = masterConnection.CreateCommand();
+                            dataCommand.CommandText = $"SELECT * FROM [{schema}].[{tableName}]";
+
+                            using var dataReader = await dataCommand.ExecuteReaderAsync();
+                            using var writer = new StreamWriter(csvFile, false, new UTF8Encoding(true)); // UTF-8 with BOM
+
+                            // Write CSV header
+                            for (int i = 0; i < dataReader.FieldCount; i++)
+                            {
+                                if (i > 0) writer.Write(',');
+                                writer.Write(dataReader.GetName(i));
+                            }
+                            writer.WriteLine();
+
+                            // Write CSV data rows
+                            while (await dataReader.ReadAsync())
+                            {
+                                for (int i = 0; i < dataReader.FieldCount; i++)
+                                {
+                                    if (i > 0) writer.Write(',');
+
+                                    if (!dataReader.IsDBNull(i))
+                                    {
+                                        var value = dataReader.GetValue(i).ToString() ?? "";
+                                        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+                                        {
+                                            writer.Write('"');
+                                            writer.Write(value.Replace("\"", "\"\""));
+                                            writer.Write('"');
+                                        }
+                                        else
+                                        {
+                                            writer.Write(value);
+                                        }
+                                    }
+                                }
+                                writer.WriteLine();
+                            }
+
+                            exportedFiles.Add(csvFile);
+
+                            // Also export schema for reference
+                            string schemaFile = Path.Combine(dbExportPath, $"{schema}_{tableName}_schema_{timestamp}.sql");
+
+                            using var schemaCommand = masterConnection.CreateCommand();
+                            schemaCommand.CommandText = $@"
+                        SELECT 
+                            COLUMN_NAME, 
+                            DATA_TYPE,
+                            CHARACTER_MAXIMUM_LENGTH,
+                            IS_NULLABLE
+                        FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_SCHEMA = '{schema}' 
+                        AND TABLE_NAME = '{tableName}'
+                        ORDER BY ORDINAL_POSITION";
+
+                            using var schemaReader = await schemaCommand.ExecuteReaderAsync();
+                            using var schemaWriter = new StreamWriter(schemaFile, false, new UTF8Encoding(true)); // UTF-8 with BOM
+
+                            schemaWriter.WriteLine($"-- Schema for [{schema}].[{tableName}]");
+                            schemaWriter.WriteLine($"CREATE TABLE [{schema}].[{tableName}] (");
+
+                            bool firstColumn = true;
+                            while (await schemaReader.ReadAsync())
+                            {
+                                if (!firstColumn) schemaWriter.WriteLine(",");
+                                firstColumn = false;
+
+                                string columnName = schemaReader.GetString(0);
+                                string dataType = schemaReader.GetString(1);
+                                int? charLength = schemaReader.IsDBNull(2) ? null : schemaReader.GetInt32(2);
+                                string isNullable = schemaReader.GetString(3);
+
+                                schemaWriter.Write($"    [{columnName}] {dataType}");
+                                if (charLength.HasValue && charLength.Value != -1)
+                                    schemaWriter.Write($"({charLength.Value})");
+                                if (isNullable == "NO")
+                                    schemaWriter.Write(" NOT NULL");
+                            }
+
+                            schemaWriter.WriteLine("\n)");
+                            exportedFiles.Add(schemaFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Log error but continue with next table
+                            Console.WriteLine($"Error exporting table {schema}.{tableName}: {ex.Message}");
+                        }
+                    }
+                }
+
+                return (true, $"Successfully exported {exportedFiles.Count} files to {exportDirectory}", exportedFiles);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Export failed: {ex.Message}", new List<string>());
+            }
+        }
+
 
         // Export all rows from a table to Excel
         public async Task<string> ExportTableToExcelAsync<T>(string filePath) where T : class

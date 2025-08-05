@@ -31,6 +31,8 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />
+    <PackageReference Include="FastReport.OpenSource" Version="2025.2.8" />
+    <PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2025.2.8" />
     <PackageReference Include="FluentValidation" Version="12.0.0" />
     <PackageReference Include="itext7" Version="9.2.0" />
     <PackageReference Include="iTextSharp" Version="5.5.13.4" />
@@ -47,6 +49,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.SqlServer.SqlManagementObjects" Version="172.76.0" />
     <PackageReference Include="PDFsharp" Version="6.2.0" />
     <PackageReference Include="PuppeteerSharp" Version="20.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore.Swagger" Version="9.0.1" />

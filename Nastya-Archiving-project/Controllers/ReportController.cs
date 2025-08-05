@@ -2,9 +2,11 @@
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Nastya_Archiving_project.Helper;
 using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Reports;
+using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.reports;
 
 namespace Nastya_Archiving_project.Controllers
@@ -14,7 +16,8 @@ namespace Nastya_Archiving_project.Controllers
     public class ReportController : ControllerBase
     {
         private readonly IReportServices _reportServices;
-
+        private readonly IInfrastructureServices _infrastructureServices;
+        private readonly ReportGenerator _reportGenerator;
         public ReportController(IReportServices reportServices)
         {
             _reportServices = reportServices;
@@ -131,5 +134,14 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result = await _reportServices.CheckDocumentsFileIntegrityPagedAsync(pageNumber , pageSize);
             return StatusCode(result.StatusCode, result);
         }
+
+
+        [HttpGet("teste")]
+        public async Task<IActionResult> teste([FromQuery] ReportsViewForm req)
+        {
+            BaseResponseDTOs result = await _reportServices.GetDocumentDetailsReportWithFastReport(req);
+            return StatusCode(result.StatusCode, result);
+        }
+
     }
 }

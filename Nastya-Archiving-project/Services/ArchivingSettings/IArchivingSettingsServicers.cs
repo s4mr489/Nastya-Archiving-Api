@@ -1,4 +1,5 @@
-﻿using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.ArchivingPoint;
+﻿using Nastya_Archiving_project.Models.DTOs;
+using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.ArchivingPoint;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.DocsType;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.Precedence;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.SupDocsType;
@@ -17,6 +18,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         Task<(List<ArchivingPointResponseDTOs>? points, string? error)> GetAllArchivingPoints();
         Task<(ArchivingPointResponseDTOs? point, string? error)> GetArchivingPointById(int Id);
         Task<string> DeleteArchivingPoint(int Id);
+        Task<BaseResponseDTOs> GetArchivePointByDepartId(int departId);
 
 
         //DocsType Implementation

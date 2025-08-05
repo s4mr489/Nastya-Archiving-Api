@@ -17,7 +17,11 @@ namespace Nastya_Archiving_project.Models.DTOs.Reports
 
         public List<int?>? departmentId { get; set; }
         public EReportType? reportType { get; set; }
+        public string? outputFormat { get; set; } = "pdf"; // Default to PDF
+
         public EResultType? resultType { get; set; }
+
+        public string? reportTitle { get; set; } = "Report";
 
         public int pageNumber { get; set; } = 1;
         public int pageSize { get; set; } = 20;

@@ -17,14 +17,14 @@ namespace Nastya_Archiving_project.Services.files
         Task<(string? file, long fileSize, string? error)> upload(FileViewForm fileForm);
         /// this for upload to the tmep file inside the project with user RealName inside the wwwroot
         Task<(List<(string filePath, string fileType, string? notice)> files, string? error)> uploadWithType(MultiFileFormViewForm filesForm);
-        //that use to download the file we don't use it on the project untily now 
+        //that use to download the file we don't use it on the project until now 
         Task<(IActionResult, string? error)> DownloadPdf(MultiFileFormViewForm filesForm);
-        //don't used untily now
+        //don't used until now
         Task<string> GetHtml(MultiFileFormViewForm filesForm);
         //that use for upload the system icons to wwwroot 
         Task<(string? file, string? error)> SaveToWwwrootAsync(FileViewForm fileForm);
         //that use to decompress and decrypte the file and show it when we want 
-        Task<(byte[]? fileBytes, string? fileName, string? contentType, string? error)> GetDecryptedFileByPathAsync(string filePath);
+        Task<(Stream? fileStream, string? contentType, string? error)> GetDecryptedFileStreamAsync(string filePath);
         //that use to remove file from the temp folder for the user after uploading it 
         bool RemoveTempUserFile(string fileName);
         // that use to get all the tempFolder for user when he open the archivign page
