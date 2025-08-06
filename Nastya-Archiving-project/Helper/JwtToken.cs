@@ -35,7 +35,7 @@ namespace Nastya_Archiving_project.Helper
                 {
                     new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                     new Claim(ClaimTypes.Role, role),
-                    new Claim("RealName", (_encryptionServices.DecryptString256Bit(realName))),
+                    new Claim("RealName", (_encryptionServices.DecryptString256Bit(user.UserName))),
                     new Claim("BranchId", user?.BranchId.ToString()),
                     new Claim("DepartId", user?.DepariId.ToString()),
                     new Claim("AccountUnitId", user?.AccountUnitId.ToString()),

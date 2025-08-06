@@ -195,84 +195,232 @@ namespace Nastya_Archiving_project.Services.files
             if (string.IsNullOrWhiteSpace(requestDTO.OriginalFilePath) || requestDTO.File == null)
                 return (null, "Original file path and the file to merge must be provided.");
 
-            string file2Path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.pdf");
-            string tempDecryptedOriginalPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_decrypted.pdf");
-            string tempMergedPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_merged.pdf");
-            string tempEncryptedCompressedPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_merged_encrypted.gz");
+            // Validate file is PDF
+            if (!Path.GetExtension(requestDTO.File.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+                return (null, "The uploaded file must be a PDF document.");
+
+            // Create unique temp file paths with fewer string concatenations
+            var tempId = Guid.NewGuid().ToString("N");
+            string tempDir = Path.GetTempPath();
+            string file2Path = Path.Combine(tempDir, $"up_{tempId}.pdf");
+            string tempDecryptedPath = Path.Combine(tempDir, $"orig_{tempId}.pdf");
+            string tempMergedPath = Path.Combine(tempDir, $"merge_{tempId}.pdf");
+            string tempEncryptedPath = Path.Combine(tempDir, $"enc_{tempId}.gz");
+
+            // Use a collection for cleanup to avoid array allocation in finally block
+            var tempFiles = new List<string>(4) { file2Path, tempDecryptedPath, tempMergedPath, tempEncryptedPath };
 
             try
             {
-                // Save the uploaded file to temp
-                await using (var s2 = new FileStream(file2Path, FileMode.Create))
-                    await requestDTO.File.CopyToAsync(s2);
+                // Find and validate the original file with optimized path resolution
+                string originalPath = ResolveFilePath(requestDTO.OriginalFilePath);
+                if (originalPath == null)
+                    return (null, $"Original file not found: {requestDTO.OriginalFilePath}");
 
-                // Check if the original file is encrypted (not a PDF header)
-                bool isEncrypted;
-                using (var fs = new FileStream(requestDTO.OriginalFilePath, FileMode.Open, FileAccess.Read))
+                // Save the uploaded file directly
+                using (var fileStream = new FileStream(file2Path, FileMode.Create, FileAccess.Write, FileShare.None, 81920))
+                    await requestDTO.File.CopyToAsync(fileStream);
+
+                // Process original file - check if encrypted and prepare for merging in one step
+                if (!await PrepareOriginalPdfAsync(originalPath, tempDecryptedPath))
+                    return (null, "Could not process the original file as a valid PDF document.");
+
+                // Merge PDFs efficiently
+                if (!await MergePdfsAsync(tempDecryptedPath, file2Path, tempMergedPath))
+                    return (null, "Failed to merge PDF files.");
+
+                // Encrypt and compress the merged file
+                byte[] resultBytes = await EncryptAndCompressPdfAsync(tempMergedPath, tempEncryptedPath);
+                if (resultBytes == null)
+                    return (null, "Failed to encrypt and compress the merged PDF.");
+
+                return (resultBytes, null);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                return (null, $"File access error: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return (null, $"Error processing PDF files: {ex.Message}");
+            }
+            finally
+            {
+                // Cleanup temp files efficiently
+                foreach (string path in tempFiles)
                 {
+                    try { if (File.Exists(path)) File.Delete(path); }
+                    catch { /* Ignore cleanup errors */ }
+                }
+            }
+        }
+
+        // Optimized path resolution with minimal I/O
+        private string? ResolveFilePath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+
+            // Normalize path separators in one operation
+            path = path.Replace('/', Path.DirectorySeparatorChar);
+
+            // Check direct path first to minimize I/O
+            if (File.Exists(path)) return path;
+
+            // Try absolute path
+            try
+            {
+                string fullPath = Path.GetFullPath(path);
+                if (File.Exists(fullPath)) return fullPath;
+            }
+            catch { /* Ignore path resolution errors */ }
+
+            // Try relative to current directory
+            string relativePath = Path.Combine(Directory.GetCurrentDirectory(), path);
+            if (File.Exists(relativePath)) return relativePath;
+
+            return null;
+        }
+
+        // Handle original PDF preparation efficiently
+        private async Task<bool> PrepareOriginalPdfAsync(string originalPath, string outputPath)
+        {
+            try
+            {
+                // Check if encrypted by reading header only
+                bool isEncrypted;
+                using (var fs = new FileStream(originalPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096))
+                {
+                    if (fs.Length < 4) return false;
+
                     byte[] header = new byte[4];
                     await fs.ReadAsync(header, 0, 4);
                     isEncrypted = Encoding.ASCII.GetString(header) != "%PDF";
                 }
 
-                // If encrypted, decrypt to tempDecryptedOriginalPath, else just copy
-                string originalToMergePath = tempDecryptedOriginalPath;
-                if (isEncrypted)
+                if (!isEncrypted)
                 {
-                    var keyString = _configuration["FileEncrypt:key"];
-                    if (string.IsNullOrEmpty(keyString))
-                        return (null, "Encryption key is not configured.");
-
-                    byte[] key = Convert.FromBase64String(keyString);
-                    using var decryptedStream = await DecryptFileAsync(requestDTO.OriginalFilePath, key);
-                    await File.WriteAllBytesAsync(tempDecryptedOriginalPath, decryptedStream.ToArray());
-                }
-                else
-                {
-                    File.Copy(requestDTO.OriginalFilePath, tempDecryptedOriginalPath, true);
+                    // Direct copy for unencrypted files
+                    File.Copy(originalPath, outputPath, true);
+                    return true;
                 }
 
-                // Merge and save to tempMergedPath
-                using (var outputDoc = new PdfSharp.Pdf.PdfDocument())
-                {
-                    foreach (var path in new[] { originalToMergePath, file2Path })
-                        using (var inputDoc = PdfSharp.Pdf.IO.PdfReader.Open(path, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
-                            for (int i = 0; i < inputDoc.PageCount; i++)
-                                outputDoc.AddPage(inputDoc.Pages[i]);
+                // Handle encrypted file
+                byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"] ?? string.Empty);
+                if (key.Length == 0) return false;
 
-                    outputDoc.Save(tempMergedPath);
+                using var decryptedStream = await DecryptFileAsync(originalPath, key);
+                if (decryptedStream == null) return false;
+
+                // Verify PDF header after decryption
+                decryptedStream.Position = 0;
+                byte[] pdfHeader = new byte[4];
+                await decryptedStream.ReadAsync(pdfHeader, 0, 4);
+
+                if (Encoding.ASCII.GetString(pdfHeader) == "%PDF")
+                {
+                    // Save decrypted PDF
+                    decryptedStream.Position = 0;
+                    using var outputStream = new FileStream(outputPath, FileMode.Create);
+                    await decryptedStream.CopyToAsync(outputStream);
+                    return true;
                 }
 
-                // Encrypt and compress the merged PDF using external helpers
+                // Try decompression if not a valid PDF after decryption
+                decryptedStream.Position = 0;
+                using var decompressedStream = await TryDecompressGZipAsync(decryptedStream);
+                if (decompressedStream == null) return false;
+
+                // Check decompressed content for PDF header
+                decompressedStream.Position = 0;
+                await decompressedStream.ReadAsync(pdfHeader, 0, 4);
+                if (Encoding.ASCII.GetString(pdfHeader) != "%PDF") return false;
+
+                // Save decompressed PDF
+                decompressedStream.Position = 0;
+                using var finalOutputStream = new FileStream(outputPath, FileMode.Create);
+                await decompressedStream.CopyToAsync(finalOutputStream);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // Try to decompress a stream, return null if fails
+        private async Task<MemoryStream?> TryDecompressGZipAsync(Stream inputStream)
+        {
+            try
+            {
+                var outputStream = new MemoryStream();
+                using var gzipStream = new System.IO.Compression.GZipStream(
+                    inputStream, System.IO.Compression.CompressionMode.Decompress, leaveOpen: true);
+                await gzipStream.CopyToAsync(outputStream);
+                outputStream.Position = 0;
+                return outputStream;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // Merge PDFs efficiently
+        private async Task<bool> MergePdfsAsync(string file1Path, string file2Path, string outputPath)
+        {
+            try
+            {
+                using var outputDoc = new PdfSharp.Pdf.PdfDocument();
+
+                // Process files in sequence
+                foreach (string path in new[] { file1Path, file2Path })
+                {
+                    using var inputDoc = PdfSharp.Pdf.IO.PdfReader.Open(
+                        path, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+
+                    for (int i = 0; i < inputDoc.PageCount; i++)
+                        outputDoc.AddPage(inputDoc.Pages[i]);
+                }
+
+                outputDoc.Save(outputPath);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // Encrypt and compress efficiently
+        private async Task<byte[]?> EncryptAndCompressPdfAsync(string inputPath, string tempOutputPath)
+        {
+            try
+            {
                 var keyStr = _configuration["FileEncrypt:key"];
                 var ivStr = _configuration["FileEncrypt:iv"];
                 if (string.IsNullOrEmpty(keyStr) || string.IsNullOrEmpty(ivStr))
-                    return (null, "Encryption key or IV is not configured.");
+                    return null;
 
                 byte[] keyBytes = Convert.FromBase64String(keyStr);
                 byte[] ivBytes = Convert.FromBase64String(ivStr);
 
-                // Use streams for compression and encryption
-                await using (var mergedFileStream = new FileStream(tempMergedPath, FileMode.Open, FileAccess.Read))
-                await using (var compressedStream = new MemoryStream())
-                {
-                    await CompressToGZipAsync(mergedFileStream, compressedStream);
-                    compressedStream.Position = 0;
-                    await EncryptStreamToFileAsync(compressedStream, tempEncryptedCompressedPath, keyBytes, ivBytes);
-                }
+                // Compress and encrypt in memory where possible
+                using var inputFileStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920);
+                using var compressedStream = new MemoryStream((int)(inputFileStream.Length * 0.8)); // Estimate compressed size
 
-                // Return the encrypted and compressed merged file as bytes
-                var encryptedMergedBytes = await File.ReadAllBytesAsync(tempEncryptedCompressedPath);
-                return (encryptedMergedBytes, null);
+                // Compress
+                await CompressToGZipAsync(inputFileStream, compressedStream);
+                compressedStream.Position = 0;
+
+                // Encrypt to file
+                await EncryptStreamToFileAsync(compressedStream, tempOutputPath, keyBytes, ivBytes);
+
+                // Read back as bytes directly
+                return await File.ReadAllBytesAsync(tempOutputPath);
             }
-            catch (Exception ex)
+            catch
             {
-                return (null, $"Error merging PDFs: {ex.Message}");
-            }
-            finally
-            {
-                foreach (var path in new[] { file2Path, tempDecryptedOriginalPath, tempMergedPath, tempEncryptedCompressedPath })
-                    if (File.Exists(path)) File.Delete(path);
+                return null;
             }
         }
         //this method to merge docx files and return the merged file as bytes

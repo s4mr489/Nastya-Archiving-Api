@@ -114,7 +114,7 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(docsType);
         }
 
-        [HttpGet("Get-DocsType/{DepartId}")]
+        [HttpGet("Get-DocsType-ByDepart/{DepartId}")]
         public async Task<IActionResult> GetDocsTypeByDepartId(int DepartId)
         {
             var (docsType, error) = await _archivingSettings.GetDocsTypeById(DepartId);

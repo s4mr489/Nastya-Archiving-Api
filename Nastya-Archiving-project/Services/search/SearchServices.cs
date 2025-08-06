@@ -401,6 +401,7 @@ namespace Nastya_Archiving_project.Services.search
                     source = d.DocSource != null ? d.DocSource.ToString() : null,
                     ReferenceTo = d.ReferenceTo,
                     fileType = d.FileType != null ? d.FileType.ToString() : null,
+                    supdocType = d.SubDocType,
                     BoxOn = d.BoxfileNo != null ? d.BoxfileNo : null,
                     Notice = d.WordsTosearch != null ? d.WordsTosearch : null,
                     systemId = d.RefrenceNo != null ? d.RefrenceNo : null,
@@ -650,6 +651,8 @@ namespace Nastya_Archiving_project.Services.search
                 query = query.Where(d => d.DocTarget.HasValue && d.DocTarget.Value == req.target.Value);
             if (!string.IsNullOrWhiteSpace(req.noitce))
                 query = query.Where(d => d.DocTitle != null && d.DocTitle.Contains(req.noitce));
+            if (req.departId.HasValue)
+                query = query.Where(d => d.DepartId != null && d.DepartId == req.departId);
 
             // Pagination
             int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
@@ -658,12 +661,12 @@ namespace Nastya_Archiving_project.Services.search
 
             // Get paged docs
             var pagedDocs = await query
-                .OrderBy(d => d.DepartId)
-                .ThenBy(d => d.DocType)
-                .ThenBy(d => d.DocDate.HasValue ? d.DocDate.Value.Year : 0)
-                .Skip(skip)
-                .Take(pageSize)
-                .ToListAsync();
+                 .OrderByDescending(d => d.EditDate.HasValue ? d.EditDate.Value : DateTime .MinValue)
+                 .ThenByDescending(d => d.DepartId)
+                 .ThenByDescending(d => d.DocType)
+                 .Skip(skip)
+                 .Take(pageSize)
+                 .ToListAsync();
 
             // Get department names and doc type names
             var departIds = pagedDocs.Select(d => d.DepartId).Distinct().ToList();

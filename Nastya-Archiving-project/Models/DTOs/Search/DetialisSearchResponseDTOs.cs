@@ -12,6 +12,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Search
         public DateTime? editDate { get; set; }
         public string? subject { get; set; }
         public string? source { get; set; }
+        public int? supdocType { get; set; }
         public string? ReferenceTo { get; set; }
         public string? BoxOn { get; set; }
         public string? fileType { get; set; }

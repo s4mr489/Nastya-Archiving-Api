@@ -50,30 +50,44 @@ namespace Nastya_Archiving_project.Services.encrpytion
         // Decrypt string using 256-bit decryption
         public string DecryptString256Bit(string strCryptText)
         {
-            string output = "";
             try
             {
-                byte[] bytCryptText = Convert.FromBase64String(strCryptText);
-                byte[] bytKey = ConvertKeyToBytes(strKey);
-                byte[] bytTemp = new byte[bytCryptText.Length];
-                using (MemoryStream objMemoryStream = new MemoryStream(bytCryptText))
+                // Base64 decode
+                byte[] cipherTextBytes = Convert.FromBase64String(strCryptText);
+
+                // Your key and IV must be EXACTLY 32 bytes (256-bit key) and 16 bytes (128-bit block size) respectively.
+                byte[] keyBytes = ConvertKeyToBytes(strKey); // Ensure this returns 32 bytes
+                byte[] ivBytes = bytIV; // Ensure this is defined and is 16 bytes
+
+                using (RijndaelManaged rijAlg = new RijndaelManaged())
                 {
-                    using (RijndaelManaged objRijndaelManaged = new RijndaelManaged())
+                    rijAlg.KeySize = 256;
+                    rijAlg.BlockSize = 128;
+                    rijAlg.Mode = CipherMode.CBC;
+                    rijAlg.Padding = PaddingMode.PKCS7;
+
+                    rijAlg.Key = keyBytes;
+                    rijAlg.IV = ivBytes;
+
+                    using (MemoryStream msDecrypt = new MemoryStream(cipherTextBytes))
                     {
-                        using (CryptoStream objCryptoStream = new CryptoStream(objMemoryStream, objRijndaelManaged.CreateDecryptor(bytKey, bytIV), CryptoStreamMode.Read))
+                        using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, rijAlg.CreateDecryptor(), CryptoStreamMode.Read))
                         {
-                            objCryptoStream.Read(bytTemp, 0, bytTemp.Length);
+                            using (StreamReader srDecrypt = new StreamReader(csDecrypt, Encoding.UTF8))
+                            {
+                                // Return decrypted string (correctly handles Arabic, UTF-8 etc.)
+                                return srDecrypt.ReadToEnd();
+                            }
                         }
                     }
                 }
-                output = Encoding.UTF8.GetString(bytTemp).Replace("\0", string.Empty);
             }
-            catch (Exception)
+            catch
             {
-                output = "Error";
+                return "Error";
             }
-            return output;
         }
+
 
         // Compute MD5 hash with optional salt
         public string ComputeMD5Hash(string strPlainText, byte[] bytSalt = null)
