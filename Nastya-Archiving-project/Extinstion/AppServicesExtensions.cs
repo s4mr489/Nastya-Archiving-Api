@@ -128,7 +128,8 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<InfrastructureServices>();
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();
-
+            services.AddSignalR();
+            services.AddMemoryCache();
             return services;
         }
         public static IServiceCollection AddMapperConfig(this IServiceCollection services)

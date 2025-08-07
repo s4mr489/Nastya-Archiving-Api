@@ -35,6 +35,7 @@ namespace Nastya_Archiving_project.Services.search
         /// </summary>
         /// <param name="req"></param>
         /// <returns></returns>
+        //Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req);
         Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req);
         //that implmention used to return the search result like Tree 
         Task<BaseResponseDTOs> TreeSearch(TreeSearchViewForm req);

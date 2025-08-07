@@ -1,4 +1,6 @@
-﻿namespace Nastya_Archiving_project.Models.DTOs.Search.QuikSearch
+﻿using DocumentFormat.OpenXml.Spreadsheet;
+
+namespace Nastya_Archiving_project.Models.DTOs.Search.QuikSearch
 {
     public class QuikSearchResponseDTOs
     {
@@ -15,5 +17,6 @@
         public string? ReferenceTo { get; set; }
         public string? fileType { get; set; }
         public string? docType { get; set; }
+        public bool? HasJoinedDocs { get; set; }
     }
 }

@@ -125,19 +125,20 @@ namespace Nastya_Archiving_project.Services.search
         {
             try
             {
+                // Start with a query on ArcivingDocs
                 var query = _context.ArcivingDocs.AsQueryable();
 
-                // Build a filter object (extend BaseFilter if needed)
+                // Build a filter object
                 var filter = new BaseFilter
                 {
                     StartDate = req.from,
                     EndDate = req.to,
                 };
 
-                // Use extension methods for base filtering
+                // Apply base filtering
                 query = query.WhereBaseFilter(filter);
 
-                // Custom filters for all QuikeSearchViewForm properties
+                // Apply all the filters from the request
                 if (!string.IsNullOrWhiteSpace(req.docsNumber))
                 {
                     if (req.exactMatch)
@@ -157,8 +158,6 @@ namespace Nastya_Archiving_project.Services.search
                 {
                     query = query.Where(d => d.DocType == req.docsType.Value);
                 }
-                // ArcivingDoc does not have SupDocType, so skip this filter
-
                 if (!string.IsNullOrWhiteSpace(req.wordToSearch))
                     query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
                 if (!string.IsNullOrWhiteSpace(req.boxFile))
@@ -172,7 +171,7 @@ namespace Nastya_Archiving_project.Services.search
                 if (req.departId.HasValue)
                     query = query.Where(d => d.DepartId.HasValue && d.DepartId.Value == req.departId.Value);
 
-                // Date filters for editDate and docsDate
+                // Date filters
                 if (req.editDate == true)
                 {
                     if (req.from.HasValue)
@@ -188,41 +187,47 @@ namespace Nastya_Archiving_project.Services.search
                         query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value <= DateOnly.FromDateTime(req.to.Value));
                 }
 
-                // Paging and ordering
+                // Apply paging
                 int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
                 int pageSize = req.pageSize > 0 ? req.pageSize : 20;
 
-                var pagedDocs = await query
-                    .OrderByDescending(d => d.Id)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
+                // Get the filtered documents with join information in a single query
+                var pagedResults = await (
+                    from doc in query
+                    orderby doc.Id descending
+                    let hasJoinedDocs = _context.JoinedDocs.Any(j => j.ParentRefrenceNO == doc.RefrenceNo)
+                    select new { Document = doc, HasJoinedDocs = hasJoinedDocs }
+                )
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
 
-                // Get all doc types for mapping id to name
-                var docTypeIds = pagedDocs.Select(d => d.DocType).Distinct().ToList();
+                // If no documents found, return early
+                if (pagedResults.Count == 0)
+                    return (null, "No documents found matching the criteria.");
+
+                // Get document types for names
+                var docTypeIds = pagedResults.Select(r => r.Document.DocType).Distinct().ToList();
                 var docTypes = await _context.ArcivDocDscrps
                     .Where(dt => docTypeIds.Contains(dt.Id))
-                    .ToListAsync();
-                var docTypeNames = docTypes.ToDictionary(x => x.Id, x => x.Dscrp);
+                    .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
 
-                var result = pagedDocs.Select(d => new QuikSearchResponseDTOs
+                // Build the final response
+                var result = pagedResults.Select(r => new QuikSearchResponseDTOs
                 {
-                    systemId = d.RefrenceNo,
-                    Id = d.Id,
-                    file = d.ImgUrl,
-                    editDate = d.EditDate,
-                    docsNumber = d.DocNo,
-                    docsDate = d.DocDate.HasValue ? d.DocDate.Value : null,
-                    subject = d.Subject,
-                    source = d.DocSource != null ? d.DocSource.ToString() : null,
-                    ReferenceTo = d.ReferenceTo,
-                    fileType = d.FileType != null ? d.FileType.ToString() : null,
-                    // Add doctypeName to the response
-                    docsTitle = docTypeNames.ContainsKey(d.DocType) ? docTypeNames[d.DocType] : null
+                    systemId = r.Document.RefrenceNo,
+                    Id = r.Document.Id,
+                    file = r.Document.ImgUrl,
+                    editDate = r.Document.EditDate,
+                    docsNumber = r.Document.DocNo,
+                    docsDate = r.Document.DocDate,
+                    subject = r.Document.Subject,
+                    source = r.Document.DocSource?.ToString(),
+                    ReferenceTo = r.Document.ReferenceTo,
+                    fileType = r.Document.FileType?.ToString(),
+                    docsTitle = docTypes.TryGetValue(r.Document.DocType, out var typeName) ? typeName : null,
+                    HasJoinedDocs = r.HasJoinedDocs
                 }).ToList();
-
-                if (result == null || result.Count == 0)
-                    return (null, "No documents found matching the criteria.");
 
                 return (result, null);
             }
@@ -231,6 +236,116 @@ namespace Nastya_Archiving_project.Services.search
                 return (null, $"Error during search: {ex.Message}");
             }
         }
+        //public async Task<(List<QuikSearchResponseDTOs>? docs, string? error)> QuikeSearch(QuikeSearchViewForm req)
+        //{
+        //    try
+        //    {
+        //        var query = _context.ArcivingDocs.AsQueryable();
+
+        //        // Build a filter object (extend BaseFilter if needed)
+        //        var filter = new BaseFilter
+        //        {
+        //            StartDate = req.from,
+        //            EndDate = req.to,
+        //        };
+
+        //        // Use extension methods for base filtering
+        //        query = query.WhereBaseFilter(filter);
+
+        //        // Custom filters for all QuikeSearchViewForm properties
+        //        if (!string.IsNullOrWhiteSpace(req.docsNumber))
+        //        {
+        //            if (req.exactMatch)
+        //                query = query.Where(d => d.DocNo != null && d.DocNo == req.docsNumber);
+        //            else
+        //                query = query.Where(d => d.DocNo != null && d.DocNo.Contains(req.docsNumber));
+        //        }
+        //        if (!string.IsNullOrWhiteSpace(req.subject))
+        //        {
+        //            query = query.Where(d => d.Subject != null && d.Subject.Contains(req.subject));
+        //        }
+        //        if (!string.IsNullOrWhiteSpace(req.systemId))
+        //        {
+        //            query = query.Where(d => d.RefrenceNo != null && d.RefrenceNo == req.systemId);
+        //        }
+        //        if (req.docsType.HasValue)
+        //        {
+        //            query = query.Where(d => d.DocType == req.docsType.Value);
+        //        }
+        //        // ArcivingDoc does not have SupDocType, so skip this filter
+
+        //        if (!string.IsNullOrWhiteSpace(req.wordToSearch))
+        //            query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
+        //        if (!string.IsNullOrWhiteSpace(req.boxFile))
+        //            query = query.Where(d => d.BoxfileNo != null && d.BoxfileNo.Contains(req.boxFile));
+        //        if (req.source.HasValue)
+        //            query = query.Where(d => d.DocSource != null && d.DocSource.Value == req.source.Value);
+        //        if (req.ReferenceTo.HasValue)
+        //            query = query.Where(d => d.ReferenceTo != null && d.ReferenceTo == req.ReferenceTo.Value.ToString());
+        //        if (req.fileType.HasValue)
+        //            query = query.Where(d => d.FileType.HasValue && d.FileType.Value == (int)req.fileType.Value);
+        //        if (req.departId.HasValue)
+        //            query = query.Where(d => d.DepartId.HasValue && d.DepartId.Value == req.departId.Value);
+
+        //        // Date filters for editDate and docsDate
+        //        if (req.editDate == true)
+        //        {
+        //            if (req.from.HasValue)
+        //                query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value >= req.from.Value);
+        //            if (req.to.HasValue)
+        //                query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value <= req.to.Value);
+        //        }
+        //        if (req.docsDate == true)
+        //        {
+        //            if (req.from.HasValue)
+        //                query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value >= DateOnly.FromDateTime(req.from.Value));
+        //            if (req.to.HasValue)
+        //                query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value <= DateOnly.FromDateTime(req.to.Value));
+        //        }
+
+        //        // Paging and ordering
+        //        int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
+        //        int pageSize = req.pageSize > 0 ? req.pageSize : 20;
+
+        //        var pagedDocs = await query
+        //            .OrderByDescending(d => d.Id)
+        //            .Skip((pageNumber - 1) * pageSize)
+        //            .Take(pageSize)
+        //            .ToListAsync();
+
+        //        // Get all doc types for mapping id to name
+        //        var docTypeIds = pagedDocs.Select(d => d.DocType).Distinct().ToList();
+        //        var docTypes = await _context.ArcivDocDscrps
+        //            .Where(dt => docTypeIds.Contains(dt.Id))
+        //            .ToListAsync();
+        //        var docTypeNames = docTypes.ToDictionary(x => x.Id, x => x.Dscrp);
+
+        //        var result = pagedDocs.Select(d => new QuikSearchResponseDTOs
+        //        {
+        //            systemId = d.RefrenceNo,
+        //            Id = d.Id,
+        //            file = d.ImgUrl,
+        //            editDate = d.EditDate,
+        //            docsNumber = d.DocNo,
+        //            docsDate = d.DocDate.HasValue ? d.DocDate.Value : null,
+        //            subject = d.Subject,
+        //            source = d.DocSource != null ? d.DocSource.ToString() : null,
+        //            ReferenceTo = d.ReferenceTo,
+        //            fileType = d.FileType != null ? d.FileType.ToString() : null,
+        //            // Add doctypeName to the response
+        //            docsTitle = docTypeNames.ContainsKey(d.DocType) ? docTypeNames[d.DocType] : null
+        //        }).ToList();
+
+        //        if (result == null || result.Count == 0)
+        //            return (null, "No documents found matching the criteria.");
+
+        //        return (result, null);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return (null, $"Error during search: {ex.Message}");
+        //    }
+        //}
 
         /// <summary> not used year just for test </summary>
         public async Task<(List<QuikSearchResponseDTOs>? docs, string? error)> GetArcivingDocsAsync(
@@ -525,6 +640,7 @@ namespace Nastya_Archiving_project.Services.search
 
             return new BaseResponseDTOs(result, 200);
         }
+
         public async Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req)
         {
             var query = _context.ArcivingDocs.AsQueryable();
@@ -557,6 +673,8 @@ namespace Nastya_Archiving_project.Services.search
             var result = pagedDocs.Select(d => new
             {
                 d.Id,
+                d.RefrenceNo,
+                d.ImgUrl,
                 d.DocNo,
                 d.DocDate,
                 d.DocTarget,
@@ -594,7 +712,10 @@ namespace Nastya_Archiving_project.Services.search
                 .Where(d => childRefs.Contains(d.RefrenceNo))
                 .Select(d => new
                 {
+                    
                     d.RefrenceNo,
+                    systemId = d.ImgUrl,
+                    d.ImgUrl,
                     d.DocNo,
                     d.DocDate,
                     d.DocTarget,
@@ -613,6 +734,7 @@ namespace Nastya_Archiving_project.Services.search
                 {
                     ParentRefrenceNO = j.ParentRefrenceNO,
                     ChildRefrenceNo = j.ChildRefrenceNo,
+                    ImgUrl = doc.ImgUrl,
                     DocNo = doc?.DocNo,
                     DocDate = doc?.DocDate,
                     DocTarget = doc?.DocTarget,

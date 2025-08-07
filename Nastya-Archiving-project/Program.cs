@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Extinstion;
 using Nastya_Archiving_project.Helper;
+using Nastya_Archiving_project.Seginal;
 
 var builder = WebApplication.CreateBuilder(args);
 ConfigProvider.config = builder.Configuration;
@@ -45,6 +46,8 @@ app.UseCustomSwaggerWithAuth("Nastya-Archiving-Swagger");
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
+
+app.MapHub<MailNotificationHub>("/mailNotificationHub");
 app.MapGet("/", context =>
 {
     context.Response.Redirect("/swagger");
