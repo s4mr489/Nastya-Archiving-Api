@@ -9,6 +9,7 @@ namespace Nastya_Archiving_project.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Tags("Archiving Settings")]
     public class ArhchivingDocController : ControllerBase
     {
         private readonly IArchivingDocsSercvices _archivingDocsSercvices;

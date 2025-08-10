@@ -14,6 +14,7 @@ using Nastya_Archiving_project.Services.files;
 using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.Mail;
 using Nastya_Archiving_project.Services.Permmsions;
+using Nastya_Archiving_project.Services.printer;
 using Nastya_Archiving_project.Services.reports;
 using Nastya_Archiving_project.Services.search;
 using Nastya_Archiving_project.Services.statistically;
@@ -126,6 +127,7 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<IReportServices, ResportServices>();
             services.AddScoped<IStatisticallyServices , StatisticallyServices>();
             services.AddScoped<InfrastructureServices>();
+            services.AddScoped<IPrinterServices, PrinterServices>();
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();
             services.AddSignalR();

@@ -20,3 +20,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 });
+window.addEventListener('load', () => {
+    // Make the top-left logo/text link to your site
+    const logoLink = document.querySelector('.topbar .link');
+    if (logoLink) {
+        logoLink.href = 'https://Samer-asp.verce.app';
+        logoLink.target = '_blank';
+        logoLink.rel = 'noopener';
+    }
+
+    // Change the API version text in the select label (if you didn’t hide it)
+    const label = document.querySelector('.download-url-wrapper .select-label span');
+    if (label) label.textContent = 'API Version';
+});

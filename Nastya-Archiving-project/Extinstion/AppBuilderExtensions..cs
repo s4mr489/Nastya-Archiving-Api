@@ -1,5 +1,6 @@
 ﻿using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Helper;
+using Nastya_Archiving_project.Middleware;
 using Nastya_Archiving_project.Services.encrpytion;
 using Swashbuckle.AspNetCore.SwaggerUI;
 
@@ -80,6 +81,19 @@ namespace Nastya_Archiving_project.Extinstion
 
                 await seeder.SeedSuperAdmin("SuperAdmin", "AdminSuper"); // You can add a password for the SuperAdmin
             }
+
+            return app;
+        }
+
+        // Add this method to your existing AppBuilderExtensions class
+        public static IApplicationBuilder UsePrinterWebSockets(this IApplicationBuilder app)
+        {
+            app.UseWebSockets(new WebSocketOptions
+            {
+                KeepAliveInterval = TimeSpan.FromMinutes(2)
+            });
+
+            app.UseMiddleware<PrinterWebSocketMiddleware>();
 
             return app;
         }
