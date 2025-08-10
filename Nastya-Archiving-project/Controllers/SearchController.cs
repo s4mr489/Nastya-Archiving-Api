@@ -1,4 +1,5 @@
 ﻿using DocumentFormat.OpenXml.Bibliography;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs;
@@ -14,6 +15,7 @@ namespace Nastya_Archiving_project.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class SearchController : ControllerBase
     {
         private readonly ISearchServices _searchServices;

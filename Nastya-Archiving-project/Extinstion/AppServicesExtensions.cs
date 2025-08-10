@@ -21,6 +21,7 @@ using Nastya_Archiving_project.Services.SystemInfo;
 using Nastya_Archiving_project.Services.userInterface;
 using Nastya_Archiving_project.Services.usersPermission;
 using Nastya_Archiving_project.Swagger;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -81,21 +82,27 @@ namespace Nastya_Archiving_project.Extinstion
                 });
 
                 opt.AddSecurityRequirement(new OpenApiSecurityRequirement
-            {
                 {
-                    new OpenApiSecurityScheme
                     {
-                        Reference = new OpenApiReference
+                        new OpenApiSecurityScheme
                         {
-                            Type = ReferenceType.SecurityScheme,
-                            Id = "Bearer"
-                        }
-                    },
-                    new string[] { }
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "Bearer"
+                            }
+                        },
+                        new string[] { }
+                    }
+                });
+
+                // Make XML comments optional - only include if file exists
+                var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
+                if (File.Exists(xmlPath))
+                {
+                    opt.IncludeXmlComments(xmlPath);
                 }
-            });
-
-
 
                 opt.OperationFilter<AcceptHeaderOperationFilter>();
             });

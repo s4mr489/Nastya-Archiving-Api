@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs.JoinedDocs;
 using Nastya_Archiving_project.Models.DTOs.file;
@@ -7,8 +8,21 @@ using Nastya_Archiving_project.Services.SystemInfo;
 
 namespace Nastya_Archiving_project.Controllers
 {
+    /// <summary>
+    /// Controller for managing archiving document operations.
+    /// </summary>
+    /// <remarks>
+    /// This controller handles all document archiving operations including:
+    /// - Adding documents to the archive
+    /// - Retrieving archived documents
+    /// - Updating archived documents
+    /// - Removing documents from the archive
+    /// - Managing document relationships (joining, unbinding)
+    /// - Handling deleted document restoration
+    /// </remarks>
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize] // Add authorization to protect these endpoints
     public class ArhchivingDocController : ControllerBase
     {
         private readonly IArchivingDocsSercvices _archivingDocsSercvices;

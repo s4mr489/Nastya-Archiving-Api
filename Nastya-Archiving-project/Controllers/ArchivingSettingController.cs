@@ -25,6 +25,12 @@ namespace Nastya_Archiving_project.Controllers
         }
         // Archiving Point Endpoints
 
+
+        /// <summary>
+        /// يحصل على كتاب حسب المعرّف.
+        /// </summary>
+        /// <param name="id">معرّف الكتاب</param>
+        /// <returns>الكتاب</returns>
         [HttpPost("Create-ArchivingPoint")]
         public async Task<IActionResult> PostArchivingPoint([FromBody] ArchivingPointViewForm req)
         {
