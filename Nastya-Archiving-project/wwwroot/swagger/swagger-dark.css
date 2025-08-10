@@ -1,4 +1,4 @@
-@media only screen and (prefers-color-scheme: dark) {
+﻿@media only screen and (prefers-color-scheme: dark) {
 
     a { color: #8c8cfa; }
 
@@ -846,4 +846,42 @@
                 linear-gradient(270deg, #696969 30%, rgba(0, 0, 0, 0) 31%);
         background-color: #b6b6b6;
     }
+
+    /* Darken topbar (example) */
+    .topbar {
+        background-color: #0f172a !important;
+    }
+
+        /* Hide the built‑in Swagger logo SVG */
+        .topbar .link svg {
+            display: none !important;
+        }
+
+        /* Use your own logo image */
+        .topbar .link {
+            display: inline-block;
+            width: 180px;
+            height: 40px;
+            background: url('/swagger/logo.svg') no-repeat left center / contain;
+        }
+
+        /* Or simple text instead of a logo */
+        .topbar .link {
+            background: none;
+        }
+
+            .topbar .link::after {
+                content: "Nastya Archiving Docs";
+                color: #fff;
+                font-weight: 700;
+                font-size: 18px;
+            }
+
+    /* Hide “Select a definition” dropdown */
+    .download-url-wrapper {
+        display: none !important;
+    }
+
+    /* (Optional) hide entire topbar */
+    /* .topbar { display: none !important; } */
 }

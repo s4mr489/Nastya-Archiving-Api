@@ -22,7 +22,6 @@ namespace Nastya_Archiving_project.Controllers
     /// </remarks>
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // Add authorization to protect these endpoints
     public class ArhchivingDocController : ControllerBase
     {
         private readonly IArchivingDocsSercvices _archivingDocsSercvices;
