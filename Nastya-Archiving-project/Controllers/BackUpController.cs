@@ -1,6 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Scaffolding;
+using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Services.SystemInfo;
 
 namespace Nastya_Archiving_project.Controllers
@@ -10,9 +13,11 @@ namespace Nastya_Archiving_project.Controllers
     public class BackUpController : ControllerBase
     {
         private readonly ISystemInfoServices _systemInfoServices;
-        public BackUpController(ISystemInfoServices systemInfoServices)
+        private readonly AppDbContext _context;
+        public BackUpController(ISystemInfoServices systemInfoServices, AppDbContext context)
         {
             _systemInfoServices = systemInfoServices;
+            _context = context;
         }
 
         //[HttpPost("DataBase_BackUp")]

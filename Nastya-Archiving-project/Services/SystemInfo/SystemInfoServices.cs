@@ -22,10 +22,8 @@ namespace Nastya_Archiving_project.Services.SystemInfo
 
         public async Task<string> GetLastRefNo()
         {
-            var lastDoc = await _context.ArcivingDocs.CountAsync();
-            var lastDelete = await _context.ArcivingDocsDeleteds.CountAsync();
-
-            
+            var lastDoc = await _context.ArcivingDocs.Select(d => d.RefrenceNo).CountAsync();
+            var lastDelete = await _context.ArcivingDocsDeleteds.Select(d => d.RefrenceNo).CountAsync();
 
             // Increment the number and format it
             int newNumber = lastDelete+lastDoc + 1;

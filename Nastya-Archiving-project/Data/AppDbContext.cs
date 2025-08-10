@@ -17,6 +17,12 @@ public partial class AppDbContext : DbContext
         _configuration = configuration;
     }
 
+    // Extension method to get the configuration
+    public IConfiguration GetConfiguration()
+    {
+        return _configuration;
+    }
+
     public virtual DbSet<ArcivDocDscrp> ArcivDocDscrps { get; set; }
 
     public virtual DbSet<ArcivDocsRefrence> ArcivDocsRefrences { get; set; }

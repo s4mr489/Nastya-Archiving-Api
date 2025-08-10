@@ -104,5 +104,67 @@ namespace Nastya_Archiving_project.Controllers
 
             return Ok(result);
         }
+
+
+        /// <summary>
+        /// Gets image URLs from archived documents with pagination support
+        /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page</param>
+        /// <param name="getLastImage">If true, returns only the last image</param>
+        /// <param name="getFirstImage">If true, returns only the first image</param>
+        /// <returns>Paginated list of image URLs or specific image based on parameters</returns>
+        [HttpGet("images")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> GetArchivingDocImages(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] bool getLastImage = false,
+            [FromQuery] bool getFirstImage = false)
+        {
+            try
+            {
+                var (imageUrls, error, totalCount) = await _archivingDocsSercvices.GetArchivingDocImages(
+                    page, pageSize, getLastImage, getFirstImage);
+
+                if (imageUrls == null)
+                {
+                    return StatusCode(500, new { error });
+                }
+
+                if (imageUrls.Count == 0)
+                {
+                    return NotFound(new { message = error ?? "No images found" });
+                }
+
+                // Calculate pagination metadata
+                var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+                var hasNext = page < totalPages;
+                var hasPrevious = page > 1;
+
+                return Ok(new
+                {
+                    data = imageUrls,
+                    pagination = new
+                    {
+                        currentPage = page,
+                        pageSize = pageSize,
+                        totalCount,
+                        totalPages,
+                        hasNext,
+                        hasPrevious
+                    },
+                    message = getLastImage ? "Last image retrieved successfully" :
+                             getFirstImage ? "First image retrieved successfully" :
+                             "Images retrieved successfully"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"An error occurred: {ex.Message}" });
+            }
+        }
     }
 }

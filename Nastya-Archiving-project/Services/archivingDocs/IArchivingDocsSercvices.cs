@@ -31,5 +31,18 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
         /// <summary> this implmention used to Joined the docs from the archive </summary>
         Task<BaseResponseDTOs> JoinDocsFromArchive(JoinedDocsViewForm req);
+        /// <summary>
+        /// Gets image URLs from the ArcivingDocs entity with pagination support
+        /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page</param>
+        /// <param name="getLastImage">If true, returns only the last image URL</param>
+        /// <param name="getFirstImage">If true, returns only the first image URL</param>
+        /// <returns>A tuple with list of image URLs, error message if any, and total count</returns>
+        Task<(List<ImageUrlDTO>? imageUrls, string? error, int totalCount)> GetArchivingDocImages(
+            int page = 1,
+            int pageSize = 10,
+            bool getLastImage = false,
+            bool getFirstImage = false);
     }
 }

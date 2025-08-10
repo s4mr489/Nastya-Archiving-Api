@@ -46,106 +46,162 @@ namespace Nastya_Archiving_project.Services.Mail
             _cache = cache;
         }
 
+        /// <summary>
+        /// Sends a mail to one or more recipients with optional document reference
+        /// </summary>
+        /// <param name="req">Mail details including recipients and document reference</param>
+        /// <returns>Response with mail details or error information</returns>
         public async Task<BaseResponseDTOs> SendMail(MailViewForm req)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.to))
-                return new BaseResponseDTOs(null, 400, "Invalid request data");
-
+                return new BaseResponseDTOs(null, 400, "Invalid request data: No recipients specified");
 
             try
             {
+                // Get sender's name - we only need to do this once
                 var (realName, error) = await _systemInfoServices.GetRealName();
                 if (!string.IsNullOrEmpty(error))
                     return new BaseResponseDTOs(null, 400, error);
 
-                var encyptedToRealName = _encryptionServices.EncryptString256Bit(req.to);
-                // Validate that recipient exists
-                var recipientExists = await _context.Users
-                    .AsNoTracking()
-                    .AnyAsync(u => u.Realname == encyptedToRealName);
+                // Process recipient list efficiently - use array directly for better performance
+                string[] recipientArray = req.to.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
 
-                if (!recipientExists)
-                    return new BaseResponseDTOs(null, 400, "Recipient not found");
+                if (recipientArray.Length == 0)
+                    return new BaseResponseDTOs(null, 400, "No valid recipients specified");
 
-                var mail = new TFileTransferring
+                // Use HashSet for faster lookups and automatic deduplication
+                var recipientSet = new HashSet<string>(
+                    recipientArray.Select(r => r.Trim()).Where(r => !string.IsNullOrWhiteSpace(r)),
+                    StringComparer.OrdinalIgnoreCase
+                );
+
+                if (recipientSet.Count == 0)
+                    return new BaseResponseDTOs(null, 400, "No valid recipients specified");
+
+                // Pre-encrypt all recipients in one batch - saves encryption time
+                var encryptedRecipients = new Dictionary<string, string>(recipientSet.Count);
+                foreach (var recipient in recipientSet)
                 {
-                    RefrenceNo = req.ReferenceNo,
-                    From = realName,
-                    To = req.to,
-                    Notes = req.Notes,
-                    SendDate = DateTime.UtcNow,
-                    Readed = 0
-                };
+                    encryptedRecipients[recipient] = _encryptionServices.EncryptString256Bit(recipient);
+                }
 
-                _context.TFileTransferrings.Add(mail);
-                await _context.SaveChangesAsync();
+                // Validate recipients in a single database query instead of multiple queries
+                var existingUsers = await _context.Users
+                    .AsNoTracking()
+                    .Where(u => encryptedRecipients.Values.Contains(u.Realname))
+                    .Select(u => u.Realname)
+                    .ToHashSetAsync();
 
-                // Get document information if reference number is provided
+                // Determine invalid recipients efficiently
+                var validRecipients = new List<string>(recipientSet.Count);
+                var invalidRecipients = new List<string>();
+
+                foreach (var kvp in encryptedRecipients)
+                {
+                    if (existingUsers.Contains(kvp.Value))
+                        validRecipients.Add(kvp.Key);
+                    else
+                        invalidRecipients.Add(kvp.Key);
+                }
+
+                if (invalidRecipients.Count > 0)
+                    return new BaseResponseDTOs(null, 400, $"Recipients not found: {string.Join(", ", invalidRecipients)}");
+
+                // Get document information with a single optimized query
                 object documentInfo = null;
                 if (!string.IsNullOrEmpty(req.ReferenceNo))
                 {
-                    var document = await _context.ArcivingDocs
-                        .AsNoTracking()
-                        .Where(d => d.RefrenceNo == req.ReferenceNo)
-                        .Select(d => new
-                        {
-                            d.Id,
-                            d.RefrenceNo,
-                            d.DocNo,
-                            d.DocDate,
-                            d.DocType,
-                            d.Subject,
-                            d.ImgUrl
-                        })
-                        .FirstOrDefaultAsync();
+                    // Use a single query with join to get document and doc type in one trip to database
+                    var documentWithType = await (from doc in _context.ArcivingDocs
+                                                  join type in _context.ArcivDocDscrps
+                                                  on doc.DocType equals type.Id into typeJoin
+                                                  from type in typeJoin.DefaultIfEmpty()
+                                                  where doc.RefrenceNo == req.ReferenceNo
+                                                  select new
+                                                  {
+                                                      doc.Id,
+                                                      doc.RefrenceNo,
+                                                      doc.DocNo,
+                                                      doc.DocDate,
+                                                      doc.DocType,
+                                                      DocTypeName = type.Dscrp,
+                                                      doc.Subject,
+                                                      doc.ImgUrl
+                                                  })
+                                                .AsNoTracking()
+                                                .FirstOrDefaultAsync();
 
-                    if (document != null)
-                    {
-                        string docTypeName = null;
-                        var docType = await _context.ArcivDocDscrps
-                            .AsNoTracking()
-                            .Where(dt => dt.Id == document.DocType)
-                            .Select(dt => dt.Dscrp)
-                            .FirstOrDefaultAsync();
-
-                        documentInfo = new
-                        {
-                            document.Id,
-                            document.RefrenceNo,
-                            document.DocNo,
-                            document.DocDate,
-                            document.DocType,
-                            DocTypeName = docType,
-                            document.Subject,
-                            document.ImgUrl
-                        };
-                    }
+                    documentInfo = documentWithType;
                 }
 
-                // Update unread count in memory
-                _userUnreadCounts.AddOrUpdate(req.to, 1, (key, count) => count + 1);
+                // Pre-allocate collections with exact capacity needed
+                var now = DateTime.UtcNow;
+                var createdMails = new List<TFileTransferring>(validRecipients.Count);
+                var mailTasks = new List<Task>(validRecipients.Count * 2); // For notification tasks
 
-                // Send real-time notification with document info
-                await _hubContext.Clients.User(req.to).SendAsync("ReceiveNewMail", new
+                // Create all mail entities at once
+                foreach (var recipient in validRecipients)
                 {
-                    Id = mail.Id,
-                    From = realName,
-                    SenderName = TryDecryptName(realName),
-                    To = req.to,
+                    var mail = new TFileTransferring
+                    {
+                        RefrenceNo = req.ReferenceNo,
+                        From = realName,
+                        To = recipient,
+                        Notes = req.Notes,
+                        SendDate = now,
+                        Readed = 0
+                    };
+
+                    createdMails.Add(mail);
+                    // Update unread count for this recipient
+                    _userUnreadCounts.AddOrUpdate(recipient, 1, (_, count) => count + 1);
+                }
+
+                // Add all entities in a single batch and save once
+                _context.TFileTransferrings.AddRange(createdMails);
+                await _context.SaveChangesAsync();
+
+                // Prepare sender name once for all notifications
+                var senderName = TryDecryptName(realName);
+
+                // Queue up notifications for each recipient to be sent in parallel
+                foreach (var mail in createdMails)
+                {
+                    // Send real-time notification with document info
+                    mailTasks.Add(_hubContext.Clients.User(mail.To).SendAsync("ReceiveNewMail", new
+                    {
+                        Id = mail.Id,
+                        From = realName,
+                        SenderName = senderName,
+                        To = mail.To,
+                        ReferenceNo = req.ReferenceNo,
+                        Notes = req.Notes,
+                        SendDate = mail.SendDate,
+                        IsRead = false,
+                        Document = documentInfo
+                    }));
+
+                    // Also broadcast updated count
+                    mailTasks.Add(_hubContext.Clients.User(mail.To).SendAsync("UpdateMailCount", new
+                    {
+                        UnreadCount = _userUnreadCounts.GetValueOrDefault(mail.To, 0)
+                    }));
+                }
+
+                // Wait for all notifications to complete at once
+                if (mailTasks.Count > 0)
+                {
+                    await Task.WhenAll(mailTasks);
+                }
+
+                // Return response with all mail information
+                return new BaseResponseDTOs(new
+                {
+                    MailsSent = createdMails.Count,
+                    Recipients = validRecipients,
                     ReferenceNo = req.ReferenceNo,
-                    Notes = req.Notes,
-                    SendDate = DateTime.UtcNow,
-                    IsRead = false,
-                    Document = documentInfo
-                });
-
-                // Also broadcast to all connected clients the updated count
-                await _hubContext.Clients.User(req.to).SendAsync("UpdateMailCount", new
-                {
-                    UnreadCount = _userUnreadCounts.GetValueOrDefault(req.to, 0)
-                });
-
-                return new BaseResponseDTOs(mail, 200);
+                    SentDate = now
+                }, 200, $"Mail sent successfully to {createdMails.Count} recipient(s)");
             }
             catch (Exception ex)
             {
