@@ -108,63 +108,115 @@ namespace Nastya_Archiving_project.Services.reports
                     ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
                     : departments;
 
+                // Sort departments to maintain consistent order
+                filteredDepartments = filteredDepartments.OrderBy(d => d.Id).ToList();
+
                 // 3. Get filtered documents using the same filter as GeneralReport
                 var query = BuildFilteredQuery(req);
-
-                int page = req.pageNumber > 0 ? req.pageNumber : 1;
-                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-
+                
+                // Get total document count
                 int totalCount = await query.CountAsync();
-                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-                // 4. Get paged documents
-                var pagedDocs = await PaginateQuery(query, page, pageSize);
-
-                // 5. Group paged documents by department and editor
-                var grouped = filteredDepartments.Select(dept =>
+                
+                // 4. Find departments with documents
+                var departmentsWithDocs = new List<int>();
+                foreach (var dept in filteredDepartments)
                 {
-                    var editorGroups = pagedDocs
-                        .Where(d => d.DepartId == dept.Id)
-                        .GroupBy(d => d.Editor)
-                        .Select(g => new
-                        {
-                            Editor = g.Key,
-                            Documents = pagedDocs.Where(d => d.DepartId == dept.Id).Select(d => new
-                            {
-                                d.DocDate,
-                                d.EditDate,
-                                d.DocNo,
-                                d.Subject,
-                            }),
-                            DocumentCount = g.Count()
-                        }).ToList();
-
-                    int departmentTotal = editorGroups.Sum(e => e.DocumentCount);
-
-                    return new
+                    int count = await query.Where(d => d.DepartId == dept.Id).CountAsync();
+                    if (count > 0)
+                        departmentsWithDocs.Add(dept.Id);
+                }
+                
+                if (departmentsWithDocs.Count == 0)
+                {
+                    return new BaseResponseDTOs(new
                     {
-                        DepartmentName = dept.DepartmentName,
-                        DepartmentId = dept.Id,
-                        Editors = editorGroups,
-                        DepartmentTotal = departmentTotal
-                    };
-                }).ToList();
+                        CurrentDepartment = new { 
+                            DepartmentName = string.Empty,
+                            DepartmentId = 0,
+                            Editors = new List<object>(),
+                            DepartmentTotal = 0
+                        },
+                        TotalDepartments = 0,
+                        CurrentDepartmentIndex = 0,
+                        TotalCount = 0,
+                        TotalPages = 0,
+                        PageNumber = req.pageNumber,
+                        PageSize = req.pageSize,
+                        TotalDocumentCount = 0
+                    }, 200, null);
+                }
+                
+                // 5. Handle department-based pagination
+                int deptPage = req.pageNumber > 0 ? req.pageNumber : 1;
+                int deptPageSize = 1; // Show 1 department per page
+                
+                // Calculate which department to show based on page number
+                int departmentIndex = (deptPage - 1) % departmentsWithDocs.Count;
+                int currentDepartmentId = departmentsWithDocs[departmentIndex];
+                var currentDepartment = filteredDepartments.First(d => d.Id == currentDepartmentId);
+                
+                // 6. Now handle document pagination within the department
+                int docPage = req.docPage > 0 ? req.docPage : 1;
+                int docPageSize = req.pageSize > 0 ? req.pageSize : 10;
+                
+                // Get all documents for this department
+                var departmentDocsQuery = query.Where(d => d.DepartId == currentDepartmentId);
+                int departmentTotalDocs = await departmentDocsQuery.CountAsync();
+                int departmentTotalPages = (int)Math.Ceiling(departmentTotalDocs / (double)docPageSize);
+                
+                // Get paged documents for this department
+                var departmentDocs = await departmentDocsQuery
+                    .OrderBy(d => d.DocNo)
+                    .Skip((docPage - 1) * docPageSize)
+                    .Take(docPageSize)
+                    .ToListAsync();
+                
+                // 7. Group department documents by editor
+                var editorGroups = departmentDocs
+                    .GroupBy(d => d.Editor)
+                    .Select(g => new
+                    {
+                        Editor = g.Key,
+                        Documents = g.Select(d => new
+                        {
+                            d.DocDate,
+                            d.EditDate,
+                            d.DocNo,
+                            d.Subject,
+                        }).ToList(),
+                        DocumentCount = g.Count()
+                    })
+                    .OrderBy(g => g.Editor)
+                    .ToList();
 
-                int totalForAllDepartments = grouped.Sum(r => r.DepartmentTotal);
+                // 8. Create response with single department but with document pagination info
+                var departmentData = new
+                {
+                    DepartmentName = currentDepartment.DepartmentName,
+                    DepartmentId = currentDepartment.Id,
+                    Editors = editorGroups,
+                    DepartmentTotal = departmentTotalDocs,
+                    CurrentDocPage = docPage,
+                    TotalDocPages = departmentTotalPages
+                };
+                
+                // Department pagination is based on total departments with documents
+                int totalDepartmentPages = departmentsWithDocs.Count;
 
                 var response = new
                 {
-                    Departments = grouped,
-                    TotalForAllDepartments = totalForAllDepartments,
-                    TotalCount = totalCount,
-                    TotalPages = totalPages,
-                    PageNumber = page,
-                    PageSize = pageSize
+                    CurrentDepartment = departmentData,
+                    TotalDepartments = departmentsWithDocs.Count,
+                    CurrentDepartmentIndex = departmentIndex + 1, // 1-based index for display
+                    TotalDepartmentPages = totalDepartmentPages,
+                    CurrentDepartmentPage = deptPage,
+                    TotalDocumentCount = totalCount, // Total across all departments
+                    FilteredDepartmentIds = departmentsWithDocs // For debugging/reference
                 };
 
                 return new BaseResponseDTOs(response, 200, null);
             }
-            return new BaseResponseDTOs(null, 400, "any thing");
+            return new BaseResponseDTOs(null, 400, "Please use Detailed result type for this report");
         }
 
         //this is the sticitcs Report for the Users based on the deparment 
@@ -248,40 +300,98 @@ namespace Nastya_Archiving_project.Services.reports
                 ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
                 : departments;
 
+            // Sort departments to maintain consistent order
+            filteredDepartments = filteredDepartments.OrderBy(d => d.Id).ToList();
+
             // 3. Get filtered documents using the same filter as GeneralReport
             var query = BuildFilteredQuery(req);
-
-            int page = req.pageNumber > 0 ? req.pageNumber : 1;
-            int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-
+            
+            // Get total document count for pagination info
             int totalCount = await query.CountAsync();
-            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-            var pagedDocs = await PaginateQuery(query, page, pageSize);
-
-            // 4. Group paged documents by department, include departments with no docs
-            var grouped = filteredDepartments.Select(dept => new
+            
+            // 4. Handle department-based pagination
+            int deptPage = req.pageNumber > 0 ? req.pageNumber : 1;
+            int deptPageSize = 1; // Show 1 department per page
+            
+            // Find departments with documents
+            var departmentsWithDocs = new List<int>();
+            foreach (var dept in filteredDepartments)
             {
-                DepartmentName = dept.DepartmentName,
-                DepartmentId = dept.Id,
-                Documents = pagedDocs.Where(d => d.DepartId == dept.Id).Select(d => new
+                int count = await query.Where(d => d.DepartId == dept.Id).CountAsync();
+                if (count > 0)
+                    departmentsWithDocs.Add(dept.Id);
+            }
+            
+            if (departmentsWithDocs.Count == 0)
+            {
+                return new BaseResponseDTOs(new
                 {
-                    d.DocDate,
-                    d.EditDate,
-                    d.DocNo,
-                    d.Subject,
-                })
+                    CurrentDepartment = new {
+                        DepartmentName = string.Empty,
+                        DepartmentId = 0,
+                        Documents = new List<object>(),
+                        TotalDocuments = 0,
+                        CurrentDocPage = 0,
+                        TotalDocPages = 0
+                    },
+                    TotalDepartments = 0,
+                    CurrentDepartmentIndex = 0,
+                    TotalDepartmentPages = 0,
+                    CurrentDepartmentPage = deptPage,
+                    TotalDocumentCount = 0
+                }, 200, null);
+            }
+            
+            // Calculate current department index based on page number
+            int departmentIndex = (deptPage - 1) % departmentsWithDocs.Count;
+            int currentDepartmentId = departmentsWithDocs[departmentIndex];
+            var currentDepartment = filteredDepartments.First(d => d.Id == currentDepartmentId);
+            
+            // 5. Handle document pagination within the department
+            int docPage = req.docPage > 0 ? req.docPage : 1;
+            int docPageSize = req.pageSize > 0 ? req.pageSize : 10;
+            
+            // Get total documents for this department to calculate document pagination
+            var departmentDocsQuery = query.Where(d => d.DepartId == currentDepartmentId);
+            int departmentTotalDocs = await departmentDocsQuery.CountAsync();
+            int departmentTotalPages = (int)Math.Ceiling(departmentTotalDocs / (double)docPageSize);
+            
+            // Get paged documents for this department
+            var departmentDocs = await departmentDocsQuery
+                .OrderBy(d => d.DocDate)
+                .Skip((docPage - 1) * docPageSize)
+                .Take(docPageSize)
+                .ToListAsync();
+            
+            // Format documents for display
+            var documents = departmentDocs.Select(d => new
+            {
+                docDate = d.DocDate,
+                editDate = d.EditDate,
+                docNo = d.DocNo,
+                subject = d.Subject,
             }).ToList();
-
+            
+            // 6. Create response with single department and document pagination info
             var response = new
             {
-                Data = grouped,
-                TotalCount = totalCount,
-                TotalPages = totalPages,
-                PageNumber = page,
-                PageSize = pageSize
+                CurrentDepartment = new
+                {
+                    DepartmentName = currentDepartment.DepartmentName,
+                    DepartmentId = currentDepartment.Id,
+                    Documents = documents,
+                    TotalDocuments = departmentTotalDocs,
+                    CurrentDocPage = docPage,
+                    TotalDocPages = departmentTotalPages
+                },
+                TotalDepartments = departmentsWithDocs.Count,
+                CurrentDepartmentIndex = departmentIndex + 1, // 1-based index for display
+                TotalDepartmentPages = departmentsWithDocs.Count,
+                CurrentDepartmentPage = deptPage,
+                TotalDocumentCount = totalCount // Total across all departments
             };
 
+            // Return response
             return new BaseResponseDTOs(response, 200, null);
         }
 
@@ -417,67 +527,116 @@ namespace Nastya_Archiving_project.Services.reports
                     ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
                     : departments;
 
+                // Sort departments to maintain consistent order
+                filteredDepartments = filteredDepartments.OrderBy(d => d.Id).ToList();
+
                 // 3. Get filtered documents using the same filter as GeneralReport
                 var query = BuildFilteredQuery(req);
-
-                int page = req.pageNumber > 0 ? req.pageNumber : 1;
-                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-
+                
+                // Get total document count for pagination info
                 int totalCount = await query.CountAsync();
-                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-                // 4. Get paged documents
-                var pagedDocs = await PaginateQuery(query, page, pageSize);
-
-                // 5. Group paged documents by department and month
-                var grouped = filteredDepartments.Select(dept =>
+                
+                // 4. Handle department-based pagination
+                int deptPage = req.pageNumber > 0 ? req.pageNumber : 1;
+                int deptPageSize = 1; // Show 1 department per page
+                
+                // Find departments with documents
+                var departmentsWithDocs = new List<int>();
+                foreach (var dept in filteredDepartments)
                 {
-                    var monthGroups = pagedDocs
-                        .Where(d => d.DepartId == dept.Id && d.DocDate.HasValue)
-                        .GroupBy(d => new { d.EditDate.Value.Year, d.EditDate.Value.Month })
-                        .Select(g => new
-                        {
-                            Year = g.Key.Year,
-                            Month = g.Key.Month,
-                            Documents = pagedDocs.Where(d => d.DepartId == dept.Id).Select(d => new
-                            {
-                                d.DocDate,
-                                d.EditDate,
-                                d.DocNo,
-                                d.Subject,
-                            }),
-                            DocumentCount = g.Count()
-                        })
-                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
-                        .ToList();
-
-                    int departmentTotal = monthGroups.Sum(m => m.DocumentCount);
-
-                    return new
+                    int count = await query.Where(d => d.DepartId == dept.Id).CountAsync();
+                    if (count > 0)
+                        departmentsWithDocs.Add(dept.Id);
+                }
+                
+                if (departmentsWithDocs.Count == 0)
+                {
+                    return new BaseResponseDTOs(new
                     {
-                        DepartmentName = dept.DepartmentName,
-                        DepartmentId = dept.Id,
-                        Months = monthGroups,
-                        DepartmentTotal = departmentTotal
-                    };
-                }).ToList();
+                        CurrentDepartment = new {
+                            DepartmentName = string.Empty,
+                            DepartmentId = 0,
+                            Months = new List<object>(),
+                            DepartmentTotal = 0
+                        },
+                        TotalDepartments = 0,
+                        CurrentDepartmentIndex = 0,
+                        TotalCount = 0,
+                        TotalPages = 0,
+                        PageNumber = deptPage,
+                        PageSize = req.pageSize,
+                        TotalDocumentCount = 0
+                    }, 200, null);
+                }
+                
+                // Calculate current department index based on page number
+                int departmentIndex = (deptPage - 1) % departmentsWithDocs.Count;
+                int currentDepartmentId = departmentsWithDocs[departmentIndex];
+                var currentDepartment = filteredDepartments.First(d => d.Id == currentDepartmentId);
+                
+                // 5. Handle document pagination within the department
+                int docPage = req.docPage > 0 ? req.docPage : 1;
+                int docPageSize = req.pageSize > 0 ? req.pageSize : 10;
+                
+                // Get total documents for this department to calculate document pagination
+                var departmentDocsQuery = query.Where(d => d.DepartId == currentDepartmentId);
+                int departmentTotalDocs = await departmentDocsQuery.CountAsync();
+                int departmentTotalPages = (int)Math.Ceiling(departmentTotalDocs / (double)docPageSize);
+                
+                // Get paged documents for this department
+                var departmentDocs = await departmentDocsQuery
+                    .OrderBy(d => d.DocDate)
+                    .Skip((docPage - 1) * docPageSize)
+                    .Take(docPageSize)
+                    .ToListAsync();
+                
+                // 6. Group department documents by month
+                var monthGroups = departmentDocs
+                    .Where(d => d.DocDate.HasValue && d.EditDate.HasValue)
+                    .GroupBy(d => new { d.EditDate.Value.Year, d.EditDate.Value.Month })
+                    .Select(g => new
+                    {
+                        Year = g.Key.Year,
+                        Month = g.Key.Month,
+                        Documents = g.Select(d => new
+                        {
+                            d.DocDate,
+                            d.EditDate,
+                            d.DocNo,
+                            d.Subject,
+                        }).ToList(),
+                        DocumentCount = g.Count()
+                    })
+                    .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                    .ToList();
 
-                int totalForAllDepartments = grouped.Sum(r => r.DepartmentTotal);
+                // 7. Create response with single department but with document pagination info
+                var departmentData = new
+                {
+                    DepartmentName = currentDepartment.DepartmentName,
+                    DepartmentId = currentDepartment.Id,
+                    Months = monthGroups,
+                    DepartmentTotal = departmentTotalDocs,
+                    CurrentDocPage = docPage,
+                    TotalDocPages = departmentTotalPages
+                };
+                
+                // Department pagination is based on total departments with documents
+                int totalDepartmentPages = departmentsWithDocs.Count;
 
                 var response = new
                 {
-                    Departments = grouped,
-                    TotalForAllDepartments = totalForAllDepartments,
-                    TotalCount = totalCount,
-                    TotalPages = totalPages,
-                    PageNumber = page,
-                    PageSize = pageSize,
-                    TotalDocumentCount = pagedDocs.Count // Add total document count for this page
+                    CurrentDepartment = departmentData,
+                    TotalDepartments = departmentsWithDocs.Count,
+                    CurrentDepartmentIndex = departmentIndex + 1, // 1-based index for display
+                    TotalDepartmentPages = totalDepartmentPages,
+                    CurrentDepartmentPage = deptPage,
+                    TotalDocumentCount = totalCount // Total across all departments
                 };
 
                 return new BaseResponseDTOs(response, 200, null);
             }
-            return new BaseResponseDTOs(null, 400, "That is statistacal Report");
+            return new BaseResponseDTOs(null, 400, "Please use Detailed result type for this report");
         }
 
         public async Task<BaseResponseDTOs> GetSourceMonthlyDocumentCountsPagedAsync(ReportsViewForm req)
@@ -558,74 +717,111 @@ namespace Nastya_Archiving_project.Services.reports
                 // 1. Get all sources (distinct DocSource values from filtered docs)
                 var query = BuildFilteredQuery(req);
 
-                int page = req.pageNumber > 0 ? req.pageNumber : 1;
-                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-
+                // Get total document count for pagination info
                 int totalCount = await query.CountAsync();
-                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-                // 2. Get paged documents
-                var pagedDocs = await PaginateQuery(query, page, pageSize);
-
-                // 3. Get all sources for the paged docs
-                var sourceIds = pagedDocs
+                
+                // 2. Find all unique sources with documents
+                var sourceIds = await query
                     .Where(d => d.DocSource.HasValue)
                     .Select(d => d.DocSource.Value)
                     .Distinct()
-                    .ToList();
-
-                // 4. Optionally, get source names from infrastructure service
+                    .ToListAsync();
+                
+                // 3. Get source organizations
                 var sources = await _infrastructureServices.GetAllPOrganizations();
-                var filteredSources = sources.POrganization?.Where(s => sourceIds.Contains(s.Id)).ToList() ?? new List<OrgniztionResponseDTOs>();
-                // 5. Group paged documents by source and month
-                var grouped = filteredSources.Select(src =>
+                var filteredSources = sources.POrganization?
+                    .Where(s => sourceIds.Contains(s.Id))
+                    .OrderBy(s => s.Id)
+                    .ToList() ?? new List<OrgniztionResponseDTOs>();
+                
+                if (filteredSources.Count == 0)
                 {
-                    var monthGroups = pagedDocs
-                        .Where(d => d.DocSource == src.Id && d.DocDate.HasValue)
-                        .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
-                        .Select(g => new
-                        {
-                            Year = g.Key.Year,
-                            Month = g.Key.Month,
-                            Documents = g.Select(d => new
-                            {
-                                d.DocDate,
-                                d.EditDate,
-                                d.DocNo,
-                                d.Subject,
-                            }),
-                            DocumentCount = g.Count()
-                        })
-                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
-                        .ToList();
-
-                    int sourceTotal = monthGroups.Sum(m => m.DocumentCount);
-
-                    return new
+                    return new BaseResponseDTOs(new
                     {
-                        SourceName = src.Dscrp,
-                        SourceId = src.Id,
-                        Months = monthGroups,
-                        SourceTotal = sourceTotal
-                    };
-                }).ToList();
-
-                int totalForAllSources = grouped.Sum(r => r.SourceTotal);
-
+                        CurrentSource = new { 
+                            SourceName = string.Empty,
+                            SourceId = 0,
+                            Months = new List<object>(),
+                            SourceTotal = 0,
+                            CurrentDocPage = 0,
+                            TotalDocPages = 0
+                        },
+                        TotalSources = 0,
+                        CurrentSourceIndex = 0,
+                        TotalSourcePages = 0,
+                        CurrentSourcePage = 0,
+                        TotalCount = 0,
+                        TotalDocumentCount = 0
+                    }, 200, null);
+                }
+                
+                // 4. Handle source-based pagination
+                int sourcePage = req.pageNumber > 0 ? req.pageNumber : 1;
+                
+                // Calculate current source index based on page number
+                int sourceIndex = (sourcePage - 1) % filteredSources.Count;
+                var currentSource = filteredSources[sourceIndex];
+                
+                // 5. Handle document pagination within the source
+                int docPage = req.docPage > 0 ? req.docPage : 1;
+                int docPageSize = req.pageSize > 0 ? req.pageSize : 10;
+                
+                // Get total documents for this source
+                var sourceDocsQuery = query.Where(d => d.DocSource == currentSource.Id && d.DocDate.HasValue);
+                int sourceTotalDocs = await sourceDocsQuery.CountAsync();
+                int sourceTotalPages = (int)Math.Ceiling(sourceTotalDocs / (double)docPageSize);
+                
+                // Get paged documents for this source
+                var sourceDocs = await sourceDocsQuery
+                    .OrderBy(d => d.DocDate)
+                    .Skip((docPage - 1) * docPageSize)
+                    .Take(docPageSize)
+                    .ToListAsync();
+                
+                // 6. Group source documents by month
+                var monthGroups = sourceDocs
+                    .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
+                    .Select(g => new
+                    {
+                        Year = g.Key.Year,
+                        Month = g.Key.Month,
+                        Documents = g.Select(d => new
+                        {
+                            d.DocDate,
+                            d.EditDate,
+                            d.DocNo,
+                            d.Subject,
+                        }).ToList(),
+                        DocumentCount = g.Count()
+                    })
+                    .OrderBy(g => g.Year).ThenBy(g => g.Month)
+                    .ToList();
+        
+                // 7. Create response with single source and document pagination info
+                var sourceData = new
+                {
+                    SourceName = currentSource.Dscrp,
+                    SourceId = currentSource.Id,
+                    Months = monthGroups,
+                    SourceTotal = sourceTotalDocs,
+                    CurrentDocPage = docPage,
+                    TotalDocPages = sourceTotalPages
+                };
+                
                 var response = new
                 {
-                    Sources = grouped,
-                    TotalForAllSources = totalForAllSources,
+                    CurrentSource = sourceData,
+                    TotalSources = filteredSources.Count,
+                    CurrentSourceIndex = sourceIndex + 1, // 1-based index for display
+                    TotalSourcePages = filteredSources.Count,
+                    CurrentSourcePage = sourcePage,
                     TotalCount = totalCount,
-                    TotalPages = totalPages,
-                    PageNumber = page,
-                    PageSize = pageSize,
-                    TotalDocumentCount = pagedDocs.Count
+                    TotalDocumentCount = totalCount
                 };
 
                 return new BaseResponseDTOs(response, 200, null);
             }
-            return new BaseResponseDTOs(null, 400, "That is statistical Report");
+            return new BaseResponseDTOs(null, 400, "Please use Detailed result type for this report");
         }
 
         public async Task<BaseResponseDTOs> GetTargeteMonthlyDocumentCountsPagedAsync(ReportsViewForm req)
@@ -702,14 +898,11 @@ namespace Nastya_Archiving_project.Services.reports
         {
             if (req.resultType == EResultType.Detailed)
             {
-                int page = req.pageNumber > 0 ? req.pageNumber : 1;
-                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-                int skip = (page - 1) * pageSize;
-
                 // Apply filters to parent docs
                 var filteredParentDocs = BuildFilteredQuery(req);
-
-                var query =
+                
+                // Query to join reference documents
+                var joinQuery = 
                     from parent in filteredParentDocs
                     join reference in _context.ArcivDocsRefrences on parent.RefrenceNo equals reference.HeadReferenceNo
                     join joined in _context.ArcivingDocs on reference.LinkedRfrenceNo equals joined.RefrenceNo
@@ -720,6 +913,7 @@ namespace Nastya_Archiving_project.Services.reports
                     from docType in docTypeJoin.DefaultIfEmpty()
                     select new
                     {
+                        DepartmentId = joined.DepartId,
                         DepartDscrp = dept.Dscrp,
                         ParentDoc = parent.RefrenceNo,
                         JoinedDoc = joined.RefrenceNo,
@@ -730,81 +924,95 @@ namespace Nastya_Archiving_project.Services.reports
                         joined.Subject,
                         joined.BoxfileNo
                     };
-
-                var totalCount = await query.CountAsync();
-                var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-                var result = await query
-                    .OrderBy(x => x.DepartDscrp)
-                    .ThenByDescending(x => x.JoinedDoc)
-                    .Skip(skip)
-                    .Take(pageSize)
+        
+                // Get total count
+                int totalCount = await joinQuery.CountAsync();
+                
+                // Get distinct departments with reference documents
+                var departmentIds = await joinQuery
+                    .Select(x => x.DepartmentId)
+                    .Where(x => x.HasValue)
+                    .Select(x => x.Value)
+                    .Distinct()
                     .ToListAsync();
-
-                return new BaseResponseDTOs(new
+        
+                if (departmentIds.Count == 0)
                 {
-                    Data = result,
-                    TotalCount = totalCount,
-                    TotalPages = totalPages,
-                    PageNumber = page,
-                    PageSize = pageSize
-                }, 200, null);
+                    return new BaseResponseDTOs(new
+                    {
+                        CurrentDepartment = new { 
+                            DepartmentName = string.Empty,
+                            DepartmentId = 0,
+                            Documents = new List<object>(),
+                            TotalDocuments = 0,
+                            CurrentDocPage = 0,
+                            TotalDocPages = 0
+                        },
+                        TotalDepartments = 0,
+                        CurrentDepartmentIndex = 0,
+                        TotalDepartmentPages = 0,
+                        CurrentDepartmentPage = 0,
+                        TotalDocumentCount = 0
+                    }, 200, null);
+                }
+        
+                // Get department info
+                var (departments, error) = await _infrastructureServices.GetAllDepartment();
+                if (departments == null)
+                {
+                    return new BaseResponseDTOs(null, 500, error ?? "Failed to fetch departments");
+                }
+        
+                var departmentsWithDocs = departments
+                    .Where(d => departmentIds.Contains(d.Id))
+                    .OrderBy(d => d.Id)
+                    .ToList();
+        
+                // Handle department-based pagination
+                int deptPage = req.pageNumber > 0 ? req.pageNumber : 1;
+                
+                // Calculate current department index based on page number
+                int departmentIndex = (deptPage - 1) % departmentsWithDocs.Count;
+                var currentDepartment = departmentsWithDocs[departmentIndex];
+        
+                // Handle document pagination within the department
+                int docPage = req.docPage > 0 ? req.docPage : 1;
+                int docPageSize = req.pageSize > 0 ? req.pageSize : 10;
+        
+                // Get total documents for this department
+                var departmentDocsQuery = joinQuery.Where(x => x.DepartmentId == currentDepartment.Id);
+                int departmentTotalDocs = await departmentDocsQuery.CountAsync();
+                int departmentTotalPages = (int)Math.Ceiling(departmentTotalDocs / (double)docPageSize);
+        
+                // Get paged documents for current department
+                var departmentDocs = await departmentDocsQuery
+                    .OrderByDescending(x => x.JoinedDoc)
+                    .Skip((docPage - 1) * docPageSize)
+                    .Take(docPageSize)
+                    .ToListAsync();
+        
+                var response = new
+                {
+                    CurrentDepartment = new
+                    {
+                        DepartmentName = currentDepartment.DepartmentName,
+                        DepartmentId = currentDepartment.Id,
+                        Documents = departmentDocs,
+                        TotalDocuments = departmentTotalDocs,
+                        CurrentDocPage = docPage,
+                        TotalDocPages = departmentTotalPages
+                    },
+                    TotalDepartments = departmentsWithDocs.Count,
+                    CurrentDepartmentIndex = departmentIndex + 1,
+                    TotalDepartmentPages = departmentsWithDocs.Count,
+                    CurrentDepartmentPage = deptPage,
+                    TotalDocumentCount = totalCount
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
             }
             return new BaseResponseDTOs(null, 400, "Invalid result type");
         }
-
-        public async Task<BaseResponseDTOs> GetReferencedDocsCountsPagedAsync(ReportsViewForm req)
-        {
-            int page = req.pageNumber > 0 ? req.pageNumber : 1;
-            int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-            int skip = (page - 1) * pageSize;
-
-            // Filter ArcivingDocs
-            var filteredDocs = BuildFilteredQuery(req);
-
-            // Only docs that are referenced as children
-            var referencedDocs =
-                from doc in filteredDocs
-                join reference in _context.ArcivDocsRefrences on doc.RefrenceNo equals reference.LinkedRfrenceNo
-                join dept in _context.GpDepartments on doc.DepartId equals dept.Id
-                select new
-                {
-                    doc.Id,
-                    doc.DocNo,
-                    doc.RefrenceNo,
-                    doc.DepartId,
-                    DepartmentName = dept.Dscrp
-                };
-
-            // Group by department
-            var groupedQuery = referencedDocs
-                .GroupBy(x => new { x.DepartId, x.DepartmentName })
-                .Select(g => new
-                {
-                    DepartmentId = g.Key.DepartId,
-                    DepartmentName = g.Key.DepartmentName,
-                    DocsCount = g.Count(),
-                })
-                .OrderBy(x => x.DepartmentName);
-
-            int totalCount = await groupedQuery.CountAsync();
-            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-            var pagedResult = await groupedQuery
-                .Skip(skip)
-                .Take(pageSize)
-                .ToListAsync();
-
-            return new BaseResponseDTOs(new
-            {
-                Data = pagedResult,
-                TotalCount = totalCount,
-                TotalPages = totalPages,
-                PageNumber = page,
-                PageSize = pageSize
-            }, 200, null);
-        }
-
 
         public async Task<BaseResponseDTOs> GetTargetMonthlyDocumentDetailsPagedAsync(ReportsViewForm req)
         {
@@ -813,76 +1021,112 @@ namespace Nastya_Archiving_project.Services.reports
                 // 1. Get all sources (distinct DocSource values from filtered docs)
                 var query = BuildFilteredQuery(req);
 
-                int page = req.pageNumber > 0 ? req.pageNumber : 1;
-                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-
+                // Get total document count for pagination info
                 int totalCount = await query.CountAsync();
-                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-                // 2. Get paged documents
-                var pagedDocs = await PaginateQuery(query, page, pageSize);
-
-                // 3. Get all sources for the paged docs
-                var targetId = pagedDocs
+                
+                // 2. Find all unique targets with documents
+                var targetIds = await query
                     .Where(d => d.DocTarget.HasValue)
                     .Select(d => d.DocTarget.Value)
                     .Distinct()
+                    .ToListAsync();
+                
+                // 3. Get target organizations
+                var sources = await _infrastructureServices.GetAllPOrganizations();
+                var filteredTargets = sources.POrganization?
+                    .Where(s => targetIds.Contains(s.Id))
+                    .OrderBy(s => s.Id)
+                    .ToList() ?? new List<OrgniztionResponseDTOs>();
+                
+                if (filteredTargets.Count == 0)
+                {
+                    return new BaseResponseDTOs(new
+                    {
+                        CurrentTarget = new { 
+                            TargetName = string.Empty,
+                            TargetId = 0,
+                            Months = new List<object>(),
+                            TargetTotal = 0,
+                            CurrentDocPage = 0,
+                            TotalDocPages = 0
+                        },
+                        TotalTargets = 0,
+                        CurrentTargetIndex = 0,
+                        TotalTargetPages = 0,
+                        CurrentTargetPage = 0,
+                        TotalCount = 0,
+                        TotalDocumentCount = 0
+                    }, 200, null);
+                }
+                
+                // 4. Handle target-based pagination
+                int targetPage = req.pageNumber > 0 ? req.pageNumber : 1;
+                
+                // Calculate current target index based on page number
+                int targetIndex = (targetPage - 1) % filteredTargets.Count;
+                var currentTarget = filteredTargets[targetIndex];
+                
+                // 5. Handle document pagination within the target
+                int docPage = req.docPage > 0 ? req.docPage : 1;
+                int docPageSize = req.pageSize > 0 ? req.pageSize : 10;
+                
+                // Get total documents for this target
+                var targetDocsQuery = query.Where(d => d.DocTarget == currentTarget.Id && d.DocDate.HasValue);
+                int targetTotalDocs = await targetDocsQuery.CountAsync();
+                int targetTotalPages = (int)Math.Ceiling(targetTotalDocs / (double)docPageSize);
+                
+                // Get paged documents for this target
+                var targetDocs = await targetDocsQuery
+                    .OrderBy(d => d.DocDate)
+                    .Skip((docPage - 1) * docPageSize)
+                    .Take(docPageSize)
+                    .ToListAsync();
+                
+                // 6. Group target documents by month
+                var monthGroups = targetDocs
+                    .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
+                    .Select(g => new
+                    {
+                        Year = g.Key.Year,
+                        Month = g.Key.Month,
+                        Documents = g.Select(d => new
+                        {
+                            d.DocDate,
+                            d.EditDate,
+                            d.DocNo,
+                            d.Subject,
+                        }).ToList(),
+                        DocumentCount = g.Count()
+                    })
+                    .OrderBy(g => g.Year).ThenBy(g => g.Month)
                     .ToList();
 
-                // 4. Optionally, get source names from infrastructure service
-                var sources = await _infrastructureServices.GetAllPOrganizations();
-                var filteredSources = sources.POrganization?.Where(s => targetId.Contains(s.Id)).ToList() ?? new List<OrgniztionResponseDTOs>();
-                // 5. Group paged documents by source and month
-                var grouped = filteredSources.Select(src =>
+                // 7. Create response with single target and document pagination info
+                var targetData = new
                 {
-                    var monthGroups = pagedDocs
-                        .Where(d => d.DocTarget == src.Id && d.DocTarget.HasValue)
-                        .GroupBy(d => new { d.DocDate.Value.Year, d.DocDate.Value.Month })
-                        .Select(g => new
-                        {
-                            Year = g.Key.Year,
-                            Month = g.Key.Month,
-                            Documents = g.Select(d => new
-                            {
-                                d.DocDate,
-                                d.EditDate,
-                                d.DocNo,
-                                d.Subject,
-                            }),
-                            DocumentCount = g.Count()
-                        })
-                        .OrderBy(g => g.Year).ThenBy(g => g.Month)
-                        .ToList();
-
-                    int sourceTotal = monthGroups.Sum(m => m.DocumentCount);
-
-                    return new
-                    {
-                        TargetName = src.Dscrp,
-                        TargetId = src.Id,
-                        Months = monthGroups,
-                        TargetTotal = sourceTotal
-                    };
-                }).ToList();
-
-                int totalForAllSources = grouped.Sum(r => r.TargetTotal);
-
+                    TargetName = currentTarget.Dscrp,
+                    TargetId = currentTarget.Id,
+                    Months = monthGroups,
+                    TargetTotal = targetTotalDocs,
+                    CurrentDocPage = docPage,
+                    TotalDocPages = targetTotalPages
+                };
+                
                 var response = new
                 {
-                    Traget = grouped,
-                    TotalForAllSources = totalForAllSources,
+                    CurrentTarget = targetData,
+                    TotalTargets = filteredTargets.Count,
+                    CurrentTargetIndex = targetIndex + 1, // 1-based index for display
+                    TotalTargetPages = filteredTargets.Count,
+                    CurrentTargetPage = targetPage,
                     TotalCount = totalCount,
-                    TotalPages = totalPages,
-                    PageNumber = page,
-                    PageSize = pageSize,
-                    TotalDocumentCount = pagedDocs.Count
+                    TotalDocumentCount = totalCount
                 };
 
                 return new BaseResponseDTOs(response, 200, null);
             }
-            return new BaseResponseDTOs(null, 400, "That is statistical Report");
+            return new BaseResponseDTOs(null, 400, "Please use Detailed result type for this report");
         }
-
 
         public async Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize)
         {
@@ -945,63 +1189,118 @@ namespace Nastya_Archiving_project.Services.reports
                     ? departments.Where(dept => req.departmentId.Contains(dept.Id)).ToList()
                     : departments;
 
+                // Sort departments to maintain consistent order
+                filteredDepartments = filteredDepartments.OrderBy(d => d.Id).ToList();
+
                 // 3. Get filtered documents using the same filter as GeneralReport
                 var query = BuildFilteredQuery(req);
-
-                int page = req.pageNumber > 0 ? req.pageNumber : 1;
-                int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-
+                
+                // Get total document count for pagination info
                 int totalCount = await query.CountAsync();
-                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-                // 4. Get paged documents
-                var pagedDocs = await PaginateQuery(query, page, pageSize);
-
-                // 5. Group paged documents by department and editor
-                var grouped = filteredDepartments.Select(dept =>
+                
+                // 4. Find departments with documents
+                var departmentsWithDocs = new List<int>();
+                foreach (var dept in filteredDepartments)
                 {
-                    var editorGroups = pagedDocs
-                        .Where(d => d.DepartId == dept.Id)
-                        .GroupBy(d => new { d.Editor, d.DocDate.Value.Month })
-                        .Select(g => new
-                        {
-                            Editor = g.Key,
-                            Documents = pagedDocs.Where(d => d.DepartId == dept.Id).Select(d => new
-                            {
-                                d.DocDate,
-                                d.EditDate,
-                                d.DocNo,
-                                d.Subject,
-                            }),
-                            DocumentCount = g.Count()
-                        }).ToList();
-
-                    int departmentTotal = editorGroups.Sum(e => e.DocumentCount);
-
-                    return new
+                    int count = await query.Where(d => d.DepartId == dept.Id).CountAsync();
+                    if (count > 0)
+                        departmentsWithDocs.Add(dept.Id);
+                }
+                
+                if (departmentsWithDocs.Count == 0)
+                {
+                    return new BaseResponseDTOs(new
                     {
-                        DepartmentName = dept.DepartmentName,
-                        DepartmentId = dept.Id,
-                        Editors = editorGroups,
-                        DepartmentTotal = departmentTotal
-                    };
-                }).ToList();
+                        CurrentDepartment = new { 
+                            DepartmentName = string.Empty,
+                            DepartmentId = 0,
+                            Editors = new List<object>(),
+                            DepartmentTotal = 0
+                        },
+                        TotalDepartments = 0,
+                        CurrentDepartmentIndex = 0,
+                        TotalCount = 0,
+                        TotalPages = 0,
+                        PageNumber = req.pageNumber,
+                        PageSize = req.pageSize,
+                        TotalDocumentCount = 0
+                    }, 200, null);
+                }
+                
+                // 5. Handle department-based pagination
+                int deptPage = req.pageNumber > 0 ? req.pageNumber : 1;
+                int deptPageSize = 1; // Show 1 department per page
+                
+                // Calculate which department to show based on page number
+                int departmentIndex = (deptPage - 1) % departmentsWithDocs.Count;
+                int currentDepartmentId = departmentsWithDocs[departmentIndex];
+                var currentDepartment = filteredDepartments.First(d => d.Id == currentDepartmentId);
+                
+                // 6. Now handle document pagination within the department
+                int docPage = req.docPage > 0 ? req.docPage : 1;
+                int docPageSize = req.pageSize > 0 ? req.pageSize : 10;
+                
+                // Get all documents for this department
+                var departmentDocsQuery = query.Where(d => d.DepartId == currentDepartmentId);
+                int departmentTotalDocs = await departmentDocsQuery.CountAsync();
+                int departmentTotalPages = (int)Math.Ceiling(departmentTotalDocs / (double)docPageSize);
+                
+                // Get paged documents for this department
+                var departmentDocs = await departmentDocsQuery
+                    .OrderBy(d => d.Editor)
+                    .Skip((docPage - 1) * docPageSize)
+                    .Take(docPageSize)
+                    .ToListAsync();
+                
+                // 7. Group department documents by editor
+                var editorGroups = departmentDocs
+                    .Where(d => d.DocDate.HasValue)
+                    .GroupBy(d => new { Editor = d.Editor, Month = d.DocDate.Value.Month })
+                    .Select(g => new
+                    {
+                        Editor = g.Key.Editor,
+                        Month = g.Key.Month,
+                        Documents = g.Select(d => new
+                        {
+                            d.DocDate,
+                            d.EditDate,
+                            d.DocNo,
+                            d.Subject,
+                        }).ToList(),
+                        DocumentCount = g.Count()
+                    })
+                    .OrderBy(g => g.Editor).ThenBy(g => g.Month)
+                    .ToList();
 
-                int totalForAllDepartments = grouped.Sum(r => r.DepartmentTotal);
+                int departmentTotal = departmentDocs.Count;
+                
+                // 8. Create response with single department
+                var departmentData = new
+                {
+                    DepartmentName = currentDepartment.DepartmentName,
+                    DepartmentId = currentDepartment.Id,
+                    Editors = editorGroups,
+                    DepartmentTotal = departmentTotal,
+                    CurrentDocPage = docPage,
+                    TotalDocPages = departmentTotalPages
+                };
+                
+                // Department pagination is based on total departments with documents
+                int totalDepartmentPages = departmentsWithDocs.Count;
 
                 var response = new
                 {
-                    Departments = grouped,
-                    TotalForAllDepartments = totalForAllDepartments,
-                    TotalCount = totalCount,
-                    TotalPages = totalPages,
-                    PageNumber = page,
-                    PageSize = pageSize
+                    CurrentDepartment = departmentData,
+                    TotalDepartments = departmentsWithDocs.Count,
+                    CurrentDepartmentIndex = departmentIndex + 1, // 1-based index for display
+                    TotalDepartmentPages = departmentsWithDocs.Count,
+                    CurrentDepartmentPage = deptPage,
+                    TotalDocumentCount = totalCount // Total across all departments
                 };
 
                 return new BaseResponseDTOs(response, 200, null);
             }
-            return new BaseResponseDTOs(null, 400, "any thing");
+            return new BaseResponseDTOs(null, 400, "Please use Detailed result type for this report");
         }
         
         public async Task<BaseResponseDTOs> GetMonthlyUsersDocumentCountPagedAsync(ReportsViewForm req)
@@ -1472,6 +1771,76 @@ namespace Nastya_Archiving_project.Services.reports
             public int Month { get; set; }
             public string FilePath { get; set; } = "";
             public string DocType { get; set; } = "";
+        }
+        
+        public async Task<BaseResponseDTOs> GetReferencedDocsCountsPagedAsync(ReportsViewForm req)
+        {
+            // Get filtered documents
+            var filteredDocs = BuildFilteredQuery(req);
+
+            // Only docs that are referenced as children
+            var referencedDocs =
+                from doc in filteredDocs
+                join reference in _context.ArcivDocsRefrences on doc.RefrenceNo equals reference.LinkedRfrenceNo
+                join dept in _context.GpDepartments on doc.DepartId equals dept.Id
+                select new
+                {
+                    doc.Id,
+                    doc.DocNo,
+                    doc.RefrenceNo,
+                    doc.DepartId,
+                    DepartmentName = dept.Dscrp
+                };
+
+            // Group by department
+            var departmentGroups = await referencedDocs
+                .GroupBy(x => new { x.DepartId, x.DepartmentName })
+                .Select(g => new
+                {
+                    DepartmentId = g.Key.DepartId,
+                    DepartmentName = g.Key.DepartmentName,
+                    DocsCount = g.Count(),
+                })
+                .OrderBy(x => x.DepartmentName)
+                .ToListAsync();
+            
+            if (departmentGroups.Count == 0)
+            {
+                return new BaseResponseDTOs(new
+                {
+                    Departments = new List<object>(),
+                    TotalCount = 0,
+                    TotalPages = 0,
+                    PageNumber = req.pageNumber,
+                    PageSize = req.pageSize
+                }, 200, null);
+            }
+            
+            // Handle department-based pagination
+            int page = req.pageNumber > 0 ? req.pageNumber : 1;
+            int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+            
+            // Calculate total pages based on department count
+            int totalPages = (int)Math.Ceiling(departmentGroups.Count / (double)pageSize);
+            
+            // Get paged departments
+            var pagedDepartments = departmentGroups
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+            
+            // Format response
+            var response = new
+            {
+                Departments = pagedDepartments,
+                TotalCount = departmentGroups.Count,
+                TotalPages = totalPages,
+                PageNumber = page,
+                PageSize = pageSize,
+                TotalDocsCount = departmentGroups.Sum(d => d.DocsCount)
+            };
+
+            return new BaseResponseDTOs(response, 200, null);
         }
     }
 }

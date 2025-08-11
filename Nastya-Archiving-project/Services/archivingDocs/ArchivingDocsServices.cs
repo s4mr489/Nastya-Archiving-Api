@@ -17,6 +17,8 @@ using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.SystemInfo;
 using System.Runtime.Serialization;
 using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
 
 namespace Nastya_Archiving_project.Services.archivingDocs
 {
@@ -46,7 +48,108 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             _fileServices = fileServices;
         }
 
-       
+        /// <summary>
+        /// Private helper method to log user actions in the UsersEditing table
+        /// </summary>
+        /// <param name="model">Name of the module/model being modified</param>
+        /// <param name="tableName">Name of the table being modified</param>
+        /// <param name="tableNameA">Alternative name of the table if applicable</param>
+        /// <param name="recordId">ID of the record being modified</param>
+        /// <param name="recordData">JSON or string representation of the record data</param>
+        /// <param name="operationType">Type of operation (e.g., "ADD", "EDIT", "DELETE")</param>
+        /// <param name="accountUnitId">Account unit ID</param>
+        /// <returns>Task representing the asynchronous operation</returns>
+        private async Task LogUserAction(
+            string model,
+            string tableName,
+            string tableNameA,
+            string recordId,
+            string recordData,
+            string operationType,
+            int? accountUnitId)
+        {
+            try
+            {
+                // Create the log entry with the correct property names matching the database columns
+                var logEntry = new UsersEditing
+                {
+                    Model = model,
+                    TblName = tableName,
+                    TblNameA = tableNameA,
+                    RecordId = recordId, // Note: In code it's RecordId but DB column is RecordID
+                    RecordData = recordData,
+                    OperationType = operationType,
+                    AccountUnitId = accountUnitId,
+                    Editor = (await _systemInfoServices.GetRealName()).RealName,
+                    EditDate = DateTime.UtcNow,
+                    Ipadress = await _systemInfoServices.GetUserIpAddress() // Note: In code it's Ipadress but DB column is IPAdress
+                };
+
+                // Add the entity to the DbSet
+                _context.UsersEditings.Add(logEntry);
+                
+                // Save changes with current context
+                await _context.SaveChangesAsync();
+                
+                // Log to console for debugging
+                Console.WriteLine($"Log saved: {operationType} on {tableName}, Record ID: {recordId}");
+            }
+            catch (Exception ex)
+            {
+                // Log the exception details for troubleshooting
+                Console.WriteLine($"Error logging user action: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Helper method to format record data as key-value pairs separated by # characters
+        /// </summary>
+        /// <param name="doc">ArcivingDoc entity to format</param>
+        /// <returns>Formatted record data string</returns>
+        private string FormatRecordData(ArcivingDoc doc)
+        {
+            var sb = new StringBuilder();
+            
+            sb.Append($"id={doc.Id}");
+            sb.Append($"#RefrenceNo={doc.RefrenceNo}");
+            sb.Append($"#DocID={doc.DocId}");
+            sb.Append($"#DocNo={doc.DocNo}");
+            sb.Append($"#DocDate={doc.DocDate?.ToString("M/d/yyyy")}");
+            sb.Append($"#DocSource={doc.DocSource}");
+            sb.Append($"#DocTarget={doc.DocTarget}");
+            sb.Append($"#Subject={doc.Subject}");
+            sb.Append($"#WordsTosearch={doc.WordsTosearch}");
+            sb.Append($"#ImgURL={doc.ImgUrl}");
+            sb.Append($"#DocTitle={doc.DocTitle}");
+            sb.Append($"#BoxfileNo={doc.BoxfileNo}");
+            sb.Append($"#DocType={doc.DocType}");
+            sb.Append($"#DepartID={doc.DepartId}");
+            sb.Append($"#Editor={doc.Editor}");
+            sb.Append($"#EditDate={doc.EditDate?.ToString("M/d/yyyy h:mm:ss tt")}");
+            sb.Append($"#AccountUnitID={doc.AccountUnitId}");
+            sb.Append($"#theyear={doc.Theyear}");
+            sb.Append($"#TheWay={doc.TheWay}");
+            sb.Append($"#SystemID={doc.SystemId}");
+            sb.Append($"#sequre={doc.Sequre}");
+            sb.Append($"#DocSize={doc.DocSize?.ToString("0.00")}");
+            sb.Append($"#BranchID={doc.BranchId}");
+            sb.Append($"#Notes={doc.Notes}");
+            sb.Append($"#FileType={doc.FileType}");
+            sb.Append($"#TheMonth={doc.TheMonth}");
+            sb.Append($"#SubDocType={doc.SubDocType}");
+            sb.Append($"#fourth={doc.Fourth}");
+            sb.Append($"#IPAddress={doc.Ipaddress}");
+            sb.Append($"#HaseBakuped={doc.HaseBakuped}");
+            sb.Append($"#ReferenceTo={doc.ReferenceTo}");
+            
+            return sb.ToString();
+        }
 
         public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> PostArchivingDocs(ArchivingDocsViewForm req ,FileViewForm file)
         {
@@ -104,6 +207,20 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             _context.ArcivingDocs.Add(newDoc);
             await _context.SaveChangesAsync();
 
+            // Format record data as key-value pairs separated by # characters
+            string recordData = FormatRecordData(newDoc);
+
+            // Log the document creation action
+            await LogUserAction(
+                model: "Archiving", 
+                tableName: "Arciving_Docs",
+                tableNameA: "جدول ارشفة الوثائق", 
+                recordId: newDoc.RefrenceNo,
+                recordData: recordData,
+                operationType: "Add",
+                accountUnitId: newDoc.AccountUnitId
+            );
+                
             var response = _mapper.Map<ArchivingDocsResponseDTOs>(newDoc);
             return (response, null);
         }
@@ -128,6 +245,10 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var SupDocTypeResponse = await _archivingSettingsServicers.GetSupDocsTypeById(req.SubDocType);
             if(SupDocTypeResponse.supDocsType == null)
                 return (null, "Invalid sub-document type.");
+            
+            // Store original values for logging
+            var originalDocData = FormatRecordData(docs);
+            
             // Update properties
             docs.DocNo = req.DocNo;
             docs.DocDate = req.DocDate;
@@ -149,8 +270,50 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             docs.WordsTosearch = req.WordsTosearch;
 
             await _context.SaveChangesAsync();
+            
+            // Log the document update action with the formatted data
+            string updatedDocData = FormatRecordData(docs);
+            await LogUserAction(
+                model: "Archiving", 
+                tableName: "Arciving_Docs",
+                tableNameA: "جدول ارشفة الوثائق", 
+                recordId: docs.RefrenceNo.ToString(),
+                recordData: updatedDocData,
+                operationType: "Update",
+                accountUnitId: docs.AccountUnitId
+            );
 
-            var response = _mapper.Map<ArchivingDocsResponseDTOs>(docs);
+            var response = new ArchivingDocsResponseDTOs()
+            {
+                Id = docs.Id,
+                RefrenceNo = docs.RefrenceNo,
+                DocId = docs.DocId,
+                DocNo = docs.DocNo,
+                DocDate = docs.DocDate,
+                DocSource = docs.DocSource,
+                DocTarget = docs.DocTarget,
+                Subject = docs.Subject,
+                WordsTosearch = docs.WordsTosearch,
+                ImgUrl = docs.ImgUrl,
+                DocTitle = docs.DocTitle,
+                BoxfileNo = docs.BoxfileNo,
+                DocType = docs.DocType,
+                DepartId = docs.DepartId,
+                Editor = docs.Editor,
+                EditDate = docs.EditDate,
+                AccountUnitId = docs.AccountUnitId,
+                Theyear = docs.Theyear,
+                TheWay = docs.TheWay,
+                SystemId = docs.SystemId,
+                Sequre = docs.Sequre,
+                DocSize = docs.DocSize,
+                BranchId = docs.BranchId,
+                Notes = docs.Notes,
+                FileType = fileType != null ? int.Parse(fileType) : null, // <-- FIXED LINE
+                TheMonth = docs.TheMonth,
+                SubDocType = docs.SubDocType, // <-- FIXED LINE
+                Fourth = docs.Fourth, // <-- FIXED LINE
+            };
             return (response, null);
         }
 
@@ -161,6 +324,9 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.Id == Id);
             if (docs == null)
                 return ("404"); // docs not found
+                
+            // Format the document data for logging before deletion
+            string docData = FormatRecordData(docs);
 
             var deletedDcos = new ArcivingDocsDeleted
             {
@@ -200,6 +366,17 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             _context.ArcivingDocsDeleteds.Add(deletedDcos);
             _context.ArcivingDocs.Remove(docs);
             await _context.SaveChangesAsync();
+            
+            // Log the document deletion
+            await LogUserAction(
+                model: "Archiving", 
+                tableName: "Arciving_Docs",
+                tableNameA: "جدول ارشقة الوثائق", 
+                recordId: docs.RefrenceNo,
+                recordData: docData,
+                operationType: "Delete",
+                accountUnitId: docs.AccountUnitId
+            );
 
             return ("200");//remove successfully
         }
@@ -294,6 +471,18 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             _context.ArcivingDocs.Add(resotredDocs);
             _context.ArcivingDocsDeleteds.Remove(docs);
             await _context.SaveChangesAsync();
+            
+            // Log the document restoration
+            string restoredDocData = FormatRecordData(resotredDocs);
+            await LogUserAction(
+                model: "Archiving", 
+                tableName: "Arciving_Docs",
+                tableNameA: "جدول الوثائق المحذوفة", 
+                recordId: resotredDocs.RefrenceNo,
+                recordData: restoredDocData,
+                operationType: "Rester",
+                accountUnitId: resotredDocs.AccountUnitId
+            );
 
             return "200";// restore Docs Successfully
 
@@ -328,6 +517,18 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             _context.JoinedDocs.Add(joinedDocs);
             await _context.SaveChangesAsync();
+            
+            // Log the document joining action
+            string joinData = $"ParentRefrenceNO={joinedDocs.ParentRefrenceNO}#ChildRefrenceNo={joinedDocs.ChildRefrenceNo}#BreafcaseNo={joinedDocs.BreafcaseNo}#editDate={joinedDocs.editDate?.ToString("M/d/yyyy h:mm:ss tt")}";
+            await LogUserAction(
+                model: "Archiving", 
+                tableName: "T_JoinedDoc",
+                tableNameA: "جدول الوثائق المربوطة", 
+                recordId: joinedDocs.ChildRefrenceNo.ToString(),
+                recordData: joinData,
+                operationType: "Join",
+                accountUnitId: docs.AccountUnitId
+            );
 
             return new BaseResponseDTOs(response, 200, "Docs Joined Successfully");
         }
@@ -449,7 +650,5 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 return (null, $"An error occurred while retrieving image URLs: {ex.Message}", 0);
             }
         }
-
-
     }
 }

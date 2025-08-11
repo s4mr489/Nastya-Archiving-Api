@@ -12,6 +12,7 @@ using Nastya_Archiving_project.Services.auth;
 using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.files;
 using Nastya_Archiving_project.Services.infrastructure;
+using Nastya_Archiving_project.Services.logs;
 using Nastya_Archiving_project.Services.Mail;
 using Nastya_Archiving_project.Services.Permmsions;
 using Nastya_Archiving_project.Services.printer;
@@ -127,6 +128,7 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<IUserInterfaceServices, UserInterfaceServices>();
             services.AddScoped<IEncryptionServices, EncryptionServices>();
             services.AddScoped<IFilesServices, FileServices>();
+            services.AddScoped<ILogsServices, LogsServices>(); // Register the new logs service
             services.AddScoped<InfrastructureServices>();
             services.AddScoped<IMailServices, MailServices>();
             services.AddScoped<ISearchServices , SearchServices>();
