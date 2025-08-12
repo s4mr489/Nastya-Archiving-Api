@@ -18,7 +18,7 @@ using System.Net.WebSockets;
 
 namespace Nastya_Archiving_project.Services.auth
 {
-    public class AuthServices : BaseServices, IAuthServices 
+    public class AuthServices : BaseServices, IAuthServices
     {
         private readonly IConfiguration _configuration;
         private readonly IMapper _mapper;
@@ -68,21 +68,29 @@ namespace Nastya_Archiving_project.Services.auth
             if (string.IsNullOrEmpty(adminstDecrypted))
                 return "500";
 
+            // Generate appropriate token based on user role
+            string token;
             if (adminstDecrypted == "1" && IsAdmin)
             {
-                var token = JwtToken.GenToken(user.Id, "Admin", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
-                return token;
+                token = JwtToken.GenToken(user.Id, "Admin", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
             }
-            if (adminstDecrypted == "1" && !IsAdmin || adminstDecrypted =="0" && !IsAdmin)
+            else if ((adminstDecrypted == "1" && !IsAdmin) || (adminstDecrypted == "0" && !IsAdmin))
             {
-                var token = JwtToken.GenToken(user.Id, "User", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
-                return token;
+                token = JwtToken.GenToken(user.Id, "User", _configuration["Jwt:Issure"], 1, _configuration["Jwt:Key"]);
             }
-            if (adminstDecrypted == "0" && IsAdmin)
+            else if (adminstDecrypted == "0" && IsAdmin)
             {
                 return "403";
             }
-            return "500"; // In case of any other unexpected error
+            else
+            {
+                return "500";
+            }
+
+            // Log the successful login
+            await LogUserLogin(user);
+
+            return token;
         }
 
         public async Task<(RegisterResponseDTOs? user, string? error)> Register(RegisterViewForm form, bool IsAdmin)
@@ -90,7 +98,7 @@ namespace Nastya_Archiving_project.Services.auth
             //check the user if exists or not
             var hashUserName = _encryptionServices.EncryptString256Bit(form.UserName);
             var user = await _context.Users.FirstOrDefaultAsync(e => e.UserName == hashUserName);
-            if(user != null)
+            if (user != null)
                 return (null, "User already exists.");
 
 
@@ -98,12 +106,12 @@ namespace Nastya_Archiving_project.Services.auth
             if ((await _infrastructureServices.GetAccountUintById(form.AccountUnitId)).accountUnits == null)
                 return (null, "Account unit not found.");
 
-            if((await _infrastructureServices.GetBranchById(form.BranchId)).Branch == null)
+            if ((await _infrastructureServices.GetBranchById(form.BranchId)).Branch == null)
                 return (null, "Branch not found.");
 
-            if((await _infrastructureServices.GetDepartmentById(form.DepariId)).Department == null)
+            if ((await _infrastructureServices.GetDepartmentById(form.DepariId)).Department == null)
                 return (null, "Depart not found.");
-            if((await _infrastructureServices.GetGrouptById(form.GroupId)).group == null)
+            if ((await _infrastructureServices.GetGrouptById(form.GroupId)).group == null)
                 return (null, "Group not found.");
             if ((await _infrastructureServices.GetJobTitleById(form.JobTitle)).Job == null)
                 return (null, "Job title not found.");
@@ -127,7 +135,7 @@ namespace Nastya_Archiving_project.Services.auth
                 //AsWfuser = form.AsWfuser,
                 //DevisionId = form.DevisionId,  // this prop null until understand it 
                 //GobStep = form.GobStep,
-                
+
             };
 
             _context.Users.Add(user);
@@ -150,7 +158,7 @@ namespace Nastya_Archiving_project.Services.auth
                 return "400";
 
             passowrd.UserPassword = hashCurrentPassword;
-            
+
             _context.Users.Update(passowrd);
             await _context.SaveChangesAsync();
 
@@ -236,7 +244,7 @@ namespace Nastya_Archiving_project.Services.auth
             user.JobTitle = form.JobTitle;
             user.Realname = _encryptionServices.EncryptString256Bit(form.Realname);
             user.UserName = _encryptionServices.EncryptString256Bit(form.UserName);
-           // user.UserPassword = _encryptionServices.EncryptString256Bit(form.UserPassword);
+            // user.UserPassword = _encryptionServices.EncryptString256Bit(form.UserPassword);
             user.GroupId = form.GroupId;
             user.Permtype = _encryptionServices.EncryptString256Bit(form.Permtype);
             user.Adminst = _encryptionServices.EncryptString256Bit(IsAdmin ? "1" : "0");
@@ -275,11 +283,11 @@ namespace Nastya_Archiving_project.Services.auth
             var user = await query.FirstOrDefaultAsync();
             if (user == null)
                 return (null, "No user found.");
-            
+
 
             var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == user.BranchId);
             var depart = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.DepariId);
-            var group  = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == user.GroupId);
+            var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == user.GroupId);
             var jobTitle = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == user.JobTitle);
             var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.AccountUnitId);
 
@@ -327,6 +335,46 @@ namespace Nastya_Archiving_project.Services.auth
                 .ToList();
 
             return new BaseResponseDTOs(result, 200);
+        }
+        private async Task LogUserLogin(User user)
+        {
+            try
+            {
+                // Create the log entry with login information
+                var logEntry = new UsersEditing
+                {
+                    Model = "Auth",
+                    TblName = "users",
+                    TblNameA = "جدول المستخدمين",
+                    RecordId = user.Id.ToString(),
+                    RecordData = $"UserName={_encryptionServices.DecryptString256Bit(user.UserName)}#LoginTime={DateTime.UtcNow}",
+                    OperationType = "Login",
+                    AccountUnitId = user.AccountUnitId,
+                    Editor = _encryptionServices.DecryptString256Bit(user.Realname),
+                    EditDate = DateTime.UtcNow,
+                    Ipadress = await _systemInfoServices.GetUserIpAddress()
+                };
+
+                // Add the entity to the DbSet
+                _context.UsersEditings.Add(logEntry);
+
+                // Save changes with current context
+                await _context.SaveChangesAsync();
+
+                // Optional: Log success to console for debugging
+                Console.WriteLine($"Login logged: User ID {user.Id} at {DateTime.UtcNow}");
+            }
+            catch (Exception ex)
+            {
+                // Log the exception details for troubleshooting
+                Console.WriteLine($"Error logging user login: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
+            }
         }
     }
 }

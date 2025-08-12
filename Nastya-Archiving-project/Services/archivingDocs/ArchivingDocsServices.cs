@@ -578,16 +578,16 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                     if (lastDoc != null)
                     {
                         var result = new List<ImageUrlDTO>
-                {
-                    new ImageUrlDTO
-                    {
-                        Id = lastDoc.Id,
-                        ImageUrl = lastDoc.ImgUrl,
-                        DocNo = lastDoc.DocNo,
-                        DocTitle = lastDoc.DocTitle,
-                        ReferenceNo = lastDoc.RefrenceNo
-                    }
-                };
+                        {
+                            new ImageUrlDTO
+                            {
+                                Id = lastDoc.Id,
+                                ImageUrl = lastDoc.ImgUrl,
+                                DocNo = lastDoc.DocNo,
+                                DocTitle = lastDoc.DocTitle,
+                                ReferenceNo = lastDoc.RefrenceNo
+                            }
+                        };
                         return (result, null, totalCount);
                     }
                     else
