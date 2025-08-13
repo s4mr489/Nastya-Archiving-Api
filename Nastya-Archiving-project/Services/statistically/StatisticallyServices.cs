@@ -33,7 +33,7 @@ namespace Nastya_Archiving_project.Services.statistically
             if (req.departmentId != null && req.departmentId.Count > 0)
                 query = query.Where(x => x.DepartId.HasValue && req.departmentId.Contains(x.DepartId));
             if (req.year != null && req.year > 0)
-                query = query.Where(x => x.DocDate.HasValue && x.DocDate.Value.Year == req.year);
+                query = query.Where(x => x.EditDate.HasValue && x.EditDate.Value.Year == req.year);
 
             var grouped = await query
                 .Where(x => x.DepartId.HasValue && !string.IsNullOrEmpty(x.Editor))

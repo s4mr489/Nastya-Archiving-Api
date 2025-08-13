@@ -2,6 +2,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Services.encrpytion;
 using System.Security.Claims;
 using System.Text;
@@ -325,6 +326,19 @@ namespace Nastya_Archiving_project.Services.SystemInfo
             }
 
             return filePath;
+        }
+        
+        public async Task<BaseResponseDTOs> GetbackupPath(int departId)
+        {
+            var arcivingPoint = await _context.PArcivingPoints
+                .Where(a => a.DepartId == departId)
+                .Select(a => a.BackupPath)
+                .FirstOrDefaultAsync();
+
+            if (arcivingPoint == null)
+                return new BaseResponseDTOs(null, 400, "this archivingPoint DoesNot have file path");
+            
+            return new BaseResponseDTOs(new { BackupPath = arcivingPoint }, 200, "Backup path retrieved successfully.");
         }
     }
 }

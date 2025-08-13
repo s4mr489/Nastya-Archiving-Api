@@ -120,6 +120,28 @@ namespace Nastya_Archiving_project.Controllers
                 });
             }
         }
+
+        [HttpGet("Get-Backup-path")]
+        public async Task<IActionResult> GetBackupPath(int departId)
+        {
+            try
+            {
+                var backupPath = await _systemInfoServices.GetbackupPath(departId);
+                if (backupPath == null)
+                {
+                    return NotFound(new { Error = "department  found" });
+                }
+                return Ok(new { BackupPath = backupPath });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Error = "An error occurred while retrieving the backup path",
+                    Details = ex.Message
+                });
+            }
+        }
         public class BackupRequest
         {
             public string BackupPath { get; set; } = "";

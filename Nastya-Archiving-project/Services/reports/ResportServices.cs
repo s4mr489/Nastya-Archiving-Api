@@ -1143,7 +1143,7 @@ namespace Nastya_Archiving_project.Services.reports
             var result = new List<object>();
             foreach (var doc in docs)
             {
-                string filePath = doc.FileType != null ? doc.FileType.ToString() : null;
+                string filePath = doc.ImgUrl != null ? doc.ImgUrl.ToString() : null;
                 decimal? expectedSize = doc.DocSize;
                 long actualSize = -1;
                 bool isAffected = true;

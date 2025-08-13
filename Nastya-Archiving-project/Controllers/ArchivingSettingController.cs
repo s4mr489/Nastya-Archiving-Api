@@ -60,6 +60,7 @@ namespace Nastya_Archiving_project.Controllers
             if (error == "404")
                 return NotFound();
             return Ok(points);
+
         }
 
         [HttpGet("Get-ArchivingPoint/{id}")]

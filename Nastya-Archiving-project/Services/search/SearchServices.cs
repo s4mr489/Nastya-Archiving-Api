@@ -518,9 +518,10 @@ namespace Nastya_Archiving_project.Services.search
                     fileType = d.FileType != null ? d.FileType.ToString() : null,
                     supdocType = d.SubDocType,
                     BoxOn = d.BoxfileNo != null ? d.BoxfileNo : null,
-                    Notice = d.WordsTosearch != null ? d.WordsTosearch : null,
+                    Notice = d.Notes != null ? d.Notes : null,
                     systemId = d.RefrenceNo != null ? d.RefrenceNo : null,
-                    docsTitle = docTypeNames.ContainsKey(d.DocType) ? docTypeNames[d.DocType] : null // Add docType name
+                    docsTitle = docTypeNames.ContainsKey(d.DocType) ? docTypeNames[d.DocType] : null, // Add docType name
+                    
                 }).ToList();
 
                 if (result == null || result.Count == 0)

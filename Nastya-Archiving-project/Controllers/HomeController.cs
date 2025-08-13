@@ -33,9 +33,10 @@ namespace Nastya_Archiving_project.Controllers
         }
 
         /// <summary>
-        ///    
+        /// Get the counts of users 
         /// </summary>
         /// <returns></returns>
+        [HttpGet("Users-Counts")]
         public async Task<IActionResult> GetUsersCount()
         {
             var result = await _homeServices.UsersCount();
