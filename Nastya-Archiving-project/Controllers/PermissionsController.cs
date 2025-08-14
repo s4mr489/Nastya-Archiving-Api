@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Services.Permmsions;
 
 namespace Nastya_Archiving_project.Controllers
@@ -40,6 +41,15 @@ namespace Nastya_Archiving_project.Controllers
             if (error == "404")
                 return NotFound("Group or permissions not found.");
             return Ok(permissions);
+        }
+
+        [HttpGet("all-permission")]
+        public async Task<IActionResult> GetAllPermissions()
+        {
+            var permissions = await _permissionsServices.GetAllPermissions();
+            if (permissions.StatusCode == 404)
+                return NotFound("No permissions found.");
+            return StatusCode(permissions.StatusCode, permissions);
         }
     }
 }

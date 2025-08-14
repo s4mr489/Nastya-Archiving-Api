@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 
 namespace Nastya_Archiving_project.Services.Permmsions
 {
@@ -71,6 +72,14 @@ namespace Nastya_Archiving_project.Services.Permmsions
             if (permissions.Count == 0)
                 return (null, "404"); // No permissions found for this group
             return (permissions, null); 
+        }
+
+        public async Task<BaseResponseDTOs> GetAllPermissions()
+        {
+            var permission = await _context.UsersOptionPermissions.ToListAsync();
+            if (permission == null)
+                return new BaseResponseDTOs(null, 400, "no permission founded");
+            return new BaseResponseDTOs(permission, 200, null);
         }
     }
 }
