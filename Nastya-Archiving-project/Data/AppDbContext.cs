@@ -805,7 +805,7 @@ public partial class AppDbContext : DbContext
         {
             entity.ToTable("usersinterfaces");
 
-            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Id).HasColumnName("pageid");
             entity.Property(e => e.AccountUnitId).HasColumnName("AccountUnitID");
             entity.Property(e => e.Outputtype)
                 .HasMaxLength(20)
