@@ -803,7 +803,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Usersinterface>(entity =>
         {
-            entity.ToTable("usersinterfaces");
+            entity.ToTable("usersinterfacesNew");
 
             entity.Property(e => e.Id).HasColumnName("pageid");
             entity.Property(e => e.AccountUnitId).HasColumnName("AccountUnitID");

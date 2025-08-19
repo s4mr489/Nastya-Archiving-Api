@@ -436,39 +436,39 @@ namespace Nastya_Archiving_project.Middleware
             }
         }
 
-        public async Task Invoke(HttpContext context)
-        {
-            if (!context.WebSockets.IsWebSocketRequest || !context.Request.Path.StartsWithSegments("/printer-ws"))
-            {
-                await _next.Invoke(context);
-                return;
-            }
+        //public async Task Invoke(HttpContext context)
+        //{
+        //    if (!context.WebSockets.IsWebSocketRequest || !context.Request.Path.StartsWithSegments("/printer-ws"))
+        //    {
+        //        await _next.Invoke(context);
+        //        return;
+        //    }
 
-            using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-            var connectionId = Guid.NewGuid().ToString();
+        //    using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        //    var connectionId = Guid.NewGuid().ToString();
 
-            try
-            {
-                // Register the new WebSocket connection
-                _connectedPrinters.TryAdd(connectionId, webSocket);
+        //    try
+        //    {
+        //        // Register the new WebSocket connection
+        //        _connectedPrinters.TryAdd(connectionId, webSocket);
 
-                // Send the list of detected scanners to the new client
-                await SendToWebSocket(webSocket, new WebSocketMessage
-                {
-                    Type = "detected_scanners",
-                    Data = _detectedScanners.Values.ToList()
-                });
+        //        // Send the list of detected scanners to the new client
+        //        await SendToWebSocket(webSocket, new WebSocketMessage
+        //        {
+        //            Type = "detected_scanners",
+        //            Data = _detectedScanners.Values.ToList()
+        //        });
 
-                // Handle the WebSocket connection
-                await HandleWebSocketConnection(connectionId, webSocket);
-            }
-            finally
-            {
-                // Remove the WebSocket connection when it's closed
-                _connectedPrinters.TryRemove(connectionId, out _);
-                _printerNames.TryRemove(connectionId, out _);
-            }
-        }
+        //        // Handle the WebSocket connection
+        //        await HandleWebSocketConnection(connectionId, webSocket);
+        //    }
+        //    finally
+        //    {
+        //        // Remove the WebSocket connection when it's closed
+        //        _connectedPrinters.TryRemove(connectionId, out _);
+        //        _printerNames.TryRemove(connectionId, out _);
+        //    }
+        //}
 
         private async Task HandleWebSocketConnection(string connectionId, WebSocket webSocket)
         {

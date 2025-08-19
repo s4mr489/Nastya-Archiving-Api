@@ -23,18 +23,41 @@ namespace Nastya_Archiving_project.Services.userInterface
 
         public async Task<string> CreateUserInterface(UserInterfaceViewForm requestDTOs)
         {
+            try
+            {
+                // Check if pageUrl is null before querying
+                if (string.IsNullOrEmpty(requestDTOs.pageUrl))
+                {
+                    return "400"; // Bad request, pageUrl is required
+                }
 
-            var page = await _context.Usersinterfaces
-                .FirstOrDefaultAsync(ui => ui.Pageurl == requestDTOs.pageUrl);
+                var page = await _context.Usersinterfaces
+                    .FirstOrDefaultAsync(ui => ui.Pageurl == requestDTOs.pageUrl);
 
-            if (page != null)
-                return "400"; // this page already exists
+                if (page != null)
+                    return "400"; // this page already exists
 
-            page = _mapper.Map<Usersinterface>(requestDTOs);
-            _context.Usersinterfaces.Add(page);
-            await _context.SaveChangesAsync();
-            return "200"; // user interface created successfully
+                // Create new Usersinterface with null check for all properties
+                page = new Usersinterface
+                {
+                    Pagedscrp = requestDTOs.dscription,
+                    Pageurl = requestDTOs.pageUrl,
+                    Outputtype = requestDTOs.outPutType,
+                    Program = requestDTOs.program,
+                    Serials = requestDTOs.serial,
+                    AccountUnitId = requestDTOs.AccountUnitId
+                };
 
+                _context.Usersinterfaces.Add(page);
+                await _context.SaveChangesAsync();
+                return "200"; // user interface created successfully
+            }
+            catch (Exception ex)
+            {
+                // Log exception details
+                Console.WriteLine($"Error creating user interface: {ex.Message}");
+                return "500"; // Internal server error
+            }
         }
 
         public async Task<Dictionary<string, List<UserInterfaceResponseDTOs>>> GetPageUrlsGroupedByOutputType()
@@ -60,14 +83,10 @@ namespace Nastya_Archiving_project.Services.userInterface
         {
             var userResult = await _systemInfoServices.GetUserId();
             if (userResult.Id == null)
-            {
                 return (null, "401"); // Unauthorized access, user ID not found
-            }
 
             if (!int.TryParse(userResult.Id, out int userId))
-            {
                 return (null, "400"); // Invalid user ID format
-            }
 
             var groupId = await _context.Users
                  .Where(u => u.Id == userId)
@@ -75,9 +94,7 @@ namespace Nastya_Archiving_project.Services.userInterface
                  .FirstOrDefaultAsync();
 
             if (groupId == null)
-            {
                 return (null, "404"); // group not found 
-            }
 
             var pageIds = await _context.Userspermissions
                 .Where(up => up.Groupid == groupId && up.Pageid != null)
@@ -90,9 +107,7 @@ namespace Nastya_Archiving_project.Services.userInterface
                 .ToList();
 
             if (intPageIds.Count == 0)
-            {
                 return (new List<UserInterfaceResponseDTOs>(), null);
-            }
 
             var urls = await _context.Usersinterfaces
                 .Where(ui => intPageIds.Contains(ui.Id))

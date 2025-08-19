@@ -17,6 +17,7 @@ using Nastya_Archiving_project.Services.logs;
 using Nastya_Archiving_project.Services.Mail;
 using Nastya_Archiving_project.Services.Permmsions;
 using Nastya_Archiving_project.Services.printer;
+using Nastya_Archiving_project.Services.rdlcReport;
 using Nastya_Archiving_project.Services.reports;
 using Nastya_Archiving_project.Services.search;
 using Nastya_Archiving_project.Services.statistically;
@@ -132,6 +133,8 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<ILogsServices, LogsServices>(); // Register the new logs service
             services.AddScoped<InfrastructureServices>();
             services.AddScoped<IMailServices, MailServices>();
+            services.AddScoped<IRdlcReportServices, RdlcReportServices>();
+
             services.AddScoped<ISearchServices , SearchServices>();
             services.AddScoped<IUserPermissionsServices, UserPermissionServices>();
             services.AddScoped<IReportServices, ResportServices>();

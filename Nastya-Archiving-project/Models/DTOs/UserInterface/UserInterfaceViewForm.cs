@@ -6,7 +6,7 @@
         public string? pageUrl { get; set; }
         public string? outPutType { get; set; }
         public string? program { get; set; }
-        public string? serial { get; set; }
-        public string? AccountUnitId { get; set; }
+        public int? serial { get; set; }
+        public int? AccountUnitId { get; set; }
     }
 }

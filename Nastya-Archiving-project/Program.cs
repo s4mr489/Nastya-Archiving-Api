@@ -46,7 +46,7 @@ app.UseCustomSwaggerWithAuth("Nastya-Archiving-Swagger");
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
-app.UsePrinterWebSockets();
+//.UsePrinterWebSockets();
 
 app.MapHub<MailNotificationHub>("/mailNotificationHub");
 app.MapGet("/", context =>

@@ -24,10 +24,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Report\Report1.rdlc" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Report\Report1.rdlc">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="Models\DTOs\Reports\GeneralReportReponseDTOs.cs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AspNetCore.Reporting" Version="2.1.0" />
     <PackageReference Include="AutoMapper" Version="15.0.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="ClosedXML" Version="0.105.0" />
@@ -53,9 +64,12 @@
     <PackageReference Include="Microsoft.SqlServer.SqlManagementObjects" Version="172.76.0" />
     <PackageReference Include="PDFsharp" Version="6.2.0" />
     <PackageReference Include="PuppeteerSharp" Version="20.2.0" />
+    <PackageReference Include="ReportViewerCore.NETCore" Version="15.1.26" />
     <PackageReference Include="Swashbuckle.AspNetCore.Swagger" Version="9.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" Version="9.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="9.0.1" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.8" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.8" />
   </ItemGroup>
 
 </Project>

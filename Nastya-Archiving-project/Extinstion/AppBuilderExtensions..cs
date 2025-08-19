@@ -86,16 +86,16 @@ namespace Nastya_Archiving_project.Extinstion
         }
 
         // Add this method to your existing AppBuilderExtensions class
-        public static IApplicationBuilder UsePrinterWebSockets(this IApplicationBuilder app)
-        {
-            app.UseWebSockets(new WebSocketOptions
-            {
-                KeepAliveInterval = TimeSpan.FromMinutes(2)
-            });
+        //public static IApplicationBuilder UsePrinterWebSockets(this IApplicationBuilder app)
+        //{
+        //    app.UseWebSockets(new WebSocketOptions
+        //    {
+        //        KeepAliveInterval = TimeSpan.FromMinutes(2)
+        //    });
 
-            app.UseMiddleware<PrinterWebSocketMiddleware>();
+        //    app.UseMiddleware<PrinterWebSocketMiddleware>();
 
-            return app;
-        }
+        //    return app;
+        //}
     }
 }

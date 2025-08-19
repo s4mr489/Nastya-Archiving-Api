@@ -7,6 +7,7 @@ using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Reports;
 using Nastya_Archiving_project.Services.infrastructure;
+using Nastya_Archiving_project.Services.rdlcReport;
 using Nastya_Archiving_project.Services.reports;
 
 namespace Nastya_Archiving_project.Controllers
@@ -15,12 +16,14 @@ namespace Nastya_Archiving_project.Controllers
     [ApiController]
     public class ReportController : ControllerBase
     {
+        private readonly IRdlcReportServices _svc;
         private readonly IReportServices _reportServices;
         private readonly IInfrastructureServices _infrastructureServices;
         private readonly ReportGenerator _reportGenerator;
-        public ReportController(IReportServices reportServices)
+        public ReportController(IReportServices reportServices, IRdlcReportServices svc)
         {
             _reportServices = reportServices;
+            _svc = svc;
         }
 
         [HttpGet("General-Report")]
@@ -143,5 +146,24 @@ namespace Nastya_Archiving_project.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
+
+        [HttpGet("archiving")]
+        public async Task<IActionResult> GetArchiving([FromQuery] ReportFilter filter, [FromQuery] string format = "pdf", CancellationToken ct = default)
+        {
+            var bytes = await _svc.GenerateReportAsync("Report1", format, filter, ct);
+            var contentType = format.ToLowerInvariant() switch
+            {
+                "pdf" => "application/pdf",
+                "excel" => "application/vnd.ms-excel",
+                "word" => "application/msword",
+                "html" => "text/html",
+                _ => "application/octet-stream"
+            };
+            var ext = format.Equals("html", StringComparison.OrdinalIgnoreCase) ? "html" :
+                      format.Equals("excel", StringComparison.OrdinalIgnoreCase) ? "xls" :
+                      format.Equals("word", StringComparison.OrdinalIgnoreCase) ? "doc" : "pdf";
+
+            return File(bytes, contentType, $"Archiving_{DateTime.UtcNow:yyyyMMdd_HHmmss}.{ext}");
+        }
     }
 }

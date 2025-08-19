@@ -2,6 +2,7 @@
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs;
 using Nastya_Archiving_project.Models.DTOs.Auth;
+using Nastya_Archiving_project.Models.DTOs.UserInterface;
 
 namespace Nastya_Archiving_project.Extinstion
 {
@@ -19,6 +20,7 @@ namespace Nastya_Archiving_project.Extinstion
              .ForMember(dest => dest.depart, opt => opt.Ignore())      // Set in service if needed
              .ForMember(dest => dest.jobTitl, opt => opt.Ignore())     // Set in service if needed
              .ForMember(dest => dest.permission, opt => opt.MapFrom(src => src.Adminst));
+           
         }
     }
 }
