@@ -109,7 +109,7 @@ namespace Nastya_Archiving_project.Services.auth
             if ((await _infrastructureServices.GetBranchById(form.BranchId)).Branch == null)
                 return (null, "Branch not found.");
 
-            if ((await _infrastructureServices.GetDepartmentById(form.DepariId)).Department == null)
+            if ((await _infrastructureServices.GetDepartmentById(form.DeparId)).Department == null)
                 return (null, "Depart not found.");
             if ((await _infrastructureServices.GetGrouptById(form.GroupId)).group == null)
                 return (null, "Group not found.");
@@ -121,7 +121,7 @@ namespace Nastya_Archiving_project.Services.auth
             {
                 AccountUnitId = form.AccountUnitId,
                 BranchId = form.BranchId,
-                DepariId = form.DepariId,
+                DepariId = form.DeparId,
                 JobTitle = form.JobTitle,
                 Realname = _encryptionServices.EncryptString256Bit(form.Realname),
                 UserName = _encryptionServices.EncryptString256Bit(form.UserName),
@@ -141,7 +141,20 @@ namespace Nastya_Archiving_project.Services.auth
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            var result = _mapper.Map<RegisterResponseDTOs>(user);
+            var result = new RegisterResponseDTOs
+            {
+                UserName = user.UserName,
+                AccountUnitId = user.AccountUnitId,
+                BranchId = user.BranchId,
+                DeparId = user.DepariId,
+                JobTitle = user.JobTitle,
+                Realname = _encryptionServices.DecryptString256Bit(user.Realname),
+                Id = user.Id,
+                GroupId = user.GroupId,
+                Permtype = _encryptionServices.DecryptString256Bit(user.Permtype),
+                Adminst = _encryptionServices.DecryptString256Bit(user.Adminst),
+                Editor = user.Editor,
+            };
 
             return (result, null);
 
@@ -228,7 +241,7 @@ namespace Nastya_Archiving_project.Services.auth
             if ((await _infrastructureServices.GetBranchById(form.BranchId)).Branch == null)
                 return (null, "Branch not found.");
 
-            if ((await _infrastructureServices.GetDepartmentById(form.DepariId)).Department == null)
+            if ((await _infrastructureServices.GetDepartmentById(form.DeparId)).Department == null)
                 return (null, "Depart not found.");
 
             if ((await _infrastructureServices.GetGrouptById(form.GroupId)).group == null)
@@ -240,7 +253,7 @@ namespace Nastya_Archiving_project.Services.auth
             // Update user properties
             user.AccountUnitId = form.AccountUnitId;
             user.BranchId = form.BranchId;
-            user.DepariId = form.DepariId;
+            user.DepariId = form.DeparId;
             user.JobTitle = form.JobTitle;
             user.Realname = _encryptionServices.EncryptString256Bit(form.Realname);
             user.UserName = _encryptionServices.EncryptString256Bit(form.UserName);

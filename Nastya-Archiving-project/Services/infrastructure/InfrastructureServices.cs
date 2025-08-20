@@ -136,7 +136,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
             var newGroup = new Usersgroup
             {
-                Groupdscrp = req.groupDscrp,
+                Groupdscrp = _encryptionServices.EncryptString256Bit(req.groupDscrp),
                 Editor = userId.RealName.ToString(), // Assuming Editor is a string representation of the user ID
                 AccountUnitId = req.AccountUnitId,
                 EditDate = DateOnly.FromDateTime(DateTime.Now),

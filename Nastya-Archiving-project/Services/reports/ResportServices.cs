@@ -1302,7 +1302,7 @@ namespace Nastya_Archiving_project.Services.reports
             }
             return new BaseResponseDTOs(null, 400, "Please use Detailed result type for this report");
         }
-        
+
         public async Task<BaseResponseDTOs> GetMonthlyUsersDocumentCountPagedAsync(ReportsViewForm req)
         {
             if (req.resultType == EResultType.statistical)
@@ -1311,7 +1311,7 @@ namespace Nastya_Archiving_project.Services.reports
                 var (departments, error) = await _infrastructureServices.GetAllDepartment();
                 if (departments == null)
                 {
-                    return new BaseResponseDTOs(null, 500, error ?? "Failed to fetch departments");
+                    return new BaseResponseDTOs(new object(), 500, error ?? "Failed to fetch departments");
                 }
 
                 // 2. Filter departments if departmentId filter is set
@@ -1335,11 +1335,15 @@ namespace Nastya_Archiving_project.Services.reports
                 var grouped = filteredDepartments.Select(dept =>
                 {
                     var editorGroups = pagedDocs
-                        .Where(d => d.DepartId == dept.Id)
-                        .GroupBy(d => new { d.Editor, d.DocDate.Value.Month })
+                        .Where(d => d.DepartId == dept.Id && d.DocDate.HasValue) // Make sure DocDate is not null
+                        .GroupBy(d => new {
+                            Editor = d.Editor ?? "Unknown",
+                            Month = d.DocDate.Value.Month
+                        })
                         .Select(g => new
                         {
-                            Editor = g.Key,
+                            Editor = g.Key.Editor,
+                            Month = g.Key.Month,
                             DocumentCount = g.Count()
                         }).ToList();
 
@@ -1368,7 +1372,7 @@ namespace Nastya_Archiving_project.Services.reports
 
                 return new BaseResponseDTOs(response, 200, null);
             }
-            return new BaseResponseDTOs(null, 400, "any thing");
+            return new BaseResponseDTOs(new object(), 400, "Invalid result type");
         }
 
         // Filtering

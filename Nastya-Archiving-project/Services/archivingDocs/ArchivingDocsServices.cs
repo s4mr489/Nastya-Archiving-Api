@@ -250,24 +250,24 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var originalDocData = FormatRecordData(docs);
             
             // Update properties
-            docs.DocNo = req.DocNo;
-            docs.DocDate = req.DocDate;
-            docs.DocSource = req.DocSource;
-            docs.DocTarget = req.DocTarget;
-            docs.DocTitle = req.DocTitle;
+            docs.DocNo = req.DocNo ?? docs.DocNo;
+            docs.DocDate = req.DocDate ?? docs.DocDate;
+           // docs.DocSource = req.DocSource;
+           // docs.DocTarget = req.DocTarget;
+            docs.DocTitle = req.DocTitle ?? docs.DocTitle;
             docs.DocType = docTypeResponse.docsType.Id;
             docs.SubDocType = SupDocTypeResponse.supDocsType.Id;
-            docs.DepartId = departId != null ? int.Parse(departId) : null;
-            docs.BranchId = branchId != null ? int.Parse(branchId) : null;
-            docs.AccountUnitId = accountUnitId != null ? int.Parse(accountUnitId) : null;
-            docs.BoxfileNo = req.BoxfileNo;
+           // docs.DepartId = departId != null ? int.Parse(departId) : null;
+           // docs.BranchId = branchId != null ? int.Parse(branchId) : null;
+          //  docs.AccountUnitId = accountUnitId != null ? int.Parse(accountUnitId) : null;
+            docs.BoxfileNo = req.BoxfileNo ?? docs.BoxfileNo;
             docs.EditDate = DateTime.UtcNow;
             docs.Editor = (await _systemInfoServices.GetRealName()).RealName;
             docs.Ipaddress = (await _systemInfoServices.GetUserIpAddress());
-            docs.Subject = req.Subject;
-            docs.ReferenceTo = req.ReferenceTo;
-            docs.Notes = req.Notes;
-            docs.WordsTosearch = req.WordsTosearch;
+            docs.Subject = req.Subject ?? docs.Subject;
+            docs.ReferenceTo = req.ReferenceTo ?? docs.ReferenceTo;
+            docs.Notes = req.Notes ?? docs.Notes;
+            docs.WordsTosearch = req.WordsTosearch ?? docs.WordsTosearch;
 
             await _context.SaveChangesAsync();
             

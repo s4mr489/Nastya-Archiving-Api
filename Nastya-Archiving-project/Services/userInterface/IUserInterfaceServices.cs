@@ -1,4 +1,5 @@
-﻿using Nastya_Archiving_project.Models.DTOs.UserInterface;
+﻿using Nastya_Archiving_project.Models.DTOs;
+using Nastya_Archiving_project.Models.DTOs.UserInterface;
 
 namespace Nastya_Archiving_project.Services.userInterface
 {
@@ -13,5 +14,6 @@ namespace Nastya_Archiving_project.Services.userInterface
         Task<string> CreateUserInterface(UserInterfaceViewForm request);
         Task<(List<UserInterfaceResponseDTOs>? urls, string? error)> GetUserInterfaceForUser();
         Task<Dictionary<string, List<UserInterfaceResponseDTOs>>> GetPageUrlsGroupedByOutputType();
+        Task<BaseResponseDTOs> GetGropuPagesById(int Id);
     }
 }

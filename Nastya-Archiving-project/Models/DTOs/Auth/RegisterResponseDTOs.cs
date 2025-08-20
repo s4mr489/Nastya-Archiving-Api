@@ -24,7 +24,7 @@
 
         public int? GobStep { get; set; }
 
-        public int? DepariId { get; set; }
+        public int? DeparId { get; set; }
 
         public int? DevisionId { get; set; }
 

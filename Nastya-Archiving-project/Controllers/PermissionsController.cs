@@ -51,5 +51,23 @@ namespace Nastya_Archiving_project.Controllers
                 return NotFound("No permissions found.");
             return StatusCode(permissions.StatusCode, permissions);
         }
+
+        [HttpPost("copy-user-permission-for-group")]
+        public async Task<IActionResult> CopyUserPermissionForGroup([FromQuery] int Id)
+        {
+            var result = await _permissionsServices.CopyUserPermissionForGroup(Id);
+            if (result.StatusCode == 404)
+                return NotFound("User or group not found.");
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("copy-user-permission-to-multiple-users")]
+        public async Task<IActionResult> CopyUserPermissionToMultipleUsers([FromQuery] int sourceUserId, [FromBody] List<int> targetUserIds)
+        {
+            var result = await _permissionsServices.CopyUserPermissionToMultipleUsers(sourceUserId, targetUserIds);
+            if (result.StatusCode == 404)
+                return NotFound("Source user or target users not found.");
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

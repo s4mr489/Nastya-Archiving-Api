@@ -25,11 +25,19 @@ namespace Nastya_Archiving_project.Controllers
             return Ok("User interface created successfully.");
         }
 
-        [HttpGet("Grouped-UserInterface")]
+        [HttpGet("All-UserInterface")]
         public async Task<IActionResult> GetPageUrlsGroupedByOutputType()
         {
             var result = await _userInterfaceServices.GetPageUrlsGroupedByOutputType();
             return Ok(result);
+        }
+        [HttpGet("Group-pages/{Id}")]
+        public async Task<IActionResult> GetGropuPagesById(int Id)
+        {
+            var result = await _userInterfaceServices.GetGropuPagesById(Id);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return StatusCode(result.StatusCode , result);
         }
 
         [HttpGet("Group-pages")]

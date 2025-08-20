@@ -9,5 +9,7 @@ namespace Nastya_Archiving_project.Services.Permmsions
         Task<(List<string>? permmsion, string? error)> GetPermissionsByGroupId(int groupId);
 
         Task<BaseResponseDTOs> GetAllPermissions();
+        Task<BaseResponseDTOs> CopyUserPermissionForGroup(int Id);
+        Task<BaseResponseDTOs> CopyUserPermissionToMultipleUsers(int sourceUserId, List<int> targetUserIds);
     }
 }

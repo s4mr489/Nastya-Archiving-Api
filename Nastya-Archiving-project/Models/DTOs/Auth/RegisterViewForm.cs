@@ -20,17 +20,17 @@
 
         public int AccountUnitId { get; set; }
 
-        public int? GobStep { get; set; }
+     //   public int? GobStep { get; set; }
 
-        public int DepariId { get; set; }
+        public int DeparId { get; set; }
 
-        public int? DevisionId { get; set; }
+      //  public int? DevisionId { get; set; }
 
         public int BranchId { get; set; }
 
-        public int? AsWfuser { get; set; }
+        // public int? AsWfuser { get; set; }
 
-        public int? AsmailCenter { get; set; }
+        //  public int? AsmailCenter { get; set; }
 
         public int JobTitle { get; set; }
     }

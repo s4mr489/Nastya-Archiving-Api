@@ -1,20 +1,23 @@
 ﻿using AutoMapper;
+using iText.StyledXmlParser.Css.Resolve.Shorthand.Impl;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.UserInterface;
 using Nastya_Archiving_project.Services.SystemInfo;
 
 namespace Nastya_Archiving_project.Services.userInterface
 {
-    public class UserInterfaceServices : BaseServices , IUserInterfaceServices
+    public class UserInterfaceServices : BaseServices, IUserInterfaceServices
     {
         private readonly ISystemInfoServices _systemInfoServices;
         private readonly AppDbContext _context;
         private readonly IMapper _mapper;
 
 
-        public UserInterfaceServices(AppDbContext context , IMapper mapper, ISystemInfoServices systemInfo) :base(mapper, context)
+        public UserInterfaceServices(AppDbContext context, IMapper mapper, ISystemInfoServices systemInfo) : base(mapper, context)
         {
             _context = context;
             _mapper = mapper;
@@ -120,6 +123,29 @@ namespace Nastya_Archiving_project.Services.userInterface
                 .ToListAsync();
 
             return (urls, null);
+        }
+
+        public async Task<BaseResponseDTOs> GetGropuPagesById(int Id)
+        {
+            var interfaces = await _context.Userspermissions
+                .Where(ui => ui.Groupid == Id)
+                .ToListAsync();
+
+            var gropedPages = await _context.Usersinterfaces
+                .Where(ui => interfaces.Select(i => i.Pageid).Contains(ui.Id.ToString()))
+                .OrderBy(ui => ui.Outputtype)
+                .Select(ui => new UserInterfaceResponseDTOs
+                {
+                    pageId = ui.Id,
+                    pageUrl = ui.Pageurl,
+                    pageDescription = ui.Pagedscrp
+                })
+                .ToListAsync();
+
+            if (gropedPages == null || gropedPages.Count == 0)
+                return new BaseResponseDTOs(null ,404, "No pages found for this group");
+
+            return new BaseResponseDTOs(gropedPages , 200 , "returned pages for this group");
         }
     }
 }

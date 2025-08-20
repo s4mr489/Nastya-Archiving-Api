@@ -5,7 +5,7 @@ using Nastya_Archiving_project.Models.DTOs;
 
 namespace Nastya_Archiving_project.Services.Permmsions
 {
-    public class PermissionsServices : BaseServices,IPermissionsServices
+    public class PermissionsServices : BaseServices, IPermissionsServices
     {
         private readonly AppDbContext _context;
         public PermissionsServices(AppDbContext context) : base(null, context)
@@ -71,7 +71,7 @@ namespace Nastya_Archiving_project.Services.Permmsions
                 .ToListAsync();
             if (permissions.Count == 0)
                 return (null, "404"); // No permissions found for this group
-            return (permissions, null); 
+            return (permissions, null);
         }
 
         public async Task<BaseResponseDTOs> GetAllPermissions()
@@ -80,6 +80,157 @@ namespace Nastya_Archiving_project.Services.Permmsions
             if (permission == null)
                 return new BaseResponseDTOs(null, 400, "no permission founded");
             return new BaseResponseDTOs(permission, 200, null);
+        }
+
+        public async Task<BaseResponseDTOs> CopyUserPermissionForGroup(int Id)
+        {
+            var permissions = await _context.UsersOptionPermissions
+                .Where(p => p.UserId == Id)
+                .Select(permission => new
+                {
+                    permission.Id,
+                    permission.UserId,
+                    permission.AddParameters,
+                    permission.AllowDelete,
+                    permission.AllowDownload,
+                    permission.AllowAddToOther,
+                    permission.AllowViewTheOther,
+                    permission.AllowSendMail,
+                })
+                .ToListAsync();
+
+            if (permissions == null || !permissions.Any())
+                return new BaseResponseDTOs(null, 400, "No user permissions found");
+
+            // Get the user associated with these permissions
+            var userId = await _context.Users
+                .Where(u => u.Id == Id)
+                .FirstOrDefaultAsync();
+
+            if (userId == null)
+                return new BaseResponseDTOs(null, 404, "User not found");
+
+            var groupedUsers = await _context.Users.Where(u => u.GroupId == userId.GroupId)
+                .ToListAsync();
+
+            foreach(var user in groupedUsers)
+            {
+                foreach (var permission in permissions)
+                {
+                    var existingPermission = await _context.UsersOptionPermissions
+                        .FirstOrDefaultAsync(p => p.UserId == user.Id && p.Id == permission.Id);
+                    existingPermission.AllowDelete = permission.AllowDelete;
+                    existingPermission.AddParameters = permission.AddParameters;
+                    existingPermission.AllowDownload = permission.AllowDownload;
+                    existingPermission.AllowAddToOther = permission.AllowAddToOther;
+                    existingPermission.AllowSendMail = permission.AllowSendMail;
+                    existingPermission.AllowViewTheOther = permission.AllowViewTheOther;
+                    existingPermission.UserId = user.Id;
+                    await _context.SaveChangesAsync();
+                }
+            }
+            
+            return new BaseResponseDTOs(permissions, 200, null);
+        }
+
+
+        public async Task<BaseResponseDTOs> CopyUserPermissionToMultipleUsers(int sourceUserId, List<int> targetUserIds)
+        {
+            // Get permissions from the source user
+            var permissions = await _context.UsersOptionPermissions
+                .Where(p => p.UserId == sourceUserId)
+                .ToListAsync();
+
+            if (permissions == null || !permissions.Any())
+                return new BaseResponseDTOs(null, 400, "No permissions found for source user");
+
+            // Check if source user exists
+            var sourceUser = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == sourceUserId);
+
+            if (sourceUser == null)
+                return new BaseResponseDTOs(null, 404, "Source user not found");
+
+            // Track successful and failed copies
+            var results = new List<object>();
+            int successCount = 0;
+
+            foreach (var targetUserId in targetUserIds)
+            {
+                // Skip if target is the same as source
+                if (targetUserId == sourceUserId)
+                {
+                    results.Add(new { UserId = targetUserId, Status = "Skipped (same as source)" });
+                    continue;
+                }
+
+                // Check if target user exists
+                var targetUser = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Id == targetUserId);
+
+                if (targetUser == null)
+                {
+                    results.Add(new { UserId = targetUserId, Status = "Failed (user not found)" });
+                    continue;
+                }
+
+                try
+                {
+                    // Get existing permissions for target user
+                    var existingPermissions = await _context.UsersOptionPermissions
+                        .Where(p => p.UserId == targetUserId)
+                        .ToListAsync();
+
+                    foreach (var permission in permissions)
+                    {
+                        // Check if the permission already exists for target user
+                        var existingPermission = existingPermissions
+                            .FirstOrDefault(p => p.Id == permission.Id);
+
+                        if (existingPermission != null)
+                        {
+                            // Update existing permission
+                            existingPermission.AddParameters = permission.AddParameters;
+                            existingPermission.AllowDelete = permission.AllowDelete;
+                            existingPermission.AllowDownload = permission.AllowDownload;
+                            existingPermission.AllowAddToOther = permission.AllowAddToOther;
+                            existingPermission.AllowSendMail = permission.AllowSendMail;
+                            existingPermission.AllowViewTheOther = permission.AllowViewTheOther;
+                        }
+                        else
+                        {
+                            // Create new permission
+                            var newPermission = new UsersOptionPermission
+                            {
+                                UserId = targetUserId,
+                                AddParameters = permission.AddParameters,
+                                AllowDelete = permission.AllowDelete,
+                                AllowDownload = permission.AllowDownload,
+                                AllowAddToOther = permission.AllowAddToOther,
+                                AllowSendMail = permission.AllowSendMail,
+                                AllowViewTheOther = permission.AllowViewTheOther
+                            };
+                            _context.UsersOptionPermissions.Add(newPermission);
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                    successCount++;
+                    results.Add(new { UserId = targetUserId, Status = "Success" });
+                }
+                catch (Exception ex)
+                {
+                    results.Add(new { UserId = targetUserId, Status = $"Failed: {ex.Message}" });
+                }
+            }
+
+            return new BaseResponseDTOs(new
+            {
+                SourceUserId = sourceUserId,
+                TargetUsers = results,
+                SuccessCount = successCount,
+                TotalAttempted = targetUserIds.Count
+            }, 200, successCount == 0 ? "Failed to copy permissions to any users" : null);
         }
     }
 }
