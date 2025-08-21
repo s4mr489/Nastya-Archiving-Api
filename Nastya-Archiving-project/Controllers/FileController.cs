@@ -123,5 +123,16 @@ namespace Nastya_Archiving_project.Controllers
                 return Ok(new { success = true, message = "All temp files removed successfully." });
             return StatusCode(500, new { success = false, message = "Failed to remove temp files." });
         }
+
+        [HttpPost("decrypt-and-install")]
+        public async Task<IActionResult> DecryptAndInstall([FromBody] List<string> fileUrls, [FromQuery] string archiveName = "DecryptedFiles")
+        {
+            if (fileUrls == null || !fileUrls.Any())
+                return BadRequest("File URLs are required.");
+            var (archivePath, error) = await _fileServices.DecryptAndInstallToDesktopAsync(fileUrls, archiveName);
+            if (error != null)
+                return BadRequest(error);
+            return Ok(new { archivePath });
+        }
     }
 }

@@ -7,6 +7,9 @@ using Nastya_Archiving_project.Models.DTOs.file;
 using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.SystemInfo;
 using PuppeteerSharp;
+using System.Buffers;
+using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -997,6 +1000,332 @@ namespace Nastya_Archiving_project.Services.files
                 await outFileStream.WriteAsync(aes.IV, 0, aes.IV.Length);
                 using var cryptoStream = new CryptoStream(outFileStream, encryptor, CryptoStreamMode.Write);
                 await input.CopyToAsync(cryptoStream);
+            }
+        }
+
+        /// <summary>
+        /// Decrypts a list of files from provided URLs, compresses them into a single archive, and saves to desktop
+        /// </summary>
+        /// <param name="fileUrls">List of file URLs to decrypt and compress</param>
+        /// <param name="archiveName">Optional name for the output archive (default: "DecryptedFiles")</param>
+        /// <returns>Result with archive path or error message</returns>
+        public async Task<(string? archivePath, string? error)> DecryptAndInstallToDesktopAsync(List<string> fileUrls, string archiveName = "DecryptedFiles")
+        {
+            if (fileUrls == null || fileUrls.Count == 0)
+                return (null, "No file URLs provided");
+
+            // Create temp directory with minimal allocations
+            string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            string outputArchivePath = Path.Combine(desktopPath, $"{archiveName}.zip");
+
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+
+                // Get encryption key once - use ReadOnlySpan to avoid array copies
+                string? keyString = _configuration["FileEncrypt:key"];
+                if (string.IsNullOrEmpty(keyString))
+                    return (null, "Encryption key not found in configuration");
+
+                // Preallocate to avoid resizing
+                var fileProcessingTasks = new Task<string?>[fileUrls.Count];
+                byte[] key = Convert.FromBase64String(keyString);
+
+                // Calculate optimal degree of parallelism based on system resources
+                int maxDegreeOfParallelism = Environment.ProcessorCount > 1
+                    ? Math.Min(Environment.ProcessorCount - 1, 8) // Leave one core free for OS
+                    : 1;
+
+                using var throttler = new SemaphoreSlim(maxDegreeOfParallelism);
+
+                // Launch all file tasks with throttling
+                for (int i = 0; i < fileUrls.Count; i++)
+                {
+                    string url = fileUrls[i];
+                    fileProcessingTasks[i] = ProcessFileWithThrottlingAsync(url, tempDir, key, throttler);
+                }
+
+                // Wait for all tasks efficiently
+                var processedFilePaths = new List<string>(fileUrls.Count);
+                foreach (var task in fileProcessingTasks)
+                {
+                    string? result = await task;
+                    if (!string.IsNullOrEmpty(result))
+                        processedFilePaths.Add(result);
+                }
+
+                if (processedFilePaths.Count == 0)
+                    return (null, "Failed to process any files");
+
+                // Create optimized zip archive
+                using (var archive = ZipFile.Open(outputArchivePath, ZipArchiveMode.Create))
+                {
+                    // Use a dedicated thread-local buffer for each archive operation to avoid allocation
+                    byte[] copyBuffer = ArrayPool<byte>.Shared.Rent(81920);
+
+                    try
+                    {
+                        foreach (string filePath in processedFilePaths)
+                        {
+                            string entryName = Path.GetFileName(filePath);
+                            string extension = Path.GetExtension(filePath).ToLowerInvariant();
+
+                            // Choose compression based on file type (pre-compressed formats use less CPU)
+                            CompressionLevel compressionLevel = IsPreCompressedFormat(extension)
+                                ? CompressionLevel.Fastest
+                                : CompressionLevel.Optimal;
+
+                            var entry = archive.CreateEntry(entryName, compressionLevel);
+
+                            using var entryStream = entry.Open();
+                            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                                FileShare.Read, 4096, FileOptions.SequentialScan);
+
+                            // Manual copying with shared buffer for better performance
+                            await CopyWithSharedBufferAsync(fileStream, entryStream, copyBuffer);
+                        }
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(copyBuffer);
+                    }
+                }
+
+                return (outputArchivePath, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, $"Error during processing: {ex.Message}");
+            }
+            finally
+            {
+                // Clean up temporary directory
+                try
+                {
+                    if (Directory.Exists(tempDir))
+                        Directory.Delete(tempDir, true);
+                }
+                catch { /* Ignore cleanup errors */ }
+            }
+        }
+
+        // Helper method to check if a file format is already compressed
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsPreCompressedFormat(string extension) =>
+            extension == ".pdf" ||
+            extension == ".jpg" ||
+            extension == ".jpeg" ||
+            extension == ".png" ||
+            extension == ".zip" ||
+            extension == ".mp3" ||
+            extension == ".mp4";
+
+        // Process file with throttling to prevent system overload
+        private async Task<string?> ProcessFileWithThrottlingAsync(string url, string tempDir,
+            byte[] key, SemaphoreSlim throttler)
+        {
+            await throttler.WaitAsync();
+            try
+            {
+                return await ProcessSingleFileAsync(url, tempDir, key);
+            }
+            finally
+            {
+                throttler.Release();
+            }
+        }
+
+        // Optimized single file processing
+        private async Task<string?> ProcessSingleFileAsync(string url, string tempDir, byte[] key)
+        {
+            try
+            {
+                // Normalize and resolve file path with minimal allocations
+                string? filePath = ResolveFilePath(url);
+                if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+                    return null;
+
+                // Extract filename with minimal string operations
+                ReadOnlySpan<char> filePathSpan = filePath.AsSpan();
+                int lastSlash = filePathSpan.LastIndexOf(Path.DirectorySeparatorChar);
+                ReadOnlySpan<char> fileNameSpan = lastSlash >= 0 ? filePathSpan.Slice(lastSlash + 1) : filePathSpan;
+
+                // Handle .gz extension
+                string fileName;
+                bool isGzipped = fileNameSpan.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+                if (isGzipped)
+                {
+                    int extensionIndex = fileNameSpan.LastIndexOf('.');
+                    if (extensionIndex > 0)
+                        fileName = fileNameSpan.Slice(0, extensionIndex).ToString();
+                    else
+                        fileName = fileNameSpan.ToString();
+                }
+                else
+                {
+                    fileName = fileNameSpan.ToString();
+                }
+
+                string outputPath = Path.Combine(tempDir, fileName);
+
+                // Determine if file is encrypted using file signature detection
+                bool isEncrypted = false;
+                using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096))
+                {
+                    if (fileStream.Length >= 16)
+                    {
+                        byte[] header = new byte[4];
+                        await fileStream.ReadAsync(header, 0, 4);
+
+                        isEncrypted = !IsKnownFileHeader(header);
+                    }
+                }
+
+                if (isEncrypted)
+                {
+                    await DecryptFileAsync(filePath, outputPath, key, isGzipped);
+                }
+                else
+                {
+                    // Simple file copy for unencrypted files
+                    using var sourceStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                        FileShare.Read, 81920, FileOptions.SequentialScan);
+                    using var destStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write,
+                        FileShare.None, 81920, FileOptions.WriteThrough);
+
+                    await sourceStream.CopyToAsync(destStream, 81920);
+                }
+
+                // Quick check if file exists and has content
+                return File.Exists(outputPath) && new FileInfo(outputPath).Length > 0 ? outputPath : null;
+            }
+            catch (Exception ex)
+            {
+                // Log error but continue processing other files
+                Console.WriteLine($"Error processing file {url}: {ex.Message}");
+                return null;
+            }
+        }
+
+        // Efficient check for known file headers
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsKnownFileHeader(byte[] header)
+        {
+            // Check for common file signatures
+            if (header.Length >= 4)
+            {
+                // PDF: %PDF (25 50 44 46)
+                if (header[0] == 0x25 && header[1] == 0x50 && header[2] == 0x44 && header[3] == 0x46)
+                    return true;
+
+                // ZIP/DOCX/etc.: PK (50 4B 03 04)
+                if (header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04)
+                    return true;
+
+                // PNG: (89 50 4E 47)
+                if (header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47)
+                    return true;
+
+                // JPEG: (FF D8 FF)
+                if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF)
+                    return true;
+
+                // GIF: GIF8 (47 49 46 38)
+                if (header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38)
+                    return true;
+            }
+
+            return false;
+        }
+
+        // Optimized file decryption
+        private async Task DecryptFileAsync(string filePath, string outputPath, byte[] key, bool isGzipped)
+        {
+            // Use pooled buffers to reduce memory pressure
+            byte[] iv = ArrayPool<byte>.Shared.Rent(16);
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+
+            try
+            {
+                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                    FileShare.Read, 4096, FileOptions.SequentialScan);
+
+                // Read the IV
+                await fileStream.ReadAsync(iv, 0, 16);
+
+                using var aes = Aes.Create();
+                aes.Key = key;
+                Array.Copy(iv, aes.IV, 16); // Copy to IV to avoid modifying the rented buffer
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+
+                using var decryptor = aes.CreateDecryptor();
+                using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
+
+                using var outputFileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write,
+                    FileShare.None, 81920, FileOptions.WriteThrough);
+
+                if (isGzipped)
+                {
+                    try
+                    {
+                        using var gzipStream = new GZipStream(cryptoStream, CompressionMode.Decompress);
+                        int bytesRead;
+                        while ((bytesRead = await gzipStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                        {
+                            await outputFileStream.WriteAsync(buffer, 0, bytesRead);
+                        }
+                    }
+                    catch
+                    {
+                        // Reopen the file if decompression fails
+                        outputFileStream.SetLength(0); // Clear output file
+
+                        using var retryFileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                            FileShare.Read, 4096, FileOptions.SequentialScan);
+                        retryFileStream.Position = 16; // Skip IV
+
+                        using var retryAes = Aes.Create();
+                        retryAes.Key = key;
+                        Array.Copy(iv, retryAes.IV, 16);
+                        retryAes.Mode = CipherMode.CBC;
+                        retryAes.Padding = PaddingMode.PKCS7;
+
+                        using var retryDecryptor = retryAes.CreateDecryptor();
+                        using var retryCryptoStream = new CryptoStream(retryFileStream, retryDecryptor, CryptoStreamMode.Read);
+
+                        int bytesRead;
+                        while ((bytesRead = await retryCryptoStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                        {
+                            await outputFileStream.WriteAsync(buffer, 0, bytesRead);
+                        }
+                    }
+                }
+                else
+                {
+                    int bytesRead;
+                    while ((bytesRead = await cryptoStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await outputFileStream.WriteAsync(buffer, 0, bytesRead);
+                    }
+                }
+            }
+            finally
+            {
+                // Return rented buffers
+                ArrayPool<byte>.Shared.Return(iv);
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // Efficient stream copying with shared buffer
+        private static async Task CopyWithSharedBufferAsync(Stream source, Stream destination, byte[] buffer)
+        {
+            int bytesRead;
+            while ((bytesRead = await source.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            {
+                await destination.WriteAsync(buffer, 0, bytesRead);
             }
         }
     }
