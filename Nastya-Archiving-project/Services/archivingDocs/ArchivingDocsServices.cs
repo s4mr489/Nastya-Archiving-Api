@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using DocumentFormat.OpenXml.Office2010.PowerPoint;
 using Microsoft.AspNetCore.Server.HttpSys;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Internal;
@@ -167,6 +168,22 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             string? accountUnitId = claimsIdentity.FindFirst("AccountUnitId")?.Value;
             string? fileType = claimsIdentity.FindFirst("FileType")?.Value;
 
+            var userId = await _systemInfoServices.GetUserId();
+            if (userId.Id == null)
+                return (null, "403"); // Unauthorized
+
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+
+
+            if (!int.TryParse(userId.Id, out int userIdInt))
+                return (null, "Invalid user ID.");
+            var hasPermission = await _systemInfoServices.CheckUserHaveDepart(req.DepartId, userIdInt);
+
+
+            if(userPermissions.AllowAddToOther == 0  && hasPermission == false || userPermissions.AllowAddToOther == 1 && hasPermission == false)
+                return(null, "403"); // Forbidden
+
+
             var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
             if (docTypeResponse.docsType == null)
                 return (null, "Invalid document type.");
@@ -185,7 +202,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 DocTitle = req.DocTitle,
                 DocType = docTypeResponse.docsType.Id,
                 SubDocType = req.SubDocType,
-                DepartId = departId != null ? int.Parse(departId) : null,
+                DepartId = req.DepartId,
                 BranchId = branchId != null ? int.Parse(branchId) : null,
                 AccountUnitId = accountUnitId != null ? int.Parse(accountUnitId) : null,
                 BoxfileNo = req.BoxfileNo,
@@ -321,6 +338,14 @@ namespace Nastya_Archiving_project.Services.archivingDocs
         //delete the archiving docs by Id
         public async Task<string> DeleteArchivingDocs(int Id)
         {
+            var userId = await _systemInfoServices.GetUserId();
+            if (userId.Id == null)
+                return ("403"); // Unauthorized
+
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+            if (userPermissions.AllowDelete == 0)
+                return ("403"); // Forbidden
+
             var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.Id == Id);
             if (docs == null)
                 return ("404"); // docs not found

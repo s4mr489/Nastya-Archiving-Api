@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs;
+using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Services.encrpytion;
 using System.Security.Claims;
 using System.Text;
@@ -339,6 +340,64 @@ namespace Nastya_Archiving_project.Services.SystemInfo
                 return new BaseResponseDTOs(null, 400, "this archivingPoint DoesNot have file path");
             
             return new BaseResponseDTOs(new { BackupPath = arcivingPoint }, 200, "Backup path retrieved successfully.");
+        }
+
+        public async Task<BaseResponseDTOs> GetDepartForUsers(int userId)
+        {
+            // Get all archiving point permissions for the user
+            var archivingPoints = await _context.UsersArchivingPointsPermissions
+                .Where(p => p.UserId == userId)
+                .ToListAsync();
+
+            if (archivingPoints == null || archivingPoints.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No archiving points found for the user.");
+
+            var archivingPointIds = archivingPoints
+                .Select(p => p.ArchivingpointId ?? 0)
+                .ToList();
+
+            var archivingPointNames = await _context.PArcivingPoints
+                .Where(a => archivingPointIds.Contains(a.Id))
+                .ToListAsync();
+
+            var result = archivingPoints
+                .Select(p => new ArchivingPermissionResponseDTOs
+                {
+                    archivingPointId = p.ArchivingpointId ?? 0,
+                    archivingPointDscrp = archivingPointNames
+                        .Where(a => a.Id == p.ArchivingpointId)
+                        .Select(a => a.Dscrp)
+                        .FirstOrDefault()
+                })
+                .ToList();
+
+            return new BaseResponseDTOs(result, 200);
+        }
+
+        public async Task<bool> CheckUserHaveDepart(int departId ,int userId)
+        {
+            var userDepartsResponse = await GetDepartForUsers(userId);
+
+            // Check if we got a successful response
+            if (userDepartsResponse.StatusCode != 200)
+                return false;
+
+            // The GetDepartForUsers method returns a BaseResponseDTOs with a list of ArchivingPermissionResponseDTOs
+            if (userDepartsResponse.Data is not IEnumerable<ArchivingPermissionResponseDTOs> archivingPoints)
+                return false;
+
+            // Check if any of the archiving points have the requested department ID
+            // We need to check PArcivingPoints to get the departId associated with each archivingPointId
+            var archivingPointIds = archivingPoints.Select(ap => ap.archivingPointId).ToList();
+
+            // Get all the archiving points with their department IDs
+            var archivingPointsWithDepartIds = await _context.PArcivingPoints
+                .Where(ap => archivingPointIds.Contains(ap.Id))
+                .Select(ap => new { ap.Id, ap.DepartId })
+                .ToListAsync();
+
+            // Check if any of the archiving points belong to the requested department
+            return archivingPointsWithDepartIds.Any(ap => ap.DepartId == departId);
         }
     }
 }

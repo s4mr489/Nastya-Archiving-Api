@@ -15,6 +15,7 @@ using Nastya_Archiving_project.Models.DTOs.Search.TreeSearch;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Models.Entity;
 using Nastya_Archiving_project.Services.encrpytion;
+using Nastya_Archiving_project.Services.SystemInfo;
 using Org.BouncyCastle.Ocsp;
 
 namespace Nastya_Archiving_project.Services.search
@@ -24,11 +25,15 @@ namespace Nastya_Archiving_project.Services.search
         private readonly AppDbContext _context;
         private readonly IMapper _mapper;
         private readonly IEncryptionServices _encryptionServices;
-        public SearchServices(AppDbContext context, IMapper mapper, IEncryptionServices encryptionServices)
+        private readonly ISystemInfoServices _systemInfoServices;
+        public SearchServices(AppDbContext context, IMapper mapper, 
+                                IEncryptionServices encryptionServices,    
+                                ISystemInfoServices systemInfoServices)
         {
             _context = context;
             _mapper = mapper;
             _encryptionServices = encryptionServices;
+            _systemInfoServices = systemInfoServices;
         }
 
         //public async Task<(List<QuikSearchResponseDTOs>? docs, string? error)> QuikeSearch(QuikeSearchViewForm req)
@@ -123,6 +128,36 @@ namespace Nastya_Archiving_project.Services.search
         //}
         public async Task<(List<QuikSearchResponseDTOs>? docs, string? error)> QuikeSearch(QuikeSearchViewForm req)
         {
+
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return (null, "401"); // Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return (null, "400"); // Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+                return (null, "404"); // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return (null, "403"); // No permissions found
+
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && req.departId.HasValue && req.departId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(req.departId ?? 0, userIdInt);
+                if (!hasAccess)
+                    return (null, "403"); // Forbidden - cannot view other departments
+            }
+
             try
             {
                 // Start with a query on ArcivingDocs
@@ -423,6 +458,35 @@ namespace Nastya_Archiving_project.Services.search
         //<summary> This method is used to search for documents based on various criteria.
         public async Task<(List<DetialisSearchResponseDTOs>? docs, string? error)> DetailsSearch(QuikeSearchViewForm req)
         {
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return (null, "401"); // Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return (null, "400"); // Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+                return (null, "404"); // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return (null, "403"); // No permissions found
+
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && req.departId.HasValue && req.departId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(req.departId ?? 0, userIdInt);
+                if (!hasAccess)
+                    return (null, "403"); // Forbidden - cannot view other departments
+            }
+
             try
             {
                 var query = _context.ArcivingDocs.AsQueryable();
@@ -539,6 +603,37 @@ namespace Nastya_Archiving_project.Services.search
         //This method is used to search for deleted documents based ArchivingDocsDeleteds table.
         public async Task<List<BaseResponseDTOs>> DeletedDocsSearch(SearchDeletedDocsViewForm search)
         {
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return new List<BaseResponseDTOs> { new BaseResponseDTOs(null, 403, "User Id Not Found Please Login.") }
+            ;// Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return new List<BaseResponseDTOs> { new BaseResponseDTOs(null, 403, "User Id Not Found Please Login.") };// Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+               return new List<BaseResponseDTOs> { new BaseResponseDTOs(null, 403, "User Id Not Found Please Login.") };
+            ; // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return new List<BaseResponseDTOs> { new BaseResponseDTOs(null, 403, "User Don't Have Any Permission.") };
+                                                                                                                         
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && search.DepartId.HasValue && search.DepartId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(search.DepartId ?? 0, userIdInt);
+                if (!hasAccess)
+                return new List<BaseResponseDTOs> { new BaseResponseDTOs(null, 403, "User Id Not Found Please Login.") };// Forbidden - cannot view other departments
+            }
+
             var query = _context.ArcivingDocsDeleteds.AsQueryable();
 
             // Filtering by account unit, branch, department
@@ -584,6 +679,35 @@ namespace Nastya_Archiving_project.Services.search
         //Note: this method is Nout used in the current codebase, but it is kept for case if we need it .
         public async Task<BaseResponseDTOs> PermissionSearch(UsersSearchViewForm search)
         {
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return new BaseResponseDTOs (null, 401 , "You must Login"); // Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return new BaseResponseDTOs (null, 400, "user Id format is invalid"); // Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+                return new BaseResponseDTOs(null, 400, "user Id Not Found"); // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return new BaseResponseDTOs(null, 400, $"that User don't Have Any Permission"); // No permissions found
+
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && search.departmentId.HasValue && search.departmentId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(search.departmentId ?? 0, userIdInt);
+                if (!hasAccess)
+                    return new BaseResponseDTOs(null, 400, "user don't have permission to view Other Department"); // Forbidden - cannot view other departments
+            }
+
             var query = _context.Users.AsQueryable();
 
             // Filtering by account unit, branch, department
@@ -644,6 +768,36 @@ namespace Nastya_Archiving_project.Services.search
 
         public async Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req)
         {
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return new BaseResponseDTOs(null, 401, "You must Login"); // Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return new BaseResponseDTOs(null, 400, "user Id format is invalid"); // Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+                return new BaseResponseDTOs(null, 400, "user Id Not Found"); // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return new BaseResponseDTOs(null, 400, $"that User don't Have Any Permission"); // No permissions found
+
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && req.departId.HasValue && req.departId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(req.departId ?? 0, userIdInt);
+                if (!hasAccess)
+                    return new BaseResponseDTOs(null, 400, "user don't have permission to view Other Department"); // Forbidden - cannot view other departments
+            }
+
+
             var query = _context.ArcivingDocs.AsQueryable();
 
             // Filter for docs that have ReferenceTo set (not null or empty)
@@ -755,6 +909,35 @@ namespace Nastya_Archiving_project.Services.search
 
         public async Task<BaseResponseDTOs> TreeSearch(TreeSearchViewForm req)
         {
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return new BaseResponseDTOs(null, 401, "You must Login"); // Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return new BaseResponseDTOs(null, 400, "user Id format is invalid"); // Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+                return new BaseResponseDTOs(null, 400, "user Id Not Found"); // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return new BaseResponseDTOs(null, 400, $"that User don't Have Any Permission"); // No permissions found
+
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && req.departId.HasValue && req.departId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(req.departId ?? 0, userIdInt);
+                if (!hasAccess)
+                    return new BaseResponseDTOs(null, 400, "user don't have permission to view Other Department"); // Forbidden - cannot view other departments
+            }
+
             var query = _context.ArcivingDocs.AsQueryable();
 
             // Filters

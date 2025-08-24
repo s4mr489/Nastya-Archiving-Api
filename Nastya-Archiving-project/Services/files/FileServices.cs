@@ -22,6 +22,7 @@ namespace Nastya_Archiving_project.Services.files
         private readonly ISystemInfoServices _systemInfo;
         private readonly IConfiguration _configuration;
         private readonly IEncryptionServices _encryptionServices;
+        private readonly ISystemInfoServices _systemInfoServices;
         public FileServices(AppDbContext context,
                             IHttpContextAccessor httpcontext,
                             ISystemInfoServices systeminfo,
@@ -885,6 +886,12 @@ namespace Nastya_Archiving_project.Services.files
 
         public async Task<(IActionResult, string? error)> DownloadPdf(MultiFileFormViewForm filesForm)
         {
+            var userId = await _systemInfoServices.GetUserId();
+            if (userId.Id == null)
+                return (null, "403"); // Unauthorized
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+            if (userPermissions.AllowDownload == 0)
+                return (null, "403"); // Forbidden
             try
             {
                 Guid Id = Guid.NewGuid();
@@ -1062,6 +1069,13 @@ namespace Nastya_Archiving_project.Services.files
         /// <returns>Result with archive path or error message</returns>
         public async Task<(string? archivePath, string? error)> DecryptAndInstallToDesktopAsync(List<string> fileUrls, string archiveName = "DecryptedFiles")
         {
+            var userId = await _systemInfoServices.GetUserId();
+            if (userId.Id == null)
+                return (null, "403"); // Unauthorized
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+            if (userPermissions.AllowDownload == 0)
+                return (null, "403"); // Forbidden
+
             if (fileUrls == null || fileUrls.Count == 0)
                 return (null, "No file URLs provided");
 

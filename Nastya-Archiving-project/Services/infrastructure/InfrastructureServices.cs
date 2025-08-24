@@ -235,7 +235,14 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 groupDscrp = _encryptionServices.DecryptString256Bit(e.Groupdscrp),
                 Editor = e.Editor,
                 EditDate = e.EditDate,
-                AccountUnitId = e.AccountUnitId
+                AccountUnitId = e.AccountUnitId,
+                AddParameters = e.AddParameters,
+                AllowAddToOther = e.AllowAddToOther,
+                AllowDelete = e.AllowDelete,
+                AllowDownload = e.AllowDownload,
+                AllowSendMail = e.AllowSendMail,
+                AllowViewTheOther = e.AllowViewTheOther
+
             }).ToList(), null);
 
         }
@@ -252,7 +259,14 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 groupDscrp = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 Editor = group.Editor,
                 EditDate = group.EditDate,
-                AccountUnitId = group.AccountUnitId
+                AccountUnitId = group.AccountUnitId,
+                AddParameters = group.AddParameters,
+                AllowAddToOther = group.AllowAddToOther,
+                AllowDelete = group.AllowDelete,
+                AllowDownload = group.AllowDownload,
+                AllowSendMail = group.AllowSendMail,
+                AllowViewTheOther = group.AllowViewTheOther
+
             };
             return (response, null);
         }

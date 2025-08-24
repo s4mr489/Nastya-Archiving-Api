@@ -13,5 +13,7 @@ namespace Nastya_Archiving_project.Services.SystemInfo
         Task<(bool Success, string Message, string BackupFilePath)> CreateAdvancedDatabaseBackup(string backupDirectory);
         Task<BaseResponseDTOs> GetbackupPath(int departId);
         Task<string> ExportTableToExcelAsync<T>(string filePath) where T : class;
+
+        Task<bool> CheckUserHaveDepart(int departId, int userId);
     }
 }
