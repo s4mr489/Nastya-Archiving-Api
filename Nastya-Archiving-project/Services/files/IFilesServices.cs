@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models.DTOs.file;
+using Nastya_Archiving_project.Models.DTOs;
 using System.Runtime.CompilerServices;
 
 namespace Nastya_Archiving_project.Services.files
@@ -29,6 +30,8 @@ namespace Nastya_Archiving_project.Services.files
         bool RemoveTempUserFile(string fileName);
         // that use to get all the tempFolder for user when he open the archivign page
         Task<List<(string FileName, long FileSize)>> GetTempFolderFilesAsync();
+        // that use to get paginated tempFolder files for user
+        Task<(List<(string FileName, long FileSize)> files, int totalCount, string? error)> GetTempFolderFilesPaginatedAsync(int pageNumber = 1, int pageSize = 20);
         //taht implement to read the file from the temp folder for the user 
         Task<(Stream? fileStream, string? contentType, string? error)> GetFileAsync(string relativePath);
         // that use when we need to update the docs file and insert new pdf to the old pdf

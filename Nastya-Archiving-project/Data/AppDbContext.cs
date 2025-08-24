@@ -789,6 +789,17 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.UserInserted).HasDefaultValue(0);
         });
 
+        //modelBuilder.Entity<Usersgroup>(entity =>
+        //{
+        //    entity.ToTable("usersgroups");
+
+        //    entity.Property(e => e.groupid).HasColumnName("groupid");
+        //    entity.Property(e => e.AccountUnitId).HasColumnName("AccountUnitID");
+        //    entity.Property(e => e.Editor).HasMaxLength(172);
+        //    entity.Property(e => e.Groupdscrp)
+        //        .HasMaxLength(50)
+        //        .HasColumnName("groupdscrp");
+        //});
         modelBuilder.Entity<Usersgroup>(entity =>
         {
             entity.ToTable("usersgroups");
@@ -799,6 +810,12 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Groupdscrp)
                 .HasMaxLength(50)
                 .HasColumnName("groupdscrp");
+            entity.Property(e => e.AllowDownload).HasDefaultValue(0);
+            entity.Property(e => e.AllowSendMail).HasDefaultValue(0);
+            entity.Property(e => e.AllowViewTheOther).HasDefaultValue(0);
+            entity.Property(e => e.AllowAddToOther).HasDefaultValue(0);
+            entity.Property(e => e.AllowDelete).HasDefaultValue(0);
+            entity.Property(e => e.AddParameters).HasDefaultValue(0);
         });
 
         modelBuilder.Entity<Usersinterface>(entity =>

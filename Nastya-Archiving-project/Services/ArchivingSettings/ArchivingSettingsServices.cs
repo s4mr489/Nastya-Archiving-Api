@@ -9,6 +9,7 @@ using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.Precedence;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.SupDocsType;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Derpatment;
 using Nastya_Archiving_project.Services.infrastructure;
+using Nastya_Archiving_project.Services.SystemInfo;
 using Org.BouncyCastle.Crypto.Engines;
 using System.Security.AccessControl;
 
@@ -18,10 +19,12 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
     { 
         private readonly AppDbContext _context;
         private readonly  InfrastructureServices _infrastucatre;
-        public ArchivingSettingsServices(InfrastructureServices infrastucatre, AppDbContext context) : base(null, context)
+        private readonly ISystemInfoServices _systemInfoServices;
+        public ArchivingSettingsServices(InfrastructureServices infrastucatre, AppDbContext context, ISystemInfoServices systemInfoServices) : base(null, context)
         {
             _infrastucatre = infrastucatre;
             _context = context;
+            _systemInfoServices = systemInfoServices;
         }
 
         //Archiving Point Login Implementation
@@ -199,6 +202,13 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         //DocsType Logic Implementation
         public async Task<(DocTypeResponseDTOs? docsType, string? error)> PostDocsType(DocTypeViewform req)
         {
+            var userId = await _systemInfoServices.GetUserId();
+            if(userId.Id == null)
+                return (null, "403"); // Unauthorized
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+            if(userPermissions.AddParameters == 0)
+                return (null, "403"); // Forbidden
+
             var docsType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(e => e.Dscrp == req.docuName);
             if(docsType != null)
                 return (null, "400"); // Document type already exists
@@ -329,6 +339,13 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         //SupDocsType Logic Implementation
         public async Task<(SupDocsTypeResponseDTOs? supDocsType, string? error)> PostSupDocsType(SupDocsTypeViewform req)
         {
+            var userId = await _systemInfoServices.GetUserId();
+            if (userId.Id == null)
+                return (null, "403"); // Unauthorized
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+            if (userPermissions.AddParameters == 0)
+                return (null, "403"); // Forbidden
+
             var sup = await _context.ArcivSubDocDscrps.FirstOrDefaultAsync(e => e.Dscrp == req.supDocuName);
             if(sup != null)
                 return (null, "400"); // SupDocsType already exists

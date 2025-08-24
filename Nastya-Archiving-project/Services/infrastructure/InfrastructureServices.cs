@@ -140,6 +140,12 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 Editor = userId.RealName.ToString(), // Assuming Editor is a string representation of the user ID
                 AccountUnitId = req.AccountUnitId,
                 EditDate = DateOnly.FromDateTime(DateTime.Now),
+                AllowAddToOther = req.AllowAddToOther,
+                AllowDelete = req.AllowDelete,
+                AddParameters = req.AddParameters,
+                AllowDownload = req.AllowDownload,
+                AllowSendMail = req.AllowSendMail,
+                AllowViewTheOther = req.AllowViewTheOther
             };
 
             _context.Usersgroups.Add(newGroup);
@@ -151,7 +157,13 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 groupDscrp = _encryptionServices.EncryptString256Bit(newGroup.Groupdscrp),
                 Editor = newGroup.Editor,
                 EditDate = newGroup.EditDate,
-                AccountUnitId = newGroup.AccountUnitId
+                AccountUnitId = newGroup.AccountUnitId,
+                AddParameters = newGroup.AddParameters,
+                AllowAddToOther = newGroup.AllowAddToOther,
+                AllowDelete = newGroup.AllowDelete,
+                AllowDownload = newGroup.AllowDownload,
+                AllowSendMail = newGroup.AllowSendMail,
+                AllowViewTheOther = newGroup.AllowViewTheOther
             };
             return (response, null);
         }
@@ -181,6 +193,13 @@ namespace Nastya_Archiving_project.Services.infrastructure
             group.Editor = userId.Id.ToString();
             group.AccountUnitId = req.AccountUnitId;
             group.EditDate = DateOnly.FromDateTime(DateTime.Now);
+            group.AllowAddToOther = req.AllowAddToOther ?? group.AllowAddToOther;
+            group.AllowDelete = req.AllowDelete ?? group.AllowDelete;
+            group.AddParameters = req.AddParameters ?? group.AddParameters;
+            group.AllowDownload = req.AllowDownload ?? group.AllowDownload;
+            group.AllowSendMail = req.AllowSendMail ?? group.AllowSendMail;
+            group.AllowViewTheOther = req.AllowViewTheOther ?? group.AllowViewTheOther;
+
 
             _context.Usersgroups.Update(group);
             await _context.SaveChangesAsync();
@@ -191,7 +210,14 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 groupDscrp = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 Editor = group.Editor,
                 EditDate = group.EditDate,
-                AccountUnitId = group.AccountUnitId
+                AccountUnitId = group.AccountUnitId,
+                AllowAddToOther = group.AllowAddToOther,
+                AllowDelete = group.AllowDelete,
+                AddParameters = group.AddParameters,
+                AllowDownload = group.AllowDownload,
+                AllowSendMail = group.AllowSendMail,
+                AllowViewTheOther = group.AllowViewTheOther
+
             };
 
             return (response, null);
@@ -458,6 +484,12 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<(OrgniztionResponseDTOs? POrganization, string? error)> PostPOrganization(OrgniztionViewForm req)
         {
+            var userId = await _systemInfoServices.GetUserId();
+            if (userId.Id == null)
+                return (null, "403"); // Unauthorized
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+            if (userPermissions.AddParameters == 0)
+                return (null, "403"); // Forbidden
             var orgn = await _context.POperations.FirstOrDefaultAsync(o => o.Dscrp== req.Dscrp);
             if(orgn != null)
                 return (null, "400"); // Organization already exists

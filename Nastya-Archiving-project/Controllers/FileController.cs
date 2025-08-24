@@ -37,12 +37,33 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(files);
         }
 
-        [HttpGet("temp-files")]
-        public async Task<IActionResult> GetTempFiles()
+        //[HttpGet("temp-files")]
+        //public async Task<IActionResult> GetTempFiles()
+        //{
+        //    var files = await _fileServices.GetTempFolderFilesAsync();
+        //    // Return as a list of objects with FileName and FileSize properties
+        //    var result = files.Select(f => new { FileName = f.FileName, FileSize = f.FileSize }).ToList();
+        //    return Ok(result);
+        //}
+        
+        [HttpGet("temp-files/paginated")]
+        public async Task<IActionResult> GetTempFilesPaginated([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
         {
-            var files = await _fileServices.GetTempFolderFilesAsync();
-            // Return as a list of objects with FileName and FileSize properties
-            var result = files.Select(f => new { FileName = f.FileName, FileSize = f.FileSize }).ToList();
+            var (files, totalCount, error) = await _fileServices.GetTempFolderFilesPaginatedAsync(pageNumber, pageSize);
+            
+            if (error != null)
+                return BadRequest(error);
+                
+            // Return as a BaseResponseDTOs object with pagination metadata
+            var result = new
+            {
+                Data = files.Select(f => new { FileName = f.FileName, FileSize = f.FileSize }).ToList(),
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+            };
+            
             return Ok(result);
         }
 

@@ -135,10 +135,31 @@ namespace Nastya_Archiving_project.Services.auth
                 //AsWfuser = form.AsWfuser,
                 //DevisionId = form.DevisionId,  // this prop null until understand it 
                 //GobStep = form.GobStep,
-
             };
 
+            // Add the user first
             _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            // Get group permissions to copy to the user
+            var groupPermissions = await _context.Usersgroups
+                .Where(g => g.groupid == user.GroupId)
+                .FirstOrDefaultAsync();
+
+            // Create new user permissions
+            var userPermission = new UsersOptionPermission
+            {
+                UserId = user.Id,
+                AllowDelete = groupPermissions?.AllowDelete ?? 0,
+                AllowSendMail = groupPermissions?.AllowSendMail ?? 0,
+                AllowDownload = groupPermissions?.AllowDownload ?? 0,
+                AllowViewTheOther = groupPermissions?.AllowViewTheOther ?? 0,
+                AllowAddToOther = groupPermissions?.AllowAddToOther ?? 0,
+                AddParameters = groupPermissions?.AddParameters ?? 0
+            };
+
+            // Add the user permissions
+            _context.UsersOptionPermissions.Add(userPermission);
             await _context.SaveChangesAsync();
 
             var result = new RegisterResponseDTOs

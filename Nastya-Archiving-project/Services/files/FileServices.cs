@@ -161,6 +161,57 @@ namespace Nastya_Archiving_project.Services.files
             return files;
         }
 
+        // Paginated version of GetTempFolderFilesAsync
+        public async Task<(List<(string FileName, long FileSize)> files, int totalCount, string? error)> GetTempFolderFilesPaginatedAsync(int pageNumber = 1, int pageSize = 20)
+        {
+            try
+            {
+                // Validate pagination parameters
+                if (pageNumber < 1) pageNumber = 1;
+                if (pageSize < 1) pageSize = 20;
+                if (pageSize > 100) pageSize = 100; // Limit maximum page size to prevent excessive resource usage
+
+                // Get user info
+                var userId = (await _systemInfo.GetUserId()).Id;
+                if (string.IsNullOrEmpty(userId))
+                    return (new List<(string, long)>(), 0, "User ID is not available.");
+
+                var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
+                if (user == null)
+                    return (new List<(string, long)>(), 0, "User not found.");
+
+                var userFolder = _encryptionServices.DecryptString256Bit(user?.Realname) ?? "UnknownUser";
+                var tempDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", userFolder);
+                
+                if (!Directory.Exists(tempDir))
+                    return (new List<(string, long)>(), 0, null); // No error, just empty directory
+
+                // Get all files and their information
+                var allFiles = Directory.GetFiles(tempDir)
+                    .Select(f => (FileName: Path.GetFileName(f), FileSize: new FileInfo(f).Length))
+                    .OrderByDescending(f => new FileInfo(Path.Combine(tempDir, f.FileName)).LastWriteTime) // Order by most recent first
+                    .ToList();
+
+                // Get total count for pagination metadata
+                int totalCount = allFiles.Count;
+
+                // Calculate pagination
+                int skip = (pageNumber - 1) * pageSize;
+                
+                // Apply pagination
+                var paginatedFiles = allFiles
+                    .Skip(skip)
+                    .Take(pageSize)
+                    .ToList();
+
+                return (paginatedFiles, totalCount, null);
+            }
+            catch (Exception ex)
+            {
+                return (new List<(string, long)>(), 0, $"Error retrieving files: {ex.Message}");
+            }
+        }
+
         // Removes a file from the user's temp folder
         public bool RemoveTempUserFile(string fileName)
         {
