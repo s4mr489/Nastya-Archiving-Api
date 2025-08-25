@@ -150,7 +150,7 @@ namespace Nastya_Archiving_project.Controllers
         {
             if (fileUrls == null || !fileUrls.Any())
                 return BadRequest("File URLs are required.");
-            var (archivePath, error) = await _fileServices.DecryptAndInstallToDesktopAsync(fileUrls, archiveName);
+            var (archivePath, error) = await _fileServices.CopyFilesToDesktopAsync(fileUrls, archiveName);
             if (error != null)
                 return BadRequest(error);
             return Ok(new { archivePath });

@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Client;
+using Microsoft.Identity.Client.Extensions.Msal;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.file;
 using Nastya_Archiving_project.Services.encrpytion;
@@ -71,6 +72,8 @@ namespace Nastya_Archiving_project.Services.files
 
             long fileSize = file.Length;
             var storePath = await _context.PArcivingPoints.FirstOrDefaultAsync(s => s.AccountUnitId == user.AccountUnitId && s.DepartId == user.DepariId);
+            if(storePath == null)
+                return (null, 0, "Storage path not configured for user's account unit and department.");
 
             string attachmentsDir = Path.Combine(
                 storePath.StorePath,
@@ -1060,118 +1063,94 @@ namespace Nastya_Archiving_project.Services.files
                 await input.CopyToAsync(cryptoStream);
             }
         }
-
         /// <summary>
-        /// Decrypts a list of files from provided URLs, compresses them into a single archive, and saves to desktop
+        /// Copies a list of files from provided URLs to the desktop without decryption or compression
         /// </summary>
-        /// <param name="fileUrls">List of file URLs to decrypt and compress</param>
-        /// <param name="archiveName">Optional name for the output archive (default: "DecryptedFiles")</param>
-        /// <returns>Result with archive path or error message</returns>
-        public async Task<(string? archivePath, string? error)> DecryptAndInstallToDesktopAsync(List<string> fileUrls, string archiveName = "DecryptedFiles")
+        /// <param name="fileUrls">List of file URLs to copy</param>
+        /// <param name="outputFolderName">Name of the output folder on desktop (default: "ArchiveFiles")</param>
+        /// <returns>Result with output folder path or error message</returns>
+        public async Task<(string? outputPath, string? error)> CopyFilesToDesktopAsync(List<string> fileUrls, string outputFolderName = "ArchiveFiles")
         {
+            // Check user permissions
             var userId = await _systemInfoServices.GetUserId();
             if (userId.Id == null)
                 return (null, "403"); // Unauthorized
+
             var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
-            if (userPermissions.AllowDownload == 0)
+            if (userPermissions?.AllowDownload == 0)
                 return (null, "403"); // Forbidden
 
             if (fileUrls == null || fileUrls.Count == 0)
                 return (null, "No file URLs provided");
 
-            // Create temp directory with minimal allocations
-            string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            // Create output directory on desktop
             string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            string outputArchivePath = Path.Combine(desktopPath, $"{archiveName}.zip");
+            string outputFolder = Path.Combine(desktopPath, outputFolderName);
+
+            // Add timestamp to folder name to avoid conflicts
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            outputFolder = Path.Combine(desktopPath, $"{outputFolderName}_{timestamp}");
 
             try
             {
-                Directory.CreateDirectory(tempDir);
+                // Create the destination directory
+                Directory.CreateDirectory(outputFolder);
 
-                // Get encryption key once - use ReadOnlySpan to avoid array copies
-                string? keyString = _configuration["FileEncrypt:key"];
-                if (string.IsNullOrEmpty(keyString))
-                    return (null, "Encryption key not found in configuration");
+                // Process files sequentially to avoid any potential file system issues
+                int successCount = 0;
+                var failedFiles = new List<string>();
 
-                // Preallocate to avoid resizing
-                var fileProcessingTasks = new Task<string?>[fileUrls.Count];
-                byte[] key = Convert.FromBase64String(keyString);
-
-                // Calculate optimal degree of parallelism based on system resources
-                int maxDegreeOfParallelism = Environment.ProcessorCount > 1
-                    ? Math.Min(Environment.ProcessorCount - 1, 8) // Leave one core free for OS
-                    : 1;
-
-                using var throttler = new SemaphoreSlim(maxDegreeOfParallelism);
-
-                // Launch all file tasks with throttling
-                for (int i = 0; i < fileUrls.Count; i++)
+                foreach (string url in fileUrls)
                 {
-                    string url = fileUrls[i];
-                    fileProcessingTasks[i] = ProcessFileWithThrottlingAsync(url, tempDir, key, throttler);
-                }
-
-                // Wait for all tasks efficiently
-                var processedFilePaths = new List<string>(fileUrls.Count);
-                foreach (var task in fileProcessingTasks)
-                {
-                    string? result = await task;
-                    if (!string.IsNullOrEmpty(result))
-                        processedFilePaths.Add(result);
-                }
-
-                if (processedFilePaths.Count == 0)
-                    return (null, "Failed to process any files");
-
-                // Create optimized zip archive
-                using (var archive = ZipFile.Open(outputArchivePath, ZipArchiveMode.Create))
-                {
-                    // Use a dedicated thread-local buffer for each archive operation to avoid allocation
-                    byte[] copyBuffer = ArrayPool<byte>.Shared.Rent(81920);
-
                     try
                     {
-                        foreach (string filePath in processedFilePaths)
+                        // Resolve the file path
+                        string? filePath = ResolveFilePath(url);
+                        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
                         {
-                            string entryName = Path.GetFileName(filePath);
-                            string extension = Path.GetExtension(filePath).ToLowerInvariant();
-
-                            // Choose compression based on file type (pre-compressed formats use less CPU)
-                            CompressionLevel compressionLevel = IsPreCompressedFormat(extension)
-                                ? CompressionLevel.Fastest
-                                : CompressionLevel.Optimal;
-
-                            var entry = archive.CreateEntry(entryName, compressionLevel);
-
-                            using var entryStream = entry.Open();
-                            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                                FileShare.Read, 4096, FileOptions.SequentialScan);
-
-                            // Manual copying with shared buffer for better performance
-                            await CopyWithSharedBufferAsync(fileStream, entryStream, copyBuffer);
+                            failedFiles.Add(url);
+                            continue;
                         }
+
+                        // Get the filename for the destination
+                        string fileName = Path.GetFileName(filePath);
+                        string destinationPath = Path.Combine(outputFolder, fileName);
+
+                        // Handle duplicate filenames by adding a unique suffix
+                        if (File.Exists(destinationPath))
+                        {
+                            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                            string extension = Path.GetExtension(fileName);
+                            destinationPath = Path.Combine(outputFolder, $"{fileNameWithoutExt}_{Guid.NewGuid().ToString("N").Substring(0, 8)}{extension}");
+                        }
+
+                        // Copy the file directly without any processing
+                        File.Copy(filePath, destinationPath, false);
+                        successCount++;
                     }
-                    finally
+                    catch (Exception ex)
                     {
-                        ArrayPool<byte>.Shared.Return(copyBuffer);
+                        failedFiles.Add($"{url} ({ex.Message})");
                     }
                 }
 
-                return (outputArchivePath, null);
+                // Return results
+                if (successCount == 0)
+                {
+                    return (null, $"Failed to copy any files. Errors: {string.Join(", ", failedFiles)}");
+                }
+                else if (failedFiles.Count > 0)
+                {
+                    return (outputFolder, $"Copied {successCount} files. Failed to copy {failedFiles.Count} files.");
+                }
+                else
+                {
+                    return (outputFolder, null);
+                }
             }
             catch (Exception ex)
             {
-                return (null, $"Error during processing: {ex.Message}");
-            }
-            finally
-            {
-                // Clean up temporary directory
-                try
-                {
-                    if (Directory.Exists(tempDir))
-                        Directory.Delete(tempDir, true);
-                }
-                catch { /* Ignore cleanup errors */ }
+                return (null, $"Error copying files: {ex.Message}");
             }
         }
 

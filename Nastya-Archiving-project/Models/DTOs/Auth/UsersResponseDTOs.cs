@@ -7,6 +7,7 @@
         public string? userName { get; set; }
         public string? accountUnit { get; set; }
         public string? branch { get; set; }
+        public string? group { get; set; }
         public string? depart { get; set; }
         public string? jobTitl { get; set; }
         public string? permission { get; set; }

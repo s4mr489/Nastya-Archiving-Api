@@ -95,11 +95,11 @@ namespace Nastya_Archiving_project.Services.usersPermission
             if (!userIds.Any())
                 return new BaseResponseDTOs(null, 404, "User ID not provided.");
 
-            if (!optionPermissions.Any() && !archivingPoints.Any())
-                return new BaseResponseDTOs(null, 404, "No permissions found for the user.");
+            //if (!optionPermissions.Any() && !archivingPoints.Any())
+            //    return new BaseResponseDTOs(null, 404, "No permissions found for the user.");
 
-            if (!archivingPointNames.Any())
-                return new BaseResponseDTOs(null, 404, "No archiving points found for the user.");
+            //if (!archivingPointNames.Any())
+            //    return new BaseResponseDTOs(null, 404, "No archiving points found for the user.");
             //cusotm response 
             var result = new List<UsersSearchResponseDTOs>
                 {
@@ -143,9 +143,9 @@ namespace Nastya_Archiving_project.Services.usersPermission
             if (optionPermission != null)
             {
                 // If exists, update the permission fields
-                optionPermission.AddParameters = request.addParameters;
-                optionPermission.AllowDelete = request.allowDelete;
-                optionPermission.AllowAddToOther = request.allowAddToOther;
+                optionPermission.AddParameters = request.addParameters ?? optionPermission.AddParameters;
+                optionPermission.AllowDelete = request.allowDelete ?? optionPermission.AllowDelete;
+                optionPermission.AllowAddToOther = request.allowAddToOther ?? optionPermission.AllowDownload;
                 optionPermission.AllowViewTheOther = request.allowViewTheOther;
                 optionPermission.AllowSendMail = request.allowSendMail;
                 optionPermission.AllowDownload = request.allowDownload;

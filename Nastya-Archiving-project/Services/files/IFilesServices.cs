@@ -43,6 +43,6 @@ namespace Nastya_Archiving_project.Services.files
         //this is used to remove all the temp folder files for the user
         Task<bool> RemoveAllTempFolderFilesAsync();
         // this method is used to download the file from the serve and decrypt it then save it to the desktop
-        Task<(string? archivePath, string? error)> DecryptAndInstallToDesktopAsync(List<string> fileUrls, string archiveName = "DecryptedFiles");
+        Task<(string? outputPath, string? error)> CopyFilesToDesktopAsync(List<string> fileUrls, string outputFolderName = "ArchiveFiles");
     }
 }

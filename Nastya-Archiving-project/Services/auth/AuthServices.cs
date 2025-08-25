@@ -221,6 +221,7 @@ namespace Nastya_Archiving_project.Services.auth
                     realName = _encryptionServices.DecryptString256Bit(u.Realname),
                     branch = _context.GpBranches.FirstOrDefault(b => b.Id == u.BranchId)?.Dscrp,
                     depart = _context.GpAccountingUnits.FirstOrDefault(a => a.Id == u.DepariId)?.Dscrp,
+                    group = _context.Usersgroups.FirstOrDefault(g => g.groupid == u.GroupId)?.Groupdscrp,
                     accountUnit = _context.GpAccountingUnits.FirstOrDefault(a => a.Id == u.AccountUnitId)?.Dscrp,
                     jobTitl = _context.PJobTitles.FirstOrDefault(j => j.Id == u.JobTitle)?.Dscrp,
                     permission = _encryptionServices.DecryptString256Bit(u.Adminst)
@@ -409,6 +410,18 @@ namespace Nastya_Archiving_project.Services.auth
                     Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
                 }
             }
+        }
+
+        public async Task<BaseResponseDTOs> FirstUsers(LoginFormDTO req)
+        {
+            var userCount = await _context.Users.CountAsync();
+            var seeder = new Seeder(_context,_encryptionServices);
+            if(userCount == 0)
+            {
+                seeder.SeedSuperAdmin(req.userName, req.password);
+                return new BaseResponseDTOs(null, 200, "The First User In The System Created Successfully.");
+            }
+            return new BaseResponseDTOs(null, 400, "there is Users On The DB.");
         }
     }
 }

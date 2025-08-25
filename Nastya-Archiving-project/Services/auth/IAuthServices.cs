@@ -7,6 +7,7 @@ namespace Nastya_Archiving_project.Services.auth
 {
     public interface IAuthServices
     {
+
         Task<string> Login(LoginFormDTO form, bool IsAdmin);
         Task<(RegisterResponseDTOs user,string? error)> Register(RegisterViewForm form, bool IsAdmin = false);
         Task<string> ChangeUserPassword(ChangePasswordViewFrom pass);
@@ -15,5 +16,6 @@ namespace Nastya_Archiving_project.Services.auth
         Task<(UsersResponseDTOs? user, string? error)> SearchUsers(string? realName ,string? userName);
         Task<(RegisterResponseDTOs? user, string? error)> EditUser(int id, RegisterViewForm form, bool IsAdmin);
         Task<BaseResponseDTOs> GetDepartForUsers(int userId);
+        Task<BaseResponseDTOs> FirstUsers(LoginFormDTO req);
     }
 }

@@ -85,7 +85,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
 
             // Check for duplicate name in another record
             var duplicate = await _context.PArcivingPoints
-                .FirstOrDefaultAsync(e => e.Dscrp == req.pointName);
+                .FirstOrDefaultAsync(e => e.Dscrp == req.pointName && e.Id != Id);
             if (duplicate != null)
                 return (null, "400"); // Another archiving point with the same name exists
 
@@ -374,6 +374,22 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         public async Task<(SupDocsTypeResponseDTOs? supDocsType, string? error)> GetSupDocsTypeById(int Id)
         {
             var sup = await _context.ArcivSubDocDscrps.FirstOrDefaultAsync(e => e.Id == Id);
+            if (sup == null)
+                return (null, "404"); // SupDocsType not found
+
+            var response = new SupDocsTypeResponseDTOs
+            {
+                Id = sup.Id,
+                supDocuName = sup.Dscrp,
+                DocTypeId = sup.DocTypeId
+            };
+            return (response, null);
+        }
+
+
+        public async Task<(SupDocsTypeResponseDTOs? supDocsType, string? error)> GetSupDocsTypeByDocTypeId(int Id)
+        {
+            var sup = await _context.ArcivSubDocDscrps.FirstOrDefaultAsync(e => e.DocTypeId == Id);
             if (sup == null)
                 return (null, "404"); // SupDocsType not found
 

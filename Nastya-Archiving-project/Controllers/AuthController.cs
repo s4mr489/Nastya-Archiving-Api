@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Auth;
 using Nastya_Archiving_project.Services.auth;
 using Nastya_Archiving_project.Services.encrpytion;
@@ -91,6 +92,14 @@ namespace Nastya_Archiving_project.Controllers
             }).ToList();
 
             return Ok(result);
+
+        }
+        [HttpPost("Create-First-User")]
+        public async Task<IActionResult> FirstUser(LoginFormDTO req)
+        {
+            BaseResponseDTOs result;
+            result = await _authServices.FirstUsers(req);
+            return StatusCode(result.StatusCode, result);
 
         }
         [HttpPut("change-password")]

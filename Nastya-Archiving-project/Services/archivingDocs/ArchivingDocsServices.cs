@@ -180,7 +180,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var hasPermission = await _systemInfoServices.CheckUserHaveDepart(req.DepartId, userIdInt);
 
 
-            if(userPermissions.AllowAddToOther == 0  && hasPermission == false || userPermissions.AllowAddToOther == 1 && hasPermission == false)
+            if(userPermissions.AllowAddToOther == 0  && hasPermission == false && req.DepartId.ToString() != departId || userPermissions.AllowAddToOther == 1 && hasPermission == false && req.DepartId.ToString() != departId)
                 return(null, "403"); // Forbidden
 
 

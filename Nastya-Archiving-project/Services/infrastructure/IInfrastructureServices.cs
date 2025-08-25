@@ -45,6 +45,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
         Task<(OrgniztionResponseDTOs? POrganization, string? error)> EditPOrganization(OrgniztionViewForm req, int Id);
         Task<(List<OrgniztionResponseDTOs>? POrganization, string? error)> GetAllPOrganizations();
         Task<(OrgniztionResponseDTOs? POrganization, string? error)> GetPOrganizationById(int Id);
+        Task<(OrgniztionResponseDTOs? POrganization, string? error)> GetPOrganizationByDepartId(int Id);
         Task<string> DeletePOrganization(int Id);
 
         // Job Title Implementation

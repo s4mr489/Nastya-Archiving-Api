@@ -612,6 +612,22 @@ namespace Nastya_Archiving_project.Services.infrastructure
             }, null); // Return organization details
         }
 
+        public async Task<(OrgniztionResponseDTOs? POrganization, string? error)> GetPOrganizationByDepartId(int Id)
+        {
+            var orgn = await _context.POrganizations.FirstOrDefaultAsync(o => o.DepartId == Id);
+            if (orgn == null)
+                return (null, "404"); // Organization not found
+
+            return (new OrgniztionResponseDTOs
+            {
+                Id = orgn.Id,
+                Dscrp = orgn.Dscrp,
+                DepartId = orgn.DepartId,
+                AccountUnitId = orgn.AccountUnitId,
+                BranchId = orgn.BranchId
+            }, null); // Return organization details
+        }
+
         public async Task<string> DeletePOrganization(int Id)
         {
             var orgn = await _context.POrganizations.FirstOrDefaultAsync(o => o.Id == Id);

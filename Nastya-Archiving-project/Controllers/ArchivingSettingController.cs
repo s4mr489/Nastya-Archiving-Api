@@ -180,6 +180,14 @@ namespace Nastya_Archiving_project.Controllers
                 return NotFound();
             return Ok(supDocsType);
         }
+        [HttpGet("Get-SupDocsType-ByDocType/{id}")]
+        public async Task<IActionResult> GetSupDocsTypeByDocTypeId(int id)
+        {
+            var (supDocsType, error) = await _archivingSettings.GetSupDocsTypeByDocTypeId(id);
+            if (error == "404")
+                return NotFound();
+            return Ok(supDocsType);
+        }
 
         [HttpDelete("Delete-SupDocsType/{id}")]
         public async Task<IActionResult> DeleteSupDocsType(int id)

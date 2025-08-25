@@ -317,6 +317,16 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(org);
         }
 
+        [HttpGet("Get-Organization-ByDepart/{id}")]
+        public async Task<IActionResult> GetPOrganizationByDepartId(int id)
+        {
+            var (org, error) = await _infrastructureServices.GetPOrganizationByDepartId(id);
+            if (error == "404")
+                return NotFound();
+            return Ok(org);
+        }
+
+
         [HttpDelete("Delete-Organization/{id}")]
         public async Task<IActionResult> DeletePOrganization(int id)
         {

@@ -28,7 +28,7 @@ namespace Nastya_Archiving_project.Helper
                 var newUser = new User
                 {
                     UserName = _encryptionServices.EncryptString256Bit(userName),
-                    UserPassword = BCrypt.Net.BCrypt.HashPassword(password),
+                    UserPassword = _encryptionServices.EncryptString256Bit(password),
                     Adminst = _encryptionServices.EncryptString256Bit("1"),
                     Realname = _encryptionServices.EncryptString256Bit("System Administrator"),
                     Permtype = _encryptionServices.EncryptString256Bit("Admin"),

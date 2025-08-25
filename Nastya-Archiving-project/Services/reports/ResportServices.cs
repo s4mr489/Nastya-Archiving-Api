@@ -2,6 +2,7 @@
 using DocumentFormat.OpenXml.Bibliography;
 using DocumentFormat.OpenXml.Office.PowerPoint.Y2021.M06.Main;
 using DocumentFormat.OpenXml.Office.Word;
+using FastReport.Utils;
 using iText.Forms.Fields.Merging;
 using iText.Kernel.Crypto;
 using Microsoft.AspNetCore.Mvc;
@@ -21,6 +22,9 @@ using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.SystemInfo;
 using Org.BouncyCastle.Asn1.X509;
 using System.Drawing;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Nastya_Archiving_project.Services.reports
 {
@@ -1128,50 +1132,222 @@ namespace Nastya_Archiving_project.Services.reports
             return new BaseResponseDTOs(null, 400, "Please use Detailed result type for this report");
         }
 
+        //public async Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize)
+        //{
+        //    // Ensure page is at least 1
+        //    page = page < 1 ? 1 : page;
+        //    int skip = (page - 1) * pageSize;
+        //    var query = _context.ArcivingDocs.OrderBy(x => x.Id);
+
+        //    int totalCount = await query.CountAsync();
+        //    int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+        //    var docs = await query.OrderByDescending(d => d.EditDate).Skip(skip).Take(pageSize).ToListAsync();
+
+        //    var result = new List<object>();
+        //    foreach (var doc in docs)
+        //    {
+        //        string filePath = doc.ImgUrl != null ? doc.ImgUrl.ToString() : null;
+        //        decimal? expectedSize = doc.DocSize;
+        //        long actualSize = -1;
+        //        bool isAffected = true;
+
+        //        if (!string.IsNullOrEmpty(filePath) && expectedSize != null && System.IO.File.Exists(filePath))
+        //        {
+        //            actualSize = new System.IO.FileInfo(filePath).Length;
+        //            isAffected = actualSize != (long)expectedSize;
+        //        }
+
+        //        result.Add(new
+        //        {
+        //            DocumentId = doc.Id,
+        //            FilePath = filePath,
+        //            ExpectedSize = expectedSize,
+        //            ActualSize = actualSize >= 0 ? (long?)actualSize : null,
+        //            IsAffected = isAffected
+        //        });
+        //    }
+
+        //    return new BaseResponseDTOs(new
+        //    {
+        //        Data = result,
+        //        TotalCount = totalCount,
+        //        TotalPages = totalPages,
+        //        PageNumber = page,
+        //        PageSize = pageSize
+        //    }, 200, null);
+        //}
         public async Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize)
         {
-            // Ensure page is at least 1
-            page = page < 1 ? 1 : page;
-            int skip = (page - 1) * pageSize;
-            var query = _context.ArcivingDocs.OrderBy(x => x.Id);
-
-            int totalCount = await query.CountAsync();
-            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-            var docs = await query.OrderByDescending(d => d.EditDate).Skip(skip).Take(pageSize).ToListAsync();
-
-            var result = new List<object>();
-            foreach (var doc in docs)
+            try
             {
-                string filePath = doc.ImgUrl != null ? doc.ImgUrl.ToString() : null;
-                decimal? expectedSize = doc.DocSize;
-                long actualSize = -1;
-                bool isAffected = true;
+                // Validate parameters
+                page = Math.Max(1, page);
+                pageSize = Math.Clamp(pageSize, 1, 100);
+                int skip = (page - 1) * pageSize;
 
-                if (!string.IsNullOrEmpty(filePath) && expectedSize != null && System.IO.File.Exists(filePath))
+                // Query documents with file paths
+                var query = _context.ArcivingDocs
+                    .AsNoTracking()
+                    .Where(d => d.ImgUrl != null && d.DocSize != null)
+                    .OrderByDescending(d => d.EditDate);
+
+                // Get total count for pagination
+                int totalCount = await query.CountAsync();
+                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+                // Get paged documents
+                var docs = await query
+                    .Skip(skip)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                // Get encryption keys (same as in upload method)
+                byte[]? key = null;
+                try
                 {
-                    actualSize = new System.IO.FileInfo(filePath).Length;
-                    isAffected = actualSize != (long)expectedSize;
+                    key = Convert.FromBase64String(ConfigProvider.config["FileEncrypt:key"]);
+                }
+                catch (Exception ex)
+                {
+                    return new BaseResponseDTOs(null, 500, $"Error retrieving encryption key: {ex.Message}");
                 }
 
-                result.Add(new
+                var result = new List<object>();
+                foreach (var doc in docs)
                 {
-                    DocumentId = doc.Id,
-                    FilePath = filePath,
-                    ExpectedSize = expectedSize,
-                    ActualSize = actualSize >= 0 ? (long?)actualSize : null,
-                    IsAffected = isAffected
-                });
-            }
+                    string? filePath = doc.ImgUrl;
+                    decimal? expectedSize = doc.DocSize; // Original uncompressed file size stored in DB
+                    long? actualSize = null; // Current file size on disk (encrypted+compressed)
+                    bool isAffected = false;
+                    string? statusMessage = null;
 
-            return new BaseResponseDTOs(new
+                    if (!string.IsNullOrEmpty(filePath))
+                    {
+                        // Resolve the actual file path from the web path
+                        string? resolvedFilePath = ResolveFilePath(filePath);
+
+                        if (resolvedFilePath != null && File.Exists(resolvedFilePath))
+                        {
+                            try
+                            {
+                                var fileInfo = new FileInfo(resolvedFilePath);
+                                actualSize = fileInfo.Length;
+
+                                // Check if file is a compressed and encrypted file as expected
+                                bool isGzipped = resolvedFilePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+
+                                if (!isGzipped)
+                                {
+                                    isAffected = true;
+                                    statusMessage = "File is not in the expected compressed format (.gz)";
+                                }
+                                else if (fileInfo.Length < 16) // IV size is 16 bytes
+                                {
+                                    isAffected = true;
+                                    statusMessage = "File is too small to be valid (less than 16 bytes)";
+                                }
+                                else
+                                {
+                                    // Verify the file can be decrypted
+                                    try
+                                    {
+                                        // Read just the IV to validate encryption
+                                        using var fs = new FileStream(resolvedFilePath, FileMode.Open, FileAccess.Read);
+                                        byte[] iv = new byte[16];
+                                        await fs.ReadAsync(iv, 0, 16);
+
+                                        // Verify the file can be decrypted by reading a small portion
+                                        using var aes = Aes.Create();
+                                        aes.Key = key;
+                                        aes.IV = iv;
+                                        aes.Mode = CipherMode.CBC;
+                                        aes.Padding = PaddingMode.PKCS7;
+
+                                        using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                                        using var cryptoStream = new CryptoStream(fs, decryptor, CryptoStreamMode.Read);
+
+                                        // Try to read a small buffer to verify decryption works
+                                        byte[] buffer = new byte[1024];
+                                        int bytesRead = await cryptoStream.ReadAsync(buffer, 0, buffer.Length);
+
+                                        if (bytesRead <= 0)
+                                        {
+                                            isAffected = true;
+                                            statusMessage = "File cannot be decrypted properly";
+                                        }
+                                        else if (expectedSize.HasValue)
+                                        {
+                                            // For valid files, the expectedSize (DocSize in DB) should be the original 
+                                            // uncompressed size, while actualSize is the compressed+encrypted size
+                                            // Typically the actualSize should be smaller, but not too small
+
+                                            // Check for drastic file size difference 
+                                            // Typically compressed files are 20-80% of original size
+                                            long expectedSizeValue = Convert.ToInt64(expectedSize.Value);
+                                            double ratio = (double)actualSize.Value / expectedSizeValue;
+
+                                            // If compressed size is more than 95% of original or less than 5% of original,
+                                            // something is likely wrong
+                                            if (ratio > 0.95 || ratio < 0.05)
+                                            {
+                                                isAffected = true;
+                                                statusMessage = $"Suspicious compression ratio: {ratio:P2}";
+                                            }
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        isAffected = true;
+                                        statusMessage = $"Error validating file: {ex.Message}";
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                isAffected = true;
+                                statusMessage = $"Error accessing file: {ex.Message}";
+                            }
+                        }
+                        else
+                        {
+                            isAffected = true;
+                            statusMessage = "File does not exist on disk";
+                        }
+                    }
+                    else
+                    {
+                        isAffected = true;
+                        statusMessage = "Document has no file path";
+                    }
+
+                    // Add result to the list
+                    result.Add(new
+                    {
+                        DocumentId = doc.Id,
+                        FilePath = filePath,
+                        ExpectedSize = expectedSize,    // Original uncompressed size stored in DB
+                        ActualSize = actualSize,        // Current compressed+encrypted size on disk
+                        IsAffected = isAffected,
+                        StatusMessage = statusMessage
+                    });
+                }
+
+                // Return response with pagination metadata
+                return new BaseResponseDTOs(new
+                {
+                    Data = result,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    AffectedCount = result.Count(r => (bool)((dynamic)r).IsAffected)
+                }, 200, null);
+            }
+            catch (Exception ex)
             {
-                Data = result,
-                TotalCount = totalCount,
-                TotalPages = totalPages,
-                PageNumber = page,
-                PageSize = pageSize
-            }, 200, null);
+                return new BaseResponseDTOs(null, 500, $"Error checking file integrity: {ex.Message}");
+            }
         }
         public async Task<BaseResponseDTOs> GetMontlyUsersDocumentDetailsPagedList(ReportsViewForm req)
         {
@@ -1593,6 +1769,33 @@ namespace Nastya_Archiving_project.Services.reports
         {
             var docType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(d => d.Id == docTypeId);
             return docType?.Dscrp ?? "Unknown";
+        }
+
+
+        // Add this private method to the ResportServices class
+        private string? ResolveFilePath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+
+            // Normalize path separators in one operation
+            path = path.Replace('/', Path.DirectorySeparatorChar);
+
+            // Check direct path first to minimize I/O
+            if (File.Exists(path)) return path;
+
+            // Try absolute path
+            try
+            {
+                string fullPath = Path.GetFullPath(path);
+                if (File.Exists(fullPath)) return fullPath;
+            }
+            catch { /* Ignore path resolution errors */ }
+
+            // Try relative to current directory
+            string relativePath = Path.Combine(Directory.GetCurrentDirectory(), path);
+            if (File.Exists(relativePath)) return relativePath;
+
+            return null;
         }
 
         // Generate PDF report using FastReport
