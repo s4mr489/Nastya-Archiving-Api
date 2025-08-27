@@ -12,4 +12,6 @@ public partial class UsersArchivingPointsPermission
     public int? ArchivingpointId { get; set; }
 
     public int? AccountUnitId { get; set; }
+
+    public int? DepartId { get; set; }
 }

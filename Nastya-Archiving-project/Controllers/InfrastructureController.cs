@@ -287,6 +287,10 @@ namespace Nastya_Archiving_project.Controllers
                 return BadRequest("Organization already exists.");
             if (error == "404")
                 return NotFound("Account unit, branch, or department not found.");
+            if (error == "403")
+                return Forbid();
+            if (error == "401")
+                return Unauthorized();
             return Ok(org);
         }
 
@@ -296,6 +300,12 @@ namespace Nastya_Archiving_project.Controllers
             var (org, error) = await _infrastructureServices.EditPOrganization(req, id);
             if (error == "404")
                 return NotFound("Organization, account unit, branch, or department not found.");
+            if (error == "400")
+                return BadRequest();
+            if (error == "403")
+                return Forbid();
+            if (error == "401")
+                return Unauthorized();
             return Ok(org);
         }
 
@@ -323,6 +333,10 @@ namespace Nastya_Archiving_project.Controllers
             var (org, error) = await _infrastructureServices.GetPOrganizationByDepartId(id);
             if (error == "404")
                 return NotFound();
+            if (error == "403")
+                return Forbid();
+            if (error == "401")
+                return Unauthorized();
             return Ok(org);
         }
 

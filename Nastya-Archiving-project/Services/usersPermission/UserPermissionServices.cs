@@ -59,9 +59,6 @@ namespace Nastya_Archiving_project.Services.usersPermission
 
 
         //this method is used to get user permissions based on the user Id provided then 
-        //search on the same id on the UserOpetionPermission Like list 
-        //search on the same id on the UsersArchivingPointsPermssions
-        //search on the same object using the arhivingPoints  on the archivingPoint 
         public async Task<BaseResponseDTOs> GetUserPermissionsAsync(UsersViewForm users)
         {
             var userIds = new List<int>();
@@ -70,7 +67,11 @@ namespace Nastya_Archiving_project.Services.usersPermission
                 userIds.Add(users.Id.Value);
             }
 
-            //Quersy Operation 
+            // Error handling: check if any required data is missing
+            if (!userIds.Any())
+                return new BaseResponseDTOs(null, 404, "User ID not provided.");
+
+            // Query for user permissions
             var optionPermissions = await _context.UsersOptionPermissions
                 .Where(p => userIds.Contains(p.UserId ?? 0))
                 .ToListAsync();
@@ -79,50 +80,108 @@ namespace Nastya_Archiving_project.Services.usersPermission
                 .Where(p => userIds.Contains(p.UserId ?? 0))
                 .ToListAsync();
 
+            // If no permissions found, still continue (as per your commented code)
+
+            // Get archiving point IDs for further lookups
             var archivingPointIds = archivingPoints
                 .Select(p => p.ArchivingpointId ?? 0)
+                .Where(id => id > 0)
                 .ToList();
 
+            // Get archiving point details
             var archivingPointNames = await _context.PArcivingPoints
                 .Where(a => archivingPointIds.Contains(a.Id))
                 .ToListAsync();
 
-            var AsaWfuser = await _context.PFileTypes
+            // Get file types
+            var asaWfuser = await _context.PFileTypes
                 .Where(a => archivingPointIds.Contains(a.Id))
                 .ToListAsync();
 
-            // Error handling: check if any required data is missing
-            if (!userIds.Any())
-                return new BaseResponseDTOs(null, 404, "User ID not provided.");
+            // Get department IDs from both UsersArchivingPointsPermission and PArcivingPoints
+            var departmentIds = new HashSet<int>();
 
-            //if (!optionPermissions.Any() && !archivingPoints.Any())
-            //    return new BaseResponseDTOs(null, 404, "No permissions found for the user.");
-
-            //if (!archivingPointNames.Any())
-            //    return new BaseResponseDTOs(null, 404, "No archiving points found for the user.");
-            //cusotm response 
-            var result = new List<UsersSearchResponseDTOs>
+            // Add department IDs from permissions
+            foreach (var point in archivingPoints)
+            {
+                if (point.DepartId.HasValue && point.DepartId.Value > 0)
                 {
-                    new UsersSearchResponseDTOs
-                    {
-                        userId = users.Id ?? 0,
-                        fileType = AsaWfuser.FirstOrDefault(a => a.Id == (users.Id ?? 0))?.Id,
-                        usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == users.Id),
-                        archivingPoint = archivingPoints
-                        .Where(p => p.UserId == users.Id)
-                        .Select(p => new ArchivingPermissionResponseDTOs
-                        {
-                            archivingPointId = p.ArchivingpointId ?? 0,
-                            archivingPointDscrp = archivingPointNames
-                                .Where(a => a.Id == p.ArchivingpointId)
-                                .Select(a => a.Dscrp)
-                                .FirstOrDefault()
-                        })
-                        .ToList(),
-                    }
-                };
+                    departmentIds.Add(point.DepartId.Value);
+                }
+            }
+
+            // Add department IDs from archiving points as fallback
+            foreach (var archPoint in archivingPointNames)
+            {
+                if (archPoint.DepartId.HasValue && archPoint.DepartId.Value > 0)
+                {
+                    departmentIds.Add(archPoint.DepartId.Value);
+                }
+            }
+
+            // Get department details
+            var departments = await _context.GpDepartments
+                .Where(d => departmentIds.Contains(d.Id))
+                .ToListAsync();
+
+            // Create the response
+            var result = new List<UsersSearchResponseDTOs>
+    {
+        new UsersSearchResponseDTOs
+        {
+            userId = users.Id ?? 0,
+            fileType = asaWfuser.FirstOrDefault(a => a.Id == (users.Id ?? 0))?.Id,
+            usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == users.Id),
+            archivingPoint = archivingPoints
+                .Where(p => p.UserId == users.Id)
+                .Select(p => new ArchivingPermissionResponseDTOs
+                {
+                    archivingPointId = p.ArchivingpointId ?? 0,
+                    archivingPointDscrp = archivingPointNames
+                        .FirstOrDefault(a => a.Id == p.ArchivingpointId)?.Dscrp,
+                    departId = p.DepartId ?? archivingPointNames
+                        .FirstOrDefault(a => a.Id == p.ArchivingpointId)?.DepartId ?? 0,
+                    departmentName = GetDepartmentName(p.DepartId, p.ArchivingpointId, archivingPointNames, departments)
+                })
+                .ToList(),
+        }
+    };
 
             return new BaseResponseDTOs(result, 200);
+        }
+
+        // Helper method to get department name with proper fallback logic
+        private string? GetDepartmentName(
+            int? departId,
+            int? archivingPointId,
+            List<PArcivingPoint> archivingPoints,
+            List<GpDepartment> departments)
+        {
+            // If department ID is provided directly in the permission
+            if (departId.HasValue && departId.Value > 0)
+            {
+                var department = departments.FirstOrDefault(d => d.Id == departId.Value);
+                if (department != null)
+                {
+                    return department.Dscrp;
+                }
+            }
+
+            // Fallback: Try to get department ID from archiving point
+            if (archivingPointId.HasValue && archivingPointId.Value > 0)
+            {
+                var archivingPoint = archivingPoints.FirstOrDefault(a => a.Id == archivingPointId.Value);
+                if (archivingPoint?.DepartId.HasValue == true)
+                {
+                    var department = departments.FirstOrDefault(d => d.Id == archivingPoint.DepartId.Value);
+                    if (department != null)
+                    {
+                        return department.Dscrp;
+                    }
+                }
+            }
+
+            return null;
         }
 
 
@@ -166,24 +225,54 @@ namespace Nastya_Archiving_project.Services.usersPermission
                 });
             }
 
+            // STEP 1: Remove all existing department permissions for this user
+            var existingDepartPermissions = await _context.UsersArchivingPointsPermissions
+                .Where(p => p.UserId == request.UserId && p.DepartId != null)
+                .ToListAsync();
+
+            if (existingDepartPermissions.Any())
+            {
+                _context.UsersArchivingPointsPermissions.RemoveRange(existingDepartPermissions);
+                // SaveChanges is not called here to batch all operations in a single transaction
+            }
+
+            // STEP 2: Add new department permissions
+            if (request.DepartIds != null && request.DepartIds.Count > 0)
+            {
+                foreach (var departId in request.DepartIds)
+                {
+                    // Since we've removed all existing department permissions,
+                    // we can directly add new ones without checking if they exist
+                    _context.UsersArchivingPointsPermissions.Add(new UsersArchivingPointsPermission
+                    {
+                        UserId = request.UserId,
+                        DepartId = departId
+                    });
+                }
+            }
+
             // Add or update archiving points if provided
             if (request.ArchivingPointIds != null && request.ArchivingPointIds.Count > 0)
             {
+                // Optional: You could also clear existing archiving point permissions first
+                // if you want the same behavior for archiving points
+                var existingArchivingPermissions = await _context.UsersArchivingPointsPermissions
+                    .Where(p => p.UserId == request.UserId && p.ArchivingpointId != null)
+                    .ToListAsync();
+
+                if (existingArchivingPermissions.Any())
+                {
+                    _context.UsersArchivingPointsPermissions.RemoveRange(existingArchivingPermissions);
+                }
+
+                // Add new archiving point permissions
                 foreach (var archivingPointId in request.ArchivingPointIds)
                 {
-                    var archivingPermission = await _context.UsersArchivingPointsPermissions
-                        .FirstOrDefaultAsync(p => p.UserId == request.UserId && p.ArchivingpointId == archivingPointId);
-
-                    if (archivingPermission == null)
+                    _context.UsersArchivingPointsPermissions.Add(new UsersArchivingPointsPermission
                     {
-                        // Add new if not exists
-                        _context.UsersArchivingPointsPermissions.Add(new UsersArchivingPointsPermission
-                        {
-                            UserId = request.UserId,
-                            ArchivingpointId = archivingPointId
-                        });
-                    }
-                    // If exists, do nothing (no update logic for archiving point permissions in your model)
+                        UserId = request.UserId,
+                        ArchivingpointId = archivingPointId
+                    });
                 }
             }
 
@@ -231,6 +320,19 @@ namespace Nastya_Archiving_project.Services.usersPermission
                 if (archivingPoints.Any())
                 {
                     _context.UsersArchivingPointsPermissions.RemoveRange(archivingPoints);
+                }
+            }
+
+            // Remove department permissions if provided
+            if (request.DepartIds != null && request.DepartIds.Count > 0)
+            {
+                var departPermissions = await _context.UsersArchivingPointsPermissions
+                    .Where(p => p.UserId == request.UserId && request.DepartIds.Contains(p.DepartId ?? 0))
+                    .ToListAsync();
+
+                if (departPermissions.Any())
+                {
+                    _context.UsersArchivingPointsPermissions.RemoveRange(departPermissions);
                 }
             }
 

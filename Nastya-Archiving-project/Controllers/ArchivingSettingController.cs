@@ -89,6 +89,12 @@ namespace Nastya_Archiving_project.Controllers
             var (docsType, error) = await _archivingSettings.PostDocsType(req);
             if (error == "400")
                 return BadRequest("Document type already exists.");
+            if (error == "404")
+                return NotFound();
+            if (error == "403")
+                return Forbid();
+            if (error == "401")
+                return Unauthorized();
             return Ok(docsType);
         }
 
@@ -124,7 +130,7 @@ namespace Nastya_Archiving_project.Controllers
         [HttpGet("Get-DocsType-ByDepart/{DepartId}")]
         public async Task<IActionResult> GetDocsTypeByDepartId(int DepartId)
         {
-            var (docsType, error) = await _archivingSettings.GetDocsTypeById(DepartId);
+            var (docsType, error) = await _archivingSettings.GetDocsTypeByDepartId(DepartId);
             if (error == "404")
                 return NotFound();
             return Ok(docsType);
@@ -149,6 +155,10 @@ namespace Nastya_Archiving_project.Controllers
                 return BadRequest("SupDocsType already exists.");
             if (error == "404")
                 return NotFound("Document type not found.");
+            if (error == "403")
+                return Forbid();
+            if (error == "401")
+                return Unauthorized();
             return Ok(supDocsType);
         }
 

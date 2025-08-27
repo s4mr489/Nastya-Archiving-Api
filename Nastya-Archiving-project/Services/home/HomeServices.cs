@@ -192,7 +192,7 @@ namespace Nastya_Archiving_project.Services.home
             {
                 // Calculate the sum of all document sizes in the ArcivingDocs table
                 // Using Sum with a null check to handle documents without a size
-                var totalSize = await _context.ArcivingDocs
+                var totalSizeBytes = await _context.ArcivingDocs
                     .Where(d => d.DocSize.HasValue)
                     .SumAsync(d => d.DocSize ?? 0);
 
@@ -204,9 +204,9 @@ namespace Nastya_Archiving_project.Services.home
                 // Get total docs count to determine percentage with size info
                 var totalDocsCount = await _context.ArcivingDocs.CountAsync();
 
-                // Calculate average document size
-                decimal averageSize = docsWithSizeCount > 0 
-                    ? totalSize / docsWithSizeCount 
+                // Calculate average document size (in bytes)
+                decimal averageSizeBytes = docsWithSizeCount > 0
+                    ? totalSizeBytes / docsWithSizeCount
                     : 0;
 
                 // Calculate percentage of docs with size info
@@ -214,18 +214,26 @@ namespace Nastya_Archiving_project.Services.home
                     ? (double)docsWithSizeCount / totalDocsCount * 100
                     : 0;
 
-                // Format sizes in more readable formats (MB, GB)
-                decimal totalSizeMB = totalSize / 1024; // Convert KB to MB
-                decimal totalSizeGB = totalSizeMB / 1024; // Convert MB to GB
+                // Convert bytes to other units
+                decimal totalSizeKB = totalSizeBytes / 1024; // Bytes to KB
+                decimal totalSizeMB = totalSizeKB / 1024;    // KB to MB
+                decimal totalSizeGB = totalSizeMB / 1024;    // MB to GB
 
-                // Return the results with formatted values
+                // Average size in different units
+                decimal averageSizeKB = averageSizeBytes / 1024;  // Bytes to KB
+                decimal averageSizeMB = averageSizeKB / 1024;     // KB to MB
+
+                // Return the results with formatted values for all units
                 return new BaseResponseDTOs(
                     new
                     {
-                        TotalSizeKB = Math.Round(totalSize, 2),
+                        TotalSizeBytes = Math.Round(totalSizeBytes, 2),
+                        TotalSizeKB = Math.Round(totalSizeKB, 2),
                         TotalSizeMB = Math.Round(totalSizeMB, 2),
-                        TotalSizeGB = Math.Round(totalSizeGB, 2),
-                        AverageSizeKB = Math.Round(averageSize, 2),
+                        TotalSizeGB = Math.Round(totalSizeGB, 4), // More precision for GB
+                        AverageSizeBytes = Math.Round(averageSizeBytes, 2),
+                        AverageSizeKB = Math.Round(averageSizeKB, 2),
+                        AverageSizeMB = Math.Round(averageSizeMB, 4), // More precision for MB
                         DocumentsWithSize = docsWithSizeCount,
                         TotalDocuments = totalDocsCount,
                         PercentageWithSize = Math.Round(percentageWithSize, 2)

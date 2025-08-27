@@ -26,7 +26,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         Task<(DocTypeResponseDTOs? docsType, string? error)> EditDocsType(DocTypeViewform req, int Id);
         Task<(List<DocTypeResponseDTOs>? docsTypes, string? error)> GetAllDocsTypes();
         Task<(DocTypeResponseDTOs? docsType, string? error)> GetDocsTypeById(int Id);
-        Task<(DocTypeResponseDTOs? docsType, string? error)> GetDocsTypeByDepartId(int DepartId);
+        Task<(List<DocTypeResponseDTOs>? docsType, string? error)> GetDocsTypeByDepartId(int DepartId);
         Task<string> DeleteDocsType(int Id);
 
 
@@ -36,7 +36,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         Task<(SupDocsTypeResponseDTOs? supDocsType, string? error)> EditSupDocsType(SupDocsTypeViewform req, int Id);
         Task<(List<SupDocsTypeResponseDTOs>? supDocsTypes, string? error)> GetAllSupDocsTypes();
         Task<(SupDocsTypeResponseDTOs? supDocsType, string? error)> GetSupDocsTypeById(int Id);
-        Task<(SupDocsTypeResponseDTOs? supDocsType, string? error)> GetSupDocsTypeByDocTypeId(int Id);
+        Task<(List<SupDocsTypeResponseDTOs>? supDocsType, string? error)> GetSupDocsTypeByDocTypeId(int Id);
         Task<string> DeleteSupDocsType(int Id);
 
         //Precednce Implementation

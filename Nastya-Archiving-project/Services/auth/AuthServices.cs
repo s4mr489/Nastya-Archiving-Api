@@ -183,20 +183,35 @@ namespace Nastya_Archiving_project.Services.auth
 
         public async Task<string> ChangeUserPassword(ChangePasswordViewFrom pass)
         {
-            var userId = 3;// _systemInfoServices.GetUserId().Id;
-            var passowrd = await _context.Users.FirstOrDefaultAsync(x => x.Id == userId);
-            if (passowrd == null)
-                return "404";
-            var hashCurrentPassword = _encryptionServices.EncryptString256Bit(pass.newPassword);
-            if (hashCurrentPassword != passowrd.UserPassword)
-                return "400";
+            // Get user ID as a tuple with possible error
+            var userIdResult = await _systemInfoServices.GetUserId();
 
-            passowrd.UserPassword = hashCurrentPassword;
+            // Check if there was an error getting the user ID
+            if (userIdResult.error != null)
+                return "401"; // Unauthorized - user not authenticated properly
 
-            _context.Users.Update(passowrd);
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userId))
+                return "400"; // Bad request - invalid user ID format
+
+            // Find the user in the database
+            var user = await _context.Users.FirstOrDefaultAsync(x => x.Id == userId);
+            if (user == null)
+                return "404"; // Not found - user doesn't exist
+
+            // Validate current password
+            var hashCurrentPassword = _encryptionServices.EncryptString256Bit(pass.CurrnetPassword);
+            if (hashCurrentPassword != user.UserPassword)
+                return "400"; // Bad request - incorrect current password
+
+            // Update password
+            user.UserPassword = _encryptionServices.EncryptString256Bit(pass.newPassword);
+
+            // Save changes
+            _context.Users.Update(user);
             await _context.SaveChangesAsync();
 
-            return "200";
+            return "200"; // Success
         }
 
         public async Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(int pageNumber = 1, int pageSize = 10)
@@ -332,6 +347,7 @@ namespace Nastya_Archiving_project.Services.auth
                 realName = _encryptionServices.DecryptString256Bit(user.Realname),
                 branch = branch?.Dscrp,
                 depart = depart?.Dscrp,
+                group = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 accountUnit = accountUnit?.Dscrp,
                 jobTitl = jobTitle?.Dscrp,
                 Id = user.Id,
@@ -351,23 +367,74 @@ namespace Nastya_Archiving_project.Services.auth
                 return new BaseResponseDTOs(null, 404, "No archiving points found for the user.");
 
             var archivingPointIds = archivingPoints
-                .Select(p => p.ArchivingpointId ?? 0)
+                .Where(p => p.ArchivingpointId.HasValue && p.ArchivingpointId.Value > 0)
+                .Select(p => p.ArchivingpointId.Value)
                 .ToList();
 
             var archivingPointNames = await _context.PArcivingPoints
                 .Where(a => archivingPointIds.Contains(a.Id))
                 .ToListAsync();
 
-            var result = archivingPoints
-                .Select(p => new ArchivingPermissionResponseDTOs
+            // Collect department IDs from both UsersArchivingPointsPermission and PArcivingPoints
+            var departmentIds = new HashSet<int>();
+
+            // First add department IDs directly from permissions
+            foreach (var permission in archivingPoints)
+            {
+                if (permission.DepartId.HasValue && permission.DepartId.Value > 0)
+                {
+                    departmentIds.Add(permission.DepartId.Value);
+                }
+            }
+
+            // Then also get department IDs from archiving points as a fallback
+            foreach (var point in archivingPointNames)
+            {
+                if (point.DepartId.HasValue && point.DepartId.Value > 0)
+                {
+                    departmentIds.Add(point.DepartId.Value);
+                }
+            }
+
+            // Get department information
+            var departments = await _context.GpDepartments
+                .Where(d => departmentIds.Contains(d.Id))
+                .ToListAsync();
+
+            // Create a result with proper department information
+            var result = archivingPoints.Select(p =>
+            {
+                // Try to get department ID first from permission, then from archiving point
+                int? departmentId = p.DepartId;
+                if ((!departmentId.HasValue || departmentId.Value == 0) && p.ArchivingpointId.HasValue)
+                {
+                    var archivingPoint = archivingPointNames.FirstOrDefault(a => a.Id == p.ArchivingpointId.Value);
+                    if (archivingPoint != null)
+                    {
+                        departmentId = archivingPoint.DepartId;
+                    }
+                }
+
+                // Get department name based on the department ID
+                string departmentName = null;
+                if (departmentId.HasValue && departmentId.Value > 0)
+                {
+                    var department = departments.FirstOrDefault(d => d.Id == departmentId.Value);
+                    if (department != null)
+                    {
+                        departmentName = department.Dscrp;
+                    }
+                }
+
+                return new ArchivingPermissionResponseDTOs
                 {
                     archivingPointId = p.ArchivingpointId ?? 0,
                     archivingPointDscrp = archivingPointNames
-                        .Where(a => a.Id == p.ArchivingpointId)
-                        .Select(a => a.Dscrp)
-                        .FirstOrDefault()
-                })
-                .ToList();
+                        .FirstOrDefault(a => a.Id == p.ArchivingpointId)?.Dscrp,
+                    departId = departmentId ?? 0,
+                    departmentName = departmentName
+                };
+            }).ToList();
 
             return new BaseResponseDTOs(result, 200);
         }

@@ -4,6 +4,7 @@
     {
         public int UserId { get; set; }
         public List<int>? ArchivingPointIds { get; set; }
+        public List<int>? DepartIds { get; set; }
         public int? FileTypeId { get; set; }
         public int? addParameters { get; set; }
 

@@ -42,7 +42,12 @@ namespace Nastya_Archiving_project.Services.files
         Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxFilesAsync(List<IFormFile> files);
         //this is used to remove all the temp folder files for the user
         Task<bool> RemoveAllTempFolderFilesAsync();
+
+        //dont use it anymore 
         // this method is used to download the file from the serve and decrypt it then save it to the desktop
-        Task<(string? outputPath, string? error)> CopyFilesToDesktopAsync(List<string> fileUrls, string outputFolderName = "ArchiveFiles");
+        //Task<(string? downloadUrl, string? error)> CopyFilesToDesktopAsync(List<string> fileUrls, string outputFolderName = "ArchiveFiles");
+        
+        // This method downloads decrypted files and returns them as a byte array with metadata
+        Task<(byte[]? fileBytes, string fileName, string contentType, string? error)> DownloadDecryptedFiles(List<string> fileUrls, string archiveName = "DecryptedFiles");
     }
 }

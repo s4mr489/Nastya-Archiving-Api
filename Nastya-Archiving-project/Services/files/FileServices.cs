@@ -1063,69 +1063,117 @@ namespace Nastya_Archiving_project.Services.files
                 await input.CopyToAsync(cryptoStream);
             }
         }
+
+      
         /// <summary>
-        /// Copies a list of files from provided URLs to the desktop without decryption or compression
+        /// Creates a file download response for decrypted files that can be downloaded by the client
         /// </summary>
-        /// <param name="fileUrls">List of file URLs to copy</param>
-        /// <param name="outputFolderName">Name of the output folder on desktop (default: "ArchiveFiles")</param>
-        /// <returns>Result with output folder path or error message</returns>
-        public async Task<(string? outputPath, string? error)> CopyFilesToDesktopAsync(List<string> fileUrls, string outputFolderName = "ArchiveFiles")
+        /// <param name="fileUrls">List of file URLs to process</param>
+        /// <param name="outputFolderName">Base name for the ZIP file (default: "ArchiveFiles")</param>
+        /// <returns>Result with download URL or error message</returns>
+        public async Task<(string? downloadUrl, string? error)> CopyFilesToDesktopAsync(List<string> fileUrls, string outputFolderName = "ArchiveFiles")
         {
-            // Check user permissions
-            var userId = await _systemInfoServices.GetUserId();
-            if (userId.Id == null)
-                return (null, "403"); // Unauthorized
-
-            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
-            if (userPermissions?.AllowDownload == 0)
-                return (null, "403"); // Forbidden
-
-            if (fileUrls == null || fileUrls.Count == 0)
-                return (null, "No file URLs provided");
-
-            // Create output directory on desktop
-            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            string outputFolder = Path.Combine(desktopPath, outputFolderName);
-
-            // Add timestamp to folder name to avoid conflicts
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            outputFolder = Path.Combine(desktopPath, $"{outputFolderName}_{timestamp}");
-
             try
             {
-                // Create the destination directory
-                Directory.CreateDirectory(outputFolder);
+                // Check user permissions
+                var userIdResult = await _systemInfo.GetUserId();
+                if (userIdResult.Id == null || string.IsNullOrEmpty(userIdResult.Id))
+                    return (null, "403"); // Unauthorized - User ID not available
 
-                // Process files sequentially to avoid any potential file system issues
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Id.ToString() == userIdResult.Id);
+
+                if (user == null)
+                    return (null, "User not found.");
+        
+                // Check download permissions
+                var userPermissions = await _context.UsersOptionPermissions
+                    .FirstOrDefaultAsync(u => u.UserId.ToString() == userIdResult.Id);
+
+                if (userPermissions == null || userPermissions.AllowDownload == 0)
+                    return (null, "403"); // Forbidden - User doesn't have download permission
+
+                if (fileUrls == null || fileUrls.Count == 0)
+                    return (null, "No file URLs provided");
+
+                // Create a unique timestamp for the file
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+                // Create temp directory for processing
+                string tempDir = Path.Combine(Path.GetTempPath(), $"TempArchive_{timestamp}");
+
+                // Create a directory in wwwroot/Downloads that can be accessed via URL
+                string webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                string downloadsFolderPath = Path.Combine(webRootPath, "Downloads");
+
+                // Ensure downloads folder exists
+                if (!Directory.Exists(downloadsFolderPath))
+                {
+                    Directory.CreateDirectory(downloadsFolderPath);
+                }
+
+                // Create a safe filename with the user's name for better identification
+                string userFolder = _encryptionServices.DecryptString256Bit(user?.Realname ?? "unknown");
+                string safeUserName = new string(userFolder.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
+                string zipFileName = $"{safeUserName}_{outputFolderName}_{timestamp}.zip";
+                string zipFilePath = Path.Combine(downloadsFolderPath, zipFileName);
+
+                // Create the temp directory for processing
+                Directory.CreateDirectory(tempDir);
+
+                // Get encryption key
+                string? keyString = _configuration["FileEncrypt:key"];
+                if (string.IsNullOrEmpty(keyString))
+                    return (null, "Encryption key not found in configuration");
+
+                byte[] key = Convert.FromBase64String(keyString);
+
+                // Process files
                 int successCount = 0;
                 var failedFiles = new List<string>();
 
                 foreach (string url in fileUrls)
                 {
+                    if (string.IsNullOrEmpty(url))
+                    {
+                        failedFiles.Add("Empty URL provided");
+                        continue;
+                    }
+
                     try
                     {
-                        // Resolve the file path
+                        // Resolve file path
                         string? filePath = ResolveFilePath(url);
                         if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
                         {
-                            failedFiles.Add(url);
+                            failedFiles.Add($"{url} (File not found)");
                             continue;
                         }
 
-                        // Get the filename for the destination
+                        // Get filename (without .gz extension if present)
                         string fileName = Path.GetFileName(filePath);
-                        string destinationPath = Path.Combine(outputFolder, fileName);
+                        string extension = Path.GetExtension(fileName).ToLowerInvariant();
+                        bool isGzipped = extension == ".gz";
 
-                        // Handle duplicate filenames by adding a unique suffix
+                        if (isGzipped)
+                        {
+                            fileName = Path.GetFileNameWithoutExtension(fileName); // Remove .gz extension
+                        }
+
+                        // Create destination path in temp directory
+                        string destinationPath = Path.Combine(tempDir, fileName);
+
+                        // Handle duplicate filenames
                         if (File.Exists(destinationPath))
                         {
                             string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
-                            string extension = Path.GetExtension(fileName);
-                            destinationPath = Path.Combine(outputFolder, $"{fileNameWithoutExt}_{Guid.NewGuid().ToString("N").Substring(0, 8)}{extension}");
+                            string fileExtension = Path.GetExtension(fileName);
+                            string uniqueSuffix = DateTime.Now.Ticks.ToString().Substring(0, 8);
+                            destinationPath = Path.Combine(tempDir, $"{fileNameWithoutExt}_{uniqueSuffix}{fileExtension}");
                         }
 
-                        // Copy the file directly without any processing
-                        File.Copy(filePath, destinationPath, false);
+                        // Decrypt and decompress the file
+                        await DecryptAndProcessFile(filePath, destinationPath, key, isGzipped);
                         successCount++;
                     }
                     catch (Exception ex)
@@ -1134,127 +1182,121 @@ namespace Nastya_Archiving_project.Services.files
                     }
                 }
 
-                // Return results
+                // If no files were processed successfully, return error
                 if (successCount == 0)
                 {
-                    return (null, $"Failed to copy any files. Errors: {string.Join(", ", failedFiles)}");
+                    try
+                    {
+                        if (Directory.Exists(tempDir))
+                        {
+                            Directory.Delete(tempDir, true);
+                        }
+                    }
+                    catch { /* Ignore cleanup errors */ }
+
+                    return (null, $"Failed to process any files. Errors: {string.Join(", ", failedFiles)}");
                 }
-                else if (failedFiles.Count > 0)
+
+                // Create ZIP archive
+                try
                 {
-                    return (outputFolder, $"Copied {successCount} files. Failed to copy {failedFiles.Count} files.");
+                    // Delete existing ZIP file if it exists
+                    if (File.Exists(zipFilePath))
+                    {
+                        File.Delete(zipFilePath);
+                    }
+
+                    // Create the ZIP file
+                    ZipFile.CreateFromDirectory(tempDir, zipFilePath);
+
+                    // Clean up temp directory
+                    try
+                    {
+                        if (Directory.Exists(tempDir))
+                        {
+                            Directory.Delete(tempDir, true);
+                        }
+                    }
+                    catch { /* Ignore cleanup errors */ }
+
+                    // Return the download URL (relative to website root)
+                    string downloadUrl = $"Downloads/{zipFileName}";
+                    
+                    return (downloadUrl, null);
                 }
-                else
+                catch (Exception ex)
                 {
-                    return (outputFolder, null);
+                    // If ZIP creation fails, return error
+                    try
+                    {
+                        if (Directory.Exists(tempDir))
+                        {
+                            Directory.Delete(tempDir, true);
+                        }
+                    }
+                    catch { /* Ignore cleanup errors */ }
+
+                    return (null, $"Failed to create ZIP archive: {ex.Message}");
                 }
             }
             catch (Exception ex)
             {
-                return (null, $"Error copying files: {ex.Message}");
+                return (null, $"Error processing files: {ex.Message}");
             }
         }
 
-        // Helper method to check if a file format is already compressed
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool IsPreCompressedFormat(string extension) =>
-            extension == ".pdf" ||
-            extension == ".jpg" ||
-            extension == ".jpeg" ||
-            extension == ".png" ||
-            extension == ".zip" ||
-            extension == ".mp3" ||
-            extension == ".mp4";
-
-        // Process file with throttling to prevent system overload
-        private async Task<string?> ProcessFileWithThrottlingAsync(string url, string tempDir,
-            byte[] key, SemaphoreSlim throttler)
+        // Helper method to decrypt and process a file
+        private async Task DecryptAndProcessFile(string sourcePath, string destinationPath, byte[] key, bool isGzipped)
         {
-            await throttler.WaitAsync();
-            try
+            using (var fileStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read))
             {
-                return await ProcessSingleFileAsync(url, tempDir, key);
-            }
-            finally
-            {
-                throttler.Release();
-            }
-        }
-
-        // Optimized single file processing
-        private async Task<string?> ProcessSingleFileAsync(string url, string tempDir, byte[] key)
-        {
-            try
-            {
-                // Normalize and resolve file path with minimal allocations
-                string? filePath = ResolveFilePath(url);
-                if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
-                    return null;
-
-                // Extract filename with minimal string operations
-                ReadOnlySpan<char> filePathSpan = filePath.AsSpan();
-                int lastSlash = filePathSpan.LastIndexOf(Path.DirectorySeparatorChar);
-                ReadOnlySpan<char> fileNameSpan = lastSlash >= 0 ? filePathSpan.Slice(lastSlash + 1) : filePathSpan;
-
-                // Handle .gz extension
-                string fileName;
-                bool isGzipped = fileNameSpan.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
-                if (isGzipped)
+                using (var outputStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write))
                 {
-                    int extensionIndex = fileNameSpan.LastIndexOf('.');
-                    if (extensionIndex > 0)
-                        fileName = fileNameSpan.Slice(0, extensionIndex).ToString();
-                    else
-                        fileName = fileNameSpan.ToString();
-                }
-                else
-                {
-                    fileName = fileNameSpan.ToString();
-                }
-
-                string outputPath = Path.Combine(tempDir, fileName);
-
-                // Determine if file is encrypted using file signature detection
-                bool isEncrypted = false;
-                using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096))
-                {
-                    if (fileStream.Length >= 16)
+                    // Check if file is already a known format
+                    if (fileStream.Length >= 4)
                     {
                         byte[] header = new byte[4];
                         await fileStream.ReadAsync(header, 0, 4);
+                        fileStream.Position = 0; // Reset position
 
-                        isEncrypted = !IsKnownFileHeader(header);
+                        // If it's a known file format, just copy it
+                        if (IsKnownFileHeader(header))
+                        {
+                            await fileStream.CopyToAsync(outputStream);
+                            return;
+                        }
+                    }
+
+                    // Read the IV
+                    byte[] iv = new byte[16];
+                    await fileStream.ReadAsync(iv, 0, iv.Length);
+
+                    using var aes = Aes.Create();
+                    aes.Key = key;
+                    aes.IV = iv;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
+
+                    using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                    using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
+
+                    if (isGzipped)
+                    {
+                        // Decrypt and decompress
+                        using var gzipStream = new GZipStream(cryptoStream, CompressionMode.Decompress);
+                        await gzipStream.CopyToAsync(outputStream);
+                    }
+                    else
+                    {
+                        // Just decrypt
+                        await cryptoStream.CopyToAsync(outputStream);
                     }
                 }
-
-                if (isEncrypted)
-                {
-                    await DecryptFileAsync(filePath, outputPath, key, isGzipped);
-                }
-                else
-                {
-                    // Simple file copy for unencrypted files
-                    using var sourceStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                        FileShare.Read, 81920, FileOptions.SequentialScan);
-                    using var destStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write,
-                        FileShare.None, 81920, FileOptions.WriteThrough);
-
-                    await sourceStream.CopyToAsync(destStream, 81920);
-                }
-
-                // Quick check if file exists and has content
-                return File.Exists(outputPath) && new FileInfo(outputPath).Length > 0 ? outputPath : null;
-            }
-            catch (Exception ex)
-            {
-                // Log error but continue processing other files
-                Console.WriteLine($"Error processing file {url}: {ex.Message}");
-                return null;
             }
         }
 
-        // Efficient check for known file headers
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool IsKnownFileHeader(byte[] header)
+        // Helper method to check if a file header indicates a known file format
+        private bool IsKnownFileHeader(byte[] header)
         {
             // Check for common file signatures
             if (header.Length >= 4)
@@ -1283,93 +1325,86 @@ namespace Nastya_Archiving_project.Services.files
             return false;
         }
 
-        // Optimized file decryption
-        private async Task DecryptFileAsync(string filePath, string outputPath, byte[] key, bool isGzipped)
+        /// <summary>
+        /// Creates a file download response for decrypted files
+        /// </summary>
+        /// <param name="fileUrls">List of file URLs to process</param>
+        /// <param name="archiveName">Base name for the ZIP file (default: "DecryptedFiles")</param>
+        /// <returns>Byte array with file data and metadata, or error message</returns>
+        public async Task<(byte[]? fileBytes, string fileName, string contentType, string? error)> DownloadDecryptedFiles(List<string> fileUrls, string archiveName = "DecryptedFiles")
         {
-            // Use pooled buffers to reduce memory pressure
-            byte[] iv = ArrayPool<byte>.Shared.Rent(16);
-            byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
-
             try
             {
-                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                    FileShare.Read, 4096, FileOptions.SequentialScan);
+                // Check user permissions
+                var userIdResult = await _systemInfo.GetUserId();
+                if (userIdResult.Id == null || string.IsNullOrEmpty(userIdResult.Id))
+                    return (null, string.Empty, string.Empty, "403"); // Unauthorized - User ID not available
 
-                // Read the IV
-                await fileStream.ReadAsync(iv, 0, 16);
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Id.ToString() == userIdResult.Id);
 
-                using var aes = Aes.Create();
-                aes.Key = key;
-                Array.Copy(iv, aes.IV, 16); // Copy to IV to avoid modifying the rented buffer
-                aes.Mode = CipherMode.CBC;
-                aes.Padding = PaddingMode.PKCS7;
+                if (user == null)
+                    return (null, string.Empty, string.Empty, "User not found.");
 
-                using var decryptor = aes.CreateDecryptor();
-                using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
+                // Check download permissions
+                var userPermissions = await _context.UsersOptionPermissions
+                    .FirstOrDefaultAsync(u => u.UserId.ToString() == userIdResult.Id);
 
-                using var outputFileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write,
-                    FileShare.None, 81920, FileOptions.WriteThrough);
+                if (userPermissions == null || userPermissions.AllowDownload == 0)
+                    return (null, string.Empty, string.Empty, "403"); // Forbidden - User doesn't have download permission
 
-                if (isGzipped)
+                if (fileUrls == null || fileUrls.Count == 0)
+                    return (null, string.Empty, string.Empty, "No file URLs provided");
+
+                // First create the temporary ZIP file using the existing method
+                var (downloadUrl, error) = await CopyFilesToDesktopAsync(fileUrls, archiveName);
+                
+                if (!string.IsNullOrEmpty(error))
+                    return (null, string.Empty, string.Empty, error);
+                    
+                if (string.IsNullOrEmpty(downloadUrl))
+                    return (null, string.Empty, string.Empty, "Failed to create download package.");
+
+                // Convert the relative URL to a full file path
+                string webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                string zipFilePath = Path.Combine(webRootPath, downloadUrl);
+                
+                if (!File.Exists(zipFilePath))
+                    return (null, string.Empty, string.Empty, "Generated file not found on server.");
+                
+                // Get the filename from the path
+                string fileName = Path.GetFileName(zipFilePath);
+                
+                // Read the file as bytes
+                byte[] fileBytes = await File.ReadAllBytesAsync(zipFilePath);
+                
+                // Clean up the file after reading it
+                try
                 {
-                    try
-                    {
-                        using var gzipStream = new GZipStream(cryptoStream, CompressionMode.Decompress);
-                        int bytesRead;
-                        while ((bytesRead = await gzipStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                        {
-                            await outputFileStream.WriteAsync(buffer, 0, bytesRead);
+                    // Use asynchronous file deletion after a short delay to ensure
+                    // the file is completely read before deletion
+                    _ = Task.Run(async () => {
+                        await Task.Delay(5000); // 5 second delay
+                        try {
+                            if (File.Exists(zipFilePath))
+                                File.Delete(zipFilePath);
                         }
-                    }
-                    catch
-                    {
-                        // Reopen the file if decompression fails
-                        outputFileStream.SetLength(0); // Clear output file
-
-                        using var retryFileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                            FileShare.Read, 4096, FileOptions.SequentialScan);
-                        retryFileStream.Position = 16; // Skip IV
-
-                        using var retryAes = Aes.Create();
-                        retryAes.Key = key;
-                        Array.Copy(iv, retryAes.IV, 16);
-                        retryAes.Mode = CipherMode.CBC;
-                        retryAes.Padding = PaddingMode.PKCS7;
-
-                        using var retryDecryptor = retryAes.CreateDecryptor();
-                        using var retryCryptoStream = new CryptoStream(retryFileStream, retryDecryptor, CryptoStreamMode.Read);
-
-                        int bytesRead;
-                        while ((bytesRead = await retryCryptoStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                        {
-                            await outputFileStream.WriteAsync(buffer, 0, bytesRead);
+                        catch {
+                            // Ignore cleanup errors
                         }
-                    }
+                    });
                 }
-                else
+                catch 
                 {
-                    int bytesRead;
-                    while ((bytesRead = await cryptoStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                    {
-                        await outputFileStream.WriteAsync(buffer, 0, bytesRead);
-                    }
+                    // Ignore cleanup errors
                 }
+                
+                // Return the file bytes along with metadata
+                return (fileBytes, fileName, "application/zip", null);
             }
-            finally
+            catch (Exception ex)
             {
-                // Return rented buffers
-                ArrayPool<byte>.Shared.Return(iv);
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
-
-        // Efficient stream copying with shared buffer
-        private static async Task CopyWithSharedBufferAsync(Stream source, Stream destination, byte[] buffer)
-        {
-            int bytesRead;
-            while ((bytesRead = await source.ReadAsync(buffer, 0, buffer.Length)) > 0)
-            {
-                await destination.WriteAsync(buffer, 0, bytesRead);
+                return (null, string.Empty, string.Empty, $"Error preparing file for download: {ex.Message}");
             }
         }
     }

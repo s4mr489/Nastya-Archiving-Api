@@ -59,6 +59,11 @@ namespace Nastya_Archiving_project.Controllers
             var result = await _archivingDocsSercvices.DeleteArchivingDocs(id);
             if (result == "404")
                 return NotFound("Document not found.");
+            if (result == "403")
+                // Use status code with an object containing the message instead
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "You do not have permission to delete this document." });
+            if (result == "401")
+                return Unauthorized();
             return Ok("Document deleted successfully.");
         }
 

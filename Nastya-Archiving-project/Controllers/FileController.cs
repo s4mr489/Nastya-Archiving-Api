@@ -36,15 +36,6 @@ namespace Nastya_Archiving_project.Controllers
                 return BadRequest(error);
             return Ok(files);
         }
-
-        //[HttpGet("temp-files")]
-        //public async Task<IActionResult> GetTempFiles()
-        //{
-        //    var files = await _fileServices.GetTempFolderFilesAsync();
-        //    // Return as a list of objects with FileName and FileSize properties
-        //    var result = files.Select(f => new { FileName = f.FileName, FileSize = f.FileSize }).ToList();
-        //    return Ok(result);
-        //}
         
         [HttpGet("temp-files/paginated")]
         public async Task<IActionResult> GetTempFilesPaginated([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
@@ -93,7 +84,6 @@ namespace Nastya_Archiving_project.Controllers
             return File(mergedFile, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName ?? "merged.docx");
         }
 
-
         [HttpGet("download")]
         public async Task<IActionResult> Download([FromQuery] string relativePath)
         {
@@ -133,7 +123,6 @@ namespace Nastya_Archiving_project.Controllers
                 return NotFound("File not found.");
 
             return File(result.fileStream, result.contentType ?? "application/octet-stream");
-
         }
 
         [HttpDelete("temp-files")]
@@ -145,15 +134,60 @@ namespace Nastya_Archiving_project.Controllers
             return StatusCode(500, new { success = false, message = "Failed to remove temp files." });
         }
 
-        [HttpPost("decrypt-and-install")]
-        public async Task<IActionResult> DecryptAndInstall([FromBody] List<string> fileUrls, [FromQuery] string archiveName = "DecryptedFiles")
+        //dont use it anymore
+
+        //[HttpPost("decrypt-and-install")]
+        //public async Task<IActionResult> DecryptAndInstall([FromBody] List<string> fileUrls, [FromQuery] string archiveName = "DecryptedFiles")
+        //{
+        //    if (fileUrls == null || !fileUrls.Any())
+        //        return BadRequest("File URLs are required.");
+
+        //    var (fileBytes, fileName, contentType, error) = await _fileServices.DownloadDecryptedFiles(fileUrls, archiveName);
+
+        //    if (!string.IsNullOrEmpty(error))
+        //    {
+        //        // Check if it's a permission error
+        //        if (error == "403")
+        //            return StatusCode(403, "You don't have permission to download files.");
+
+        //        return BadRequest(error);
+        //    }
+
+        //    if (fileBytes == null)
+        //        return StatusCode(500, "Failed to create download package.");
+
+        //    // Set headers to force download
+        //    Response.Headers.Add("Content-Disposition", $"attachment; filename=\"{fileName}\"");
+
+        //    // Return the file for download
+        //    return File(fileBytes, contentType, fileName);
+        //}
+
+        [HttpPost("decrypt-and-download")]
+        public async Task<IActionResult> DecryptAndDownload([FromBody] List<string> fileUrls, [FromQuery] string archiveName = "DecryptedFiles")
         {
             if (fileUrls == null || !fileUrls.Any())
                 return BadRequest("File URLs are required.");
-            var (archivePath, error) = await _fileServices.CopyFilesToDesktopAsync(fileUrls, archiveName);
-            if (error != null)
+                
+            var (fileBytes, fileName, contentType, error) = await _fileServices.DownloadDecryptedFiles(fileUrls, archiveName);
+            
+            if (!string.IsNullOrEmpty(error))
+            {
+                // Check if it's a permission error
+                if (error == "403")
+                    return StatusCode(403, "You don't have permission to download files.");
+                    
                 return BadRequest(error);
-            return Ok(new { archivePath });
+            }
+            
+            if (fileBytes == null)
+                return StatusCode(500, "Failed to create download package.");
+            
+            // Set headers to force download
+            Response.Headers.Add("Content-Disposition", $"attachment; filename=\"{fileName}\"");
+            
+            // Return the file for download
+            return File(fileBytes, contentType, fileName);
         }
     }
 }

@@ -305,22 +305,25 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             return (response, null);
         }
 
-        public async Task<(DocTypeResponseDTOs? docsType, string? error)> GetDocsTypeByDepartId(int DepartId)
+        public async Task<(List<DocTypeResponseDTOs>? docsType, string? error)> GetDocsTypeByDepartId(int DepartId)
         {
-            var docsType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(e => e.DepartId == DepartId);
-            if (docsType == null)
+            var docsType = await _context.ArcivDocDscrps
+                .Where(e => e.DepartId == DepartId)
+                .Select(d => new DocTypeResponseDTOs
+                {
+                    Id = d.Id,
+                    docuName = d.Dscrp,
+                    departmentId = d.DepartId ?? 0,
+                    AccountUnitId = d.AccountUnitId ?? 0,
+                    branchId= d.BranchId ?? 0,
+                    isCode= d.IsoCode
+                })
+                .ToListAsync();
+
+            if (docsType == null || !docsType.Any())
                 return (null, "404"); // Document type not found
 
-            var response = new DocTypeResponseDTOs
-            {
-                Id = docsType.Id,
-                docuName = docsType.Dscrp,
-                departmentId = docsType.DepartId ?? 0,
-                branchId = docsType.BranchId ?? 0,
-                AccountUnitId = docsType.AccountUnitId ?? 0,
-                isCode = docsType.IsoCode
-            };
-            return (response, null);
+            return (docsType, null);
         }
 
         public async Task<string> DeleteDocsType(int Id)
@@ -341,9 +344,9 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         {
             var userId = await _systemInfoServices.GetUserId();
             if (userId.Id == null)
-                return (null, "403"); // Unauthorized
+                return (null, "401"); // Unauthorized
             var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
-            if (userPermissions.AddParameters == 0)
+            if (userPermissions.AddParameters != 1)
                 return (null, "403"); // Forbidden
 
             var sup = await _context.ArcivSubDocDscrps.FirstOrDefaultAsync(e => e.Dscrp == req.supDocuName);
@@ -387,19 +390,22 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         }
 
 
-        public async Task<(SupDocsTypeResponseDTOs? supDocsType, string? error)> GetSupDocsTypeByDocTypeId(int Id)
+        public async Task<(List<SupDocsTypeResponseDTOs>? supDocsType, string? error)> GetSupDocsTypeByDocTypeId(int Id)
         {
-            var sup = await _context.ArcivSubDocDscrps.FirstOrDefaultAsync(e => e.DocTypeId == Id);
-            if (sup == null)
+            var sup = await _context.ArcivSubDocDscrps
+                .Where(e => e.DocTypeId == Id)
+                .Select(d => new SupDocsTypeResponseDTOs
+                {
+                    Id = d.Id,
+                    supDocuName = d.Dscrp,
+                    DocTypeId = d.DocTypeId
+                })
+                .ToListAsync();
+            if (sup == null || !sup.Any())
                 return (null, "404"); // SupDocsType not found
 
-            var response = new SupDocsTypeResponseDTOs
-            {
-                Id = sup.Id,
-                supDocuName = sup.Dscrp,
-                DocTypeId = sup.DocTypeId
-            };
-            return (response, null);
+         
+            return (sup, null);
         }
 
         public async Task<(List<SupDocsTypeResponseDTOs>? supDocsTypes, string? error)> GetAllSupDocsTypes()

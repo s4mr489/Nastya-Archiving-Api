@@ -502,7 +502,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             if (userId.Id == null)
                 return (null, "403"); // Unauthorized
             var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
-            if (userPermissions.AddParameters == 0)
+            if (userPermissions.AddParameters != 1)
                 return (null, "403"); // Forbidden
             var orgn = await _context.POperations.FirstOrDefaultAsync(o => o.Dscrp== req.Dscrp);
             if(orgn != null)
@@ -612,20 +612,23 @@ namespace Nastya_Archiving_project.Services.infrastructure
             }, null); // Return organization details
         }
 
-        public async Task<(OrgniztionResponseDTOs? POrganization, string? error)> GetPOrganizationByDepartId(int Id)
+        public async Task<(List<OrgniztionResponseDTOs>? POrganization, string? error)> GetPOrganizationByDepartId(int Id)
         {
-            var orgn = await _context.POrganizations.FirstOrDefaultAsync(o => o.DepartId == Id);
+            var orgn = await _context.POrganizations.
+                Where(o => o.DepartId == Id)
+                .Select(orgn => new OrgniztionResponseDTOs
+                {
+                    Id = orgn.Id,
+                    Dscrp = orgn.Dscrp,
+                    DepartId = orgn.DepartId,
+                    AccountUnitId = orgn.AccountUnitId,
+                    BranchId = orgn.BranchId
+                })
+                .ToListAsync();
             if (orgn == null)
                 return (null, "404"); // Organization not found
 
-            return (new OrgniztionResponseDTOs
-            {
-                Id = orgn.Id,
-                Dscrp = orgn.Dscrp,
-                DepartId = orgn.DepartId,
-                AccountUnitId = orgn.AccountUnitId,
-                BranchId = orgn.BranchId
-            }, null); // Return organization details
+            return (orgn, null);
         }
 
         public async Task<string> DeletePOrganization(int Id)

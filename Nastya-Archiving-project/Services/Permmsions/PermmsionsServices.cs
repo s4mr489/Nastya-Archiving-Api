@@ -117,15 +117,14 @@ namespace Nastya_Archiving_project.Services.Permmsions
             {
                 foreach (var permission in permissions)
                 {
-                    var existingPermission = await _context.UsersOptionPermissions
-                        .FirstOrDefaultAsync(p => p.UserId == user.Id && p.Id == permission.Id);
+                    var existingPermission = await _context.Usersgroups
+                        .FirstOrDefaultAsync(p => p.groupid == user.GroupId);
                     existingPermission.AllowDelete = permission.AllowDelete;
                     existingPermission.AddParameters = permission.AddParameters;
                     existingPermission.AllowDownload = permission.AllowDownload;
                     existingPermission.AllowAddToOther = permission.AllowAddToOther;
                     existingPermission.AllowSendMail = permission.AllowSendMail;
                     existingPermission.AllowViewTheOther = permission.AllowViewTheOther;
-                    existingPermission.UserId = user.Id;
                     await _context.SaveChangesAsync();
                 }
             }
@@ -176,42 +175,34 @@ namespace Nastya_Archiving_project.Services.Permmsions
 
                 try
                 {
-                    // Get existing permissions for target user
-                    var existingPermissions = await _context.UsersOptionPermissions
-                        .Where(p => p.UserId == targetUserId)
-                        .ToListAsync();
+                    // Check if user already has a permission record
+                    var existingPermission = await _context.UsersOptionPermissions
+                        .FirstOrDefaultAsync(p => p.UserId == targetUserId);
 
-                    foreach (var permission in permissions)
+                    if (existingPermission != null)
                     {
-                        // Check if the permission already exists for target user
-                        var existingPermission = existingPermissions
-                            .FirstOrDefault(p => p.Id == permission.Id);
-
-                        if (existingPermission != null)
+                        // Update existing permission with values from source
+                        existingPermission.AddParameters = permissions.First().AddParameters;
+                        existingPermission.AllowDelete = permissions.First().AllowDelete;
+                        existingPermission.AllowDownload = permissions.First().AllowDownload;
+                        existingPermission.AllowAddToOther = permissions.First().AllowAddToOther;
+                        existingPermission.AllowSendMail = permissions.First().AllowSendMail;
+                        existingPermission.AllowViewTheOther = permissions.First().AllowViewTheOther;
+                    }
+                    else
+                    {
+                        // Create new permission only if one doesn't exist
+                        var newPermission = new UsersOptionPermission
                         {
-                            // Update existing permission
-                            existingPermission.AddParameters = permission.AddParameters;
-                            existingPermission.AllowDelete = permission.AllowDelete;
-                            existingPermission.AllowDownload = permission.AllowDownload;
-                            existingPermission.AllowAddToOther = permission.AllowAddToOther;
-                            existingPermission.AllowSendMail = permission.AllowSendMail;
-                            existingPermission.AllowViewTheOther = permission.AllowViewTheOther;
-                        }
-                        else
-                        {
-                            // Create new permission
-                            var newPermission = new UsersOptionPermission
-                            {
-                                UserId = targetUserId,
-                                AddParameters = permission.AddParameters,
-                                AllowDelete = permission.AllowDelete,
-                                AllowDownload = permission.AllowDownload,
-                                AllowAddToOther = permission.AllowAddToOther,
-                                AllowSendMail = permission.AllowSendMail,
-                                AllowViewTheOther = permission.AllowViewTheOther
-                            };
-                            _context.UsersOptionPermissions.Add(newPermission);
-                        }
+                            UserId = targetUserId,
+                            AddParameters = permissions.First().AddParameters,
+                            AllowDelete = permissions.First().AllowDelete,
+                            AllowDownload = permissions.First().AllowDownload,
+                            AllowAddToOther = permissions.First().AllowAddToOther,
+                            AllowSendMail = permissions.First().AllowSendMail,
+                            AllowViewTheOther = permissions.First().AllowViewTheOther
+                        };
+                        _context.UsersOptionPermissions.Add(newPermission);
                     }
 
                     await _context.SaveChangesAsync();

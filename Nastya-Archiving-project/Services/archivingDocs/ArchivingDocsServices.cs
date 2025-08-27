@@ -343,7 +343,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 return ("403"); // Unauthorized
 
             var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
-            if (userPermissions.AllowDelete == 0)
+            if (userPermissions.AllowDelete != 1)
                 return ("403"); // Forbidden
 
             var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.Id == Id);

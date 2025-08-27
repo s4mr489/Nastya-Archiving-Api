@@ -684,6 +684,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.AccountUnitId).HasColumnName("AccountUnitID");
             entity.Property(e => e.ArchivingpointId).HasColumnName("ArchivingpointID");
+            entity.Property(e => e.DepartId).HasColumnName("DepartID");
             entity.Property(e => e.UserId).HasColumnName("UserID");
         });
 

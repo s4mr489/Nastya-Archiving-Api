@@ -2,6 +2,7 @@
 using DocumentFormat.OpenXml.Office2010.Excel;
 using DocumentFormat.OpenXml.Wordprocessing;
 using FYP.Extentions;
+using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Extinstion;
@@ -797,33 +798,97 @@ namespace Nastya_Archiving_project.Services.search
                     return new BaseResponseDTOs(null, 400, "user don't have permission to view Other Department"); // Forbidden - cannot view other departments
             }
 
-
             var query = _context.ArcivingDocs.AsQueryable();
 
             // Filter for docs that have ReferenceTo set (not null or empty)
             query = query.Where(d => !string.IsNullOrEmpty(d.ReferenceTo));
 
-            // Apply additional filters from QuikeSearchViewForm if needed
+            // Apply all possible filters from QuikeSearchViewForm
+            // Document filters
+            query = query.Where(d => !string.IsNullOrEmpty(d.ReferenceTo));
+
+            // Apply all possible filters from QuikeSearchViewForm
+            // Document filters
+            if (!string.IsNullOrWhiteSpace(req.systemId))
+                query = query.Where(d => d.RefrenceNo != null && d.RefrenceNo.Contains(req.systemId));
+
             if (!string.IsNullOrWhiteSpace(req.docsNumber))
-                query = query.Where(d => d.DocNo != null && d.DocNo.Contains(req.docsNumber));
+            {
+                if (req.exactMatch)
+                    query = query.Where(d => d.DocNo != null && d.DocNo == req.docsNumber);
+                else
+                    query = query.Where(d => d.DocNo != null && d.DocNo.Contains(req.docsNumber));
+            }
+
             if (!string.IsNullOrWhiteSpace(req.subject))
                 query = query.Where(d => d.Subject != null && d.Subject.Contains(req.subject));
+
             if (req.docsType.HasValue)
                 query = query.Where(d => d.DocType == req.docsType.Value);
+
+            if (req.supDocsType.HasValue)
+                query = query.Where(d => d.SubDocType.HasValue && d.SubDocType.Value == req.supDocsType.Value);
+
             if (req.source.HasValue)
                 query = query.Where(d => d.DocSource != null && d.DocSource.Value == req.source.Value);
+
+            // Fixed condition for ReferenceTo - treating it as a string comparison
+            if (!string.IsNullOrEmpty(req.relateTo))
+                query = query.Where(d => d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo));
+
             if (!string.IsNullOrWhiteSpace(req.wordToSearch))
                 query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
+
+            // Rest of the
+            if (!string.IsNullOrWhiteSpace(req.wordToSearch))
+                query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
+
+            if (!string.IsNullOrWhiteSpace(req.boxFile))
+                query = query.Where(d => d.BoxfileNo != null && d.BoxfileNo.Contains(req.boxFile));
+
+            if (req.fileType.HasValue)
+                query = query.Where(d => d.FileType.HasValue && d.FileType.Value == (int)req.fileType.Value);
+
+            if (req.departId.HasValue)
+                query = query.Where(d => d.DepartId.HasValue && d.DepartId.Value == req.departId.Value);
+
+            // Date filters
+            if (req.docsDate == true)
+            {
+                if (req.from.HasValue)
+                    query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value >= DateOnly.FromDateTime(req.from.Value));
+                if (req.to.HasValue)
+                    query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value <= DateOnly.FromDateTime(req.to.Value));
+            }
+
+            if (req.editDate == true)
+            {
+                if (req.from.HasValue)
+                    query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value >= req.from.Value);
+                if (req.to.HasValue)
+                    query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value <= req.to.Value);
+            }
 
             // Paging
             int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
             int pageSize = req.pageSize > 0 ? req.pageSize : 20;
 
+            // Count total results for pagination info
+            int totalCount = await query.CountAsync();
+            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            // Get paged results
             var pagedDocs = await query
                 .OrderByDescending(d => d.Id)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            // Get document types for names
+            var docTypeIds = pagedDocs.Select(d => d.DocType).Distinct().ToList();
+            var docTypes = await _context.ArcivDocDscrps
+                .Where(dt => docTypeIds.Contains(dt.Id))
+                .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
 
             var result = pagedDocs.Select(d => new
             {
@@ -835,15 +900,27 @@ namespace Nastya_Archiving_project.Services.search
                 d.DocTarget,
                 d.DocSource,
                 d.DocType,
+                DocTypeName = docTypes.TryGetValue(d.DocType, out var typeName) ? typeName : null,
                 d.BoxfileNo,
                 d.Subject,
                 d.ReferenceTo
             }).ToList();
 
             if (result.Count == 0)
-                return new BaseResponseDTOs(null, 404, "No documents found with ReferenceTo.");
+                return new BaseResponseDTOs(null, 404, "No documents found with ReferenceTo matching your criteria.");
 
-            return new BaseResponseDTOs(result, 200, null);
+            return new BaseResponseDTOs(
+                new
+                {
+                    Data = result,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize
+                },
+                200,
+                null
+            );
         }
 
         public async Task<BaseResponseDTOs> SearchForJoinedDocs(string systemId)

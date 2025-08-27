@@ -94,6 +94,17 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(result);
 
         }
+        [HttpGet("ShowRegistered-Users")]
+        public async Task<IActionResult> ShowRegisteredUsers()
+        {
+            var users = await _context.Users.CountAsync();
+            if(users == 0 )
+            {
+                return Ok(new { ShowRegister = "False" });
+            }
+            return Ok(new { ShowRegister = "True" });
+        }
+
         [HttpPost("Create-First-User")]
         public async Task<IActionResult> FirstUser(LoginFormDTO req)
         {
