@@ -39,7 +39,7 @@ app.MapOpenApi();
 
 //app.UseRateLimiter();
 app.UseAuth();
-app.UseSeeder();
+//app.UseSeeder();
 
 app.UseCustomSwaggerWithAuth("Nastya-Archiving-Swagger");
 

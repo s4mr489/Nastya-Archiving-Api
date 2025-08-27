@@ -71,19 +71,19 @@ namespace Nastya_Archiving_project.Extinstion
             return app;
         }
 
-        public static async Task<IApplicationBuilder> UseSeeder(this IApplicationBuilder app)
-        {
-            using (var scope = app.ApplicationServices.CreateScope())
-            {
-                var dataContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var encryptcontext = scope.ServiceProvider.GetRequiredService<IEncryptionServices>();// Make sure AppData is your context type
-                var seeder = new Seeder(dataContext , encryptcontext);
+        //public static async Task<IApplicationBuilder> UseSeeder(this IApplicationBuilder app)
+        //{
+        //    using (var scope = app.ApplicationServices.CreateScope())
+        //    {
+        //        var dataContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        //        var encryptcontext = scope.ServiceProvider.GetRequiredService<IEncryptionServices>();// Make sure AppData is your context type
+        //        var seeder = new Seeder(dataContext , encryptcontext);
 
-                await seeder.SeedSuperAdmin("SuperAdmin", "AdminSuper"); // You can add a password for the SuperAdmin
-            }
+        //        await seeder.SeedSuperAdmin("SuperAdmin", "AdminSuper"); // You can add a password for the SuperAdmin
+        //    }
 
-            return app;
-        }
+        //    return app;
+        //}
 
         // Add this method to your existing AppBuilderExtensions class
         //public static IApplicationBuilder UsePrinterWebSockets(this IApplicationBuilder app)
