@@ -135,7 +135,7 @@ namespace Nastya_Archiving_project.Services.Mail
                 }
 
                 // Pre-allocate collections with exact capacity needed
-                var now = DateTime.UtcNow;
+                var now = DateTime.Now;
                 var createdMails = new List<TFileTransferring>(validRecipients.Count);
                 var mailTasks = new List<Task>(validRecipients.Count * 2); // For notification tasks
 
