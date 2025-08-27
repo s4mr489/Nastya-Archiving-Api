@@ -482,13 +482,14 @@ namespace Nastya_Archiving_project.Services.auth
         public async Task<BaseResponseDTOs> FirstUsers(LoginFormDTO req)
         {
             var userCount = await _context.Users.CountAsync();
-            var seeder = new Seeder(_context,_encryptionServices);
-            if(userCount == 0)
+            var seeder = new Seeder(_context, _encryptionServices);
+            if (userCount == 0)
             {
-                seeder.SeedSuperAdmin(req.userName, req.password);
+                // Fix: add await to properly wait for the SeedSuperAdmin method to complete
+                await seeder.SeedSuperAdmin(req.userName, req.password);
                 return new BaseResponseDTOs(null, 200, "The First User In The System Created Successfully.");
             }
-            return new BaseResponseDTOs(null, 400, "there is Users On The DB.");
+            return new BaseResponseDTOs(null, 400, "There Are Users In The DB.");
         }
     }
 }
