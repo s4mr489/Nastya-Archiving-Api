@@ -8,5 +8,6 @@
         public int branchId { get; set; }
         public int AccountUnitId { get; set; }
         public string? isCode { get; set; }
+        public string? departmentName { get; set; }
     }
 }

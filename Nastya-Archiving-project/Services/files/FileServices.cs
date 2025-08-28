@@ -50,7 +50,7 @@ namespace Nastya_Archiving_project.Services.files
                 return (null, 0, "User not found.");
 
             var group = _context.Usersgroups.FirstOrDefault(g => g.groupid == user.GroupId);
-            if(group == null)
+            if (group == null)
                 return (null, 0, "User group not found.");
             var depr = _context.GpDepartments.FirstOrDefault(d => d.Id == user.DepariId);
 
@@ -72,13 +72,19 @@ namespace Nastya_Archiving_project.Services.files
 
             long fileSize = file.Length;
             var storePath = await _context.PArcivingPoints.FirstOrDefaultAsync(s => s.AccountUnitId == user.AccountUnitId && s.DepartId == user.DepariId);
-            if(storePath == null)
+            if (storePath == null)
                 return (null, 0, "Storage path not configured for user's account unit and department.");
 
+            // Ensure StorePath and StartWith are not null
+            string storePathValue = storePath.StorePath ?? string.Empty;
+            string startWithValue = storePath.StartWith ?? string.Empty;
+
+            // Include StartWith in the physical path
             string attachmentsDir = Path.Combine(
-                storePath.StorePath,
+                storePathValue,
+                startWithValue,  // Add StartWith here to match web path
                 DateTime.Now.Year.ToString(),
-                depr.Dscrp,
+                depr?.Dscrp ?? "Unknown",
                 DateTime.Now.Month.ToString(),
                 _encryptionServices.DecryptString256Bit(group.Groupdscrp)
             );
@@ -102,10 +108,12 @@ namespace Nastya_Archiving_project.Services.files
                 }
             }
 
+            // Keep the web path consistent with physical path
             var webPath = Path.Combine(
-                storePath.StorePath.Replace(Path.DirectorySeparatorChar, '/'),
+                storePathValue.Replace(Path.DirectorySeparatorChar, '/'),
+                startWithValue.Replace(Path.DirectorySeparatorChar, '/'),
                 DateTime.Now.Year.ToString(),
-                depr.Dscrp,
+                depr?.Dscrp ?? "Unknown",
                 DateTime.Now.Month.ToString(),
                 _encryptionServices.DecryptString256Bit(group.Groupdscrp),
                 fileName

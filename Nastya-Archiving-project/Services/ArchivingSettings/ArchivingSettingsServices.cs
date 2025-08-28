@@ -31,7 +31,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
 
         public async Task<(ArchivingPointResponseDTOs? point, string? error)> PostArchivingPoint(ArchivingPointViewForm req)
         {
-            var point = await _context.PArcivingPoints.FirstOrDefaultAsync(e => e.Dscrp == req.pointName);
+            var point = await _context.PArcivingPoints.FirstOrDefaultAsync(e => e.Dscrp == req.pointName );
             if(point != null)
                 return (null, "400"); // Archiving point already exists
 
@@ -209,7 +209,7 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             if(userPermissions.AddParameters == 0)
                 return (null, "403"); // Forbidden
 
-            var docsType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(e => e.Dscrp == req.docuName);
+            var docsType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(e => e.Dscrp == req.docuName && e.DepartId == req.departmentId);
             if(docsType != null)
                 return (null, "400"); // Document type already exists
 
@@ -274,6 +274,18 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             if (docsTypes == null || docsTypes.Count == 0)
                 return (null, "404"); // No document types found
 
+            // Get all department IDs from the document types
+            var departmentIds = docsTypes
+                .Where(d => d.DepartId.HasValue)
+                .Select(d => d.DepartId.Value)
+                .Distinct()
+                .ToList();
+
+            // Load all relevant departments at once
+            var departments = await _context.GpDepartments
+                .Where(d => departmentIds.Contains(d.Id))
+                .ToDictionaryAsync(d => d.Id, d => d);
+
             var response = docsTypes.Select(d => new DocTypeResponseDTOs
             {
                 Id = d.Id,
@@ -281,7 +293,11 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
                 departmentId = d.DepartId ?? 0,
                 branchId = d.BranchId ?? 0,
                 AccountUnitId = d.AccountUnitId ?? 0,
-                isCode = d.IsoCode
+                isCode = d.IsoCode,
+                // Add department name if available
+                departmentName = d.DepartId.HasValue && departments.TryGetValue(d.DepartId.Value, out var dept)
+                    ? dept.Dscrp
+                    : null
             }).ToList();
 
             return (response, null);

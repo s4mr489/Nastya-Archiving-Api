@@ -130,6 +130,7 @@ namespace Nastya_Archiving_project.Services.usersPermission
         new UsersSearchResponseDTOs
         {
             userId = users.Id ?? 0,
+            realName = _encryptionServices.DecryptString256Bit(_context.Users.FirstOrDefault(u => u.Id == (users.Id ?? 0))?.Realname ?? string.Empty),
             fileType = asaWfuser.FirstOrDefault(a => a.Id == (users.Id ?? 0))?.Id,
             usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == users.Id),
             archivingPoint = archivingPoints

@@ -1979,16 +1979,17 @@ namespace Nastya_Archiving_project.Services.reports
             public string FilePath { get; set; } = "";
             public string DocType { get; set; } = "";
         }
-        
+
         public async Task<BaseResponseDTOs> GetReferencedDocsCountsPagedAsync(ReportsViewForm req)
         {
             // Get filtered documents
             var filteredDocs = BuildFilteredQuery(req);
 
-            // Only docs that are referenced as children
-            var referencedDocs =
+            // Only docs that are joined (referenced) as child documents
+            var joinedDocs =
                 from doc in filteredDocs
-                join reference in _context.ArcivDocsRefrences on doc.RefrenceNo equals reference.LinkedRfrenceNo
+                join joined in _context.JoinedDocs on doc.RefrenceNo equals joined.ChildRefrenceNo
+                join parentDoc in _context.ArcivingDocs on joined.ParentRefrenceNO equals parentDoc.RefrenceNo
                 join dept in _context.GpDepartments on doc.DepartId equals dept.Id
                 select new
                 {
@@ -1996,21 +1997,32 @@ namespace Nastya_Archiving_project.Services.reports
                     doc.DocNo,
                     doc.RefrenceNo,
                     doc.DepartId,
-                    DepartmentName = dept.Dscrp
+                    DepartmentName = dept.Dscrp,
+                    ParentReferenceNo = joined.ParentRefrenceNO,
+                    BriefcaseNo = joined.BreafcaseNo,
+                    JoinDate = joined.editDate
                 };
 
             // Group by department
-            var departmentGroups = await referencedDocs
+            var departmentGroups = await joinedDocs
                 .GroupBy(x => new { x.DepartId, x.DepartmentName })
                 .Select(g => new
                 {
                     DepartmentId = g.Key.DepartId,
                     DepartmentName = g.Key.DepartmentName,
                     DocsCount = g.Count(),
+                    // Include additional summary information if needed
+                    LatestJoinDate = g.Max(d => d.JoinDate),
+                    DocumentReferences = g.Select(d => new {
+                        DocNo = d.DocNo,
+                        ReferenceNo = d.RefrenceNo,
+                        ParentReferenceNo = d.ParentReferenceNo,
+                        BriefcaseNo = d.BriefcaseNo
+                    }).Take(5) // Include sample of 5 references per department
                 })
                 .OrderBy(x => x.DepartmentName)
                 .ToListAsync();
-            
+
             if (departmentGroups.Count == 0)
             {
                 return new BaseResponseDTOs(new
@@ -2022,20 +2034,20 @@ namespace Nastya_Archiving_project.Services.reports
                     PageSize = req.pageSize
                 }, 200, null);
             }
-            
+
             // Handle department-based pagination
             int page = req.pageNumber > 0 ? req.pageNumber : 1;
             int pageSize = req.pageSize > 0 ? req.pageSize : 10;
-            
+
             // Calculate total pages based on department count
             int totalPages = (int)Math.Ceiling(departmentGroups.Count / (double)pageSize);
-            
+
             // Get paged departments
             var pagedDepartments = departmentGroups
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToList();
-            
+
             // Format response
             var response = new
             {
@@ -2044,7 +2056,8 @@ namespace Nastya_Archiving_project.Services.reports
                 TotalPages = totalPages,
                 PageNumber = page,
                 PageSize = pageSize,
-                TotalDocsCount = departmentGroups.Sum(d => d.DocsCount)
+                TotalDocsCount = departmentGroups.Sum(d => d.DocsCount),
+                ReportSource = "JoinedDocs Table" // Indicate the data source for clarity
             };
 
             return new BaseResponseDTOs(response, 200, null);

@@ -44,7 +44,7 @@ namespace Nastya_Archiving_project.Models.DTOs.ArchivingDocs
 
         public int? TheMonth { get; set; }
 
-        public int SubDocType { get; set; }
+        public int? SubDocType { get; set; }
 
         public string? Ipaddress { get; set; }
 

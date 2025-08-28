@@ -36,6 +36,23 @@ namespace Nastya_Archiving_project.Helper
                 };
                 _context.Users.Add(newUser);
                 await _context.SaveChangesAsync();
+
+                var permission = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == newUser.Id);
+                if (permission == null)
+                {
+                    var newPermission = new UsersOptionPermission
+                    {
+                        UserId = newUser.Id,
+                        AddParameters = 1,
+                        AllowViewTheOther = 1,
+                        AllowDownload = 1,
+                        AllowAddToOther = 1,
+                        AllowDelete = 1,
+                        AllowSendMail = 1,
+                    };
+                    _context.UsersOptionPermissions.Add(newPermission);
+                    await _context.SaveChangesAsync();
+                }
             }
         }
       

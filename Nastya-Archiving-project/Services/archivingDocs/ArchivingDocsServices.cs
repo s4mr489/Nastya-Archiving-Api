@@ -259,9 +259,6 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
             if (docTypeResponse.docsType == null)
                 return (null, "Invalid document type.");
-            var SupDocTypeResponse = await _archivingSettingsServicers.GetSupDocsTypeById(req.SubDocType);
-            if(SupDocTypeResponse.supDocsType == null)
-                return (null, "Invalid sub-document type.");
             
             // Store original values for logging
             var originalDocData = FormatRecordData(docs);
@@ -273,7 +270,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
            // docs.DocTarget = req.DocTarget;
             docs.DocTitle = req.DocTitle ?? docs.DocTitle;
             docs.DocType = docTypeResponse.docsType.Id;
-            docs.SubDocType = SupDocTypeResponse.supDocsType.Id;
+            docs.SubDocType = req.SubDocType  != null ? req.SubDocType : null;
            // docs.DepartId = departId != null ? int.Parse(departId) : null;
            // docs.BranchId = branchId != null ? int.Parse(branchId) : null;
           //  docs.AccountUnitId = accountUnitId != null ? int.Parse(accountUnitId) : null;

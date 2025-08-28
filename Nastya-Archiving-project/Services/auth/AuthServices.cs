@@ -358,13 +358,38 @@ namespace Nastya_Archiving_project.Services.auth
 
         public async Task<BaseResponseDTOs> GetDepartForUsers(int userId)
         {
+            // First get the user's primary department from the Users table
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null)
+                return new BaseResponseDTOs(null, 404, "User not found.");
+
+            var result = new List<ArchivingPermissionResponseDTOs>();
+
+            // If user has a department, add it as the first item
+            if (user.DepariId.HasValue && user.DepariId.Value > 0)
+            {
+                var primaryDepartment = await _context.GpDepartments
+                    .FirstOrDefaultAsync(d => d.Id == user.DepariId.Value);
+
+                if (primaryDepartment != null)
+                {
+                    result.Add(new ArchivingPermissionResponseDTOs
+                    {
+                        departId = primaryDepartment.Id,
+                        departmentName = primaryDepartment.Dscrp,
+                        archivingPointId = 0, // Default value since this is primary department
+                        archivingPointDscrp = "Primary Department" // Indicate this is the primary department
+                    });
+                }
+            }
+
             // Get all archiving point permissions for the user
             var archivingPoints = await _context.UsersArchivingPointsPermissions
                 .Where(p => p.UserId == userId)
                 .ToListAsync();
 
-            if (archivingPoints == null || archivingPoints.Count == 0)
-                return new BaseResponseDTOs(null, 404, "No archiving points found for the user.");
+            if (archivingPoints.Count == 0 && result.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No departments or archiving points found for the user.");
 
             var archivingPointIds = archivingPoints
                 .Where(p => p.ArchivingpointId.HasValue && p.ArchivingpointId.Value > 0)
@@ -401,8 +426,8 @@ namespace Nastya_Archiving_project.Services.auth
                 .Where(d => departmentIds.Contains(d.Id))
                 .ToListAsync();
 
-            // Create a result with proper department information
-            var result = archivingPoints.Select(p =>
+            // Add additional departments from archiving points to the result
+            var additionalDepartments = archivingPoints.Select(p =>
             {
                 // Try to get department ID first from permission, then from archiving point
                 int? departmentId = p.DepartId;
@@ -426,6 +451,10 @@ namespace Nastya_Archiving_project.Services.auth
                     }
                 }
 
+                // Skip if it's the same as the user's primary department
+                if (departmentId.HasValue && user.DepariId.HasValue && departmentId.Value == user.DepariId.Value)
+                    return null;
+
                 return new ArchivingPermissionResponseDTOs
                 {
                     archivingPointId = p.ArchivingpointId ?? 0,
@@ -434,7 +463,12 @@ namespace Nastya_Archiving_project.Services.auth
                     departId = departmentId ?? 0,
                     departmentName = departmentName
                 };
-            }).ToList();
+            })
+            .Where(dto => dto != null)
+            .ToList();
+
+            // Add the additional departments to the result
+            result.AddRange(additionalDepartments);
 
             return new BaseResponseDTOs(result, 200);
         }
