@@ -3,7 +3,7 @@
   <df:DefaultFontFamily>Segoe UI</df:DefaultFontFamily>
   <AutoRefresh>0</AutoRefresh>
   <DataSets>
-    <DataSet Name="DataSet1">
+    <DataSet Name="ArcivingDocs">
       <Query>
         <DataSourceName />
         <CommandText />

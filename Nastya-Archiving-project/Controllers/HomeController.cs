@@ -1,3 +1,4 @@
+using DocumentFormat.OpenXml.Presentation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models.DTOs;
@@ -25,10 +26,10 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> GetActiveUsers()
         {
             var result = await _homeServices.ActiveUsers();
-            
+
             if (result.StatusCode == 200)
                 return Ok(result);
-                
+
             return StatusCode(result.StatusCode, result);
         }
 
@@ -52,10 +53,10 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> GetDocsAverageByDay()
         {
             var result = await _homeServices.DocsAvaregByDay();
-            
+
             if (result.StatusCode == 200)
                 return Ok(result);
-                
+
             return StatusCode(result.StatusCode, result);
         }
 
@@ -67,10 +68,10 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> GetBranchCount()
         {
             var result = await _homeServices.BranchCount();
-            
+
             if (result.StatusCode == 200)
                 return Ok(result);
-                
+
             return StatusCode(result.StatusCode, result);
         }
 
@@ -82,10 +83,10 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> GetDepartmentCount()
         {
             var result = await _homeServices.DepartmentCount();
-            
+
             if (result.StatusCode == 200)
                 return Ok(result);
-                
+
             return StatusCode(result.StatusCode, result);
         }
 
@@ -97,10 +98,10 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> GetTotalDocsSize()
         {
             var result = await _homeServices.TotalDocsSize();
-            
+
             if (result.StatusCode == 200)
                 return Ok(result);
-                
+
             return StatusCode(result.StatusCode, result);
         }
 
@@ -112,10 +113,10 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> GetDocsCount()
         {
             var result = await _homeServices.DocsCount();
-            
+
             if (result.StatusCode == 200)
                 return Ok(result);
-                
+
             return StatusCode(result.StatusCode, result);
         }
 
@@ -133,11 +134,11 @@ namespace Nastya_Archiving_project.Controllers
         //    var departmentCountTask = _homeServices.DepartmentCount();
         //    var totalDocsSizeTask = _homeServices.TotalDocsSize();
         //    var docsCountTask = _homeServices.DocsCount();
-            
+
         //    // Wait for all tasks to complete
         //    await Task.WhenAll(activeUsersTask, docsAverageTask, branchCountTask, 
         //                      departmentCountTask, totalDocsSizeTask, docsCountTask);
-            
+
         //    // Check if any of the tasks failed
         //    if (activeUsersTask.Result.StatusCode != 200 || 
         //        docsAverageTask.Result.StatusCode != 200 ||
@@ -148,7 +149,7 @@ namespace Nastya_Archiving_project.Controllers
         //    {
         //        return StatusCode(500, new BaseResponseDTOs(null, 500, "Error retrieving one or more dashboard statistics"));
         //    }
-            
+
         //    // Combine all results into a single response
         //    return Ok(new BaseResponseDTOs(
         //        new 
@@ -164,5 +165,19 @@ namespace Nastya_Archiving_project.Controllers
         //        null
         //    ));
         //}
+
+
+        /// <summary>
+        /// Gets the total count of documents for the user by document type to spsific time frame
+        /// </summary>
+        /// <returns>Total document count</returns>f
+        [HttpGet("user-docs-by-type")]
+        public async Task<IActionResult> GetUserDocsByType([FromQuery] string timeFrame = null)
+        {
+            var result = await _homeServices.UserDocsByType(timeFrame);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

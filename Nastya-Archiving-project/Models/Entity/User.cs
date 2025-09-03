@@ -37,5 +37,6 @@ public partial class User
 
     public int? AsmailCenter { get; set; }
 
+    public int? Stoped { get; set; }
     public int? JobTitle { get; set; }
 }

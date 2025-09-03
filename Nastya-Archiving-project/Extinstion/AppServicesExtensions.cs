@@ -13,6 +13,7 @@ using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.files;
 using Nastya_Archiving_project.Services.home;
 using Nastya_Archiving_project.Services.infrastructure;
+using Nastya_Archiving_project.Services.Limitation;
 using Nastya_Archiving_project.Services.logs;
 using Nastya_Archiving_project.Services.Mail;
 using Nastya_Archiving_project.Services.Permmsions;
@@ -134,7 +135,7 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<InfrastructureServices>();
             services.AddScoped<IMailServices, MailServices>();
             services.AddScoped<IRdlcReportServices, RdlcReportServices>();
-
+            services.AddScoped<ILimitationServices, LimitaionServices>();
             services.AddScoped<ISearchServices , SearchServices>();
             services.AddScoped<IUserPermissionsServices, UserPermissionServices>();
             services.AddScoped<IReportServices, ResportServices>();

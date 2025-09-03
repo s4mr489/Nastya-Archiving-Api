@@ -21,10 +21,23 @@ namespace Nastya_Archiving_project.Controllers
         }
 
         [HttpPost("Upload-single-file-To-DB")]
-        public async Task<IActionResult> Upload([FromForm]FileViewForm fileForm)
+        public async Task<IActionResult> Upload([FromForm] FileViewForm fileForm)
         {
             var (file, fileSize, error) = await _fileServices.upload(fileForm);
-            if (error != null) return BadRequest(error);
+
+            // Check if the error is specifically about file size
+            if (error != null)
+            {
+                // Return 415 Unsupported Media Type for file size errors
+                if (error.Contains("exceeds the license limit") || error.Contains("file size"))
+                {
+                    return StatusCode(415, error);
+                }
+
+                // Return regular BadRequest for other errors
+                return BadRequest(error);
+            }
+
             return Ok(new { file, fileSize });
         }
 
@@ -32,11 +45,21 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> UploadWithType([FromForm] MultiFileFormViewForm filesForm)
         {
             var (files, error) = await _fileServices.uploadWithType(filesForm);
+
             if (error != null)
+            {
+                // Return 415 Unsupported Media Type for file size errors
+                if (error.Contains("exceeds the license limit") || error.Contains("file size"))
+                {
+                    return StatusCode(415, error);
+                }
+
                 return BadRequest(error);
+            }
+
             return Ok(files);
         }
-        
+
         [HttpGet("temp-files/paginated")]
         public async Task<IActionResult> GetTempFilesPaginated([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
         {
@@ -70,7 +93,18 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> MergePdf([FromForm] MergePdfViewForm form)
         {
             var (mergedFile, error) = await _fileServices.MergeTwoPdfFilesAsync(form);
-            if (error != null) return BadRequest(error);
+
+            if (error != null)
+            {
+                // Return 415 Unsupported Media Type for file size errors
+                if (error.Contains("exceeds the license limit") || error.Contains("file size"))
+                {
+                    return StatusCode(415, error);
+                }
+
+                return BadRequest(error);
+            }
+
             return File(mergedFile, "application/pdf");
         }
 
@@ -78,8 +112,17 @@ namespace Nastya_Archiving_project.Controllers
         public async Task<IActionResult> MergeDocx([FromForm] List<IFormFile> files)
         {
             var (mergedFile, fileName, error) = await _fileServices.MergeDocxFilesAsync(files);
+
             if (mergedFile == null)
+            {
+                // Return 415 Unsupported Media Type for file size errors
+                if (error != null && (error.Contains("exceeds the license limit") || error.Contains("file size")))
+                {
+                    return StatusCode(415, error);
+                }
+
                 return BadRequest(error);
+            }
 
             return File(mergedFile, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName ?? "merged.docx");
         }

@@ -17,5 +17,6 @@ namespace Nastya_Archiving_project.Services.auth
         Task<(RegisterResponseDTOs? user, string? error)> EditUser(int id, RegisterViewForm form, bool IsAdmin);
         Task<BaseResponseDTOs> GetDepartForUsers(int userId);
         Task<BaseResponseDTOs> FirstUsers(LoginFormDTO req);
+        Task<BaseResponseDTOs> ActiveOrDeActivUser(int Id, bool status);
     }
 }

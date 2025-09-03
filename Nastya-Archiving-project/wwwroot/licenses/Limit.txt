@@ -1,0 +1,11 @@
+[NASTYA-ARCHIVING-LICENSE]
+LicenseKey=oJNKNFnJv2OFd3hKzTkwQg==
+CreationDate=J6S4CwthEyEe9xSfcF1GcKez2OKbuzYXU07d8jvdJm0=
+ExpirationDate=EcBHoF6Z8YJN1gn64V3rl+4k68/zxwx5juLD+Cp8nf0=
+MaxUsers=dGFQDi0ITNX5CctLx+byxQ==
+TotalStorageMB=dGFQDi0ITNX5CctLx+byxQ==
+MaxStorageGB=WKb14MzCMgl63aCaHc2pyg==
+SystemVersion=oJNKNFnJv2OFd3hKzTkwQg==
+
+[SIGNATURE]
+ufiTe82ZcXptp6jcEo0NzxOHlOP7PjsH/DQhL0us4OU=

@@ -24,10 +24,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Report\GeneralReport.rdlc" />
     <None Remove="Report\Report1.rdlc" />
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Report\GeneralReport.rdlc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="Report\Report1.rdlc">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>

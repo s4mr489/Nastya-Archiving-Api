@@ -442,8 +442,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             docs.ReferenceTo = null; // Unbind the document by setting ReferenceTo to null
 
-            // Remove the document from the archive
-            _context.ArcivingDocs.Remove(docs);
+            
             await _context.SaveChangesAsync();
             var response = _mapper.Map<ArchivingDocsResponseDTOs>(docs);
             return (response, null);

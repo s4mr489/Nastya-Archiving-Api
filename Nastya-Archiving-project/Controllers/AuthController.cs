@@ -59,6 +59,8 @@ namespace Nastya_Archiving_project.Controllers
             var (user, error) = await _authServices.Register(form, isAdmin);
             if (error != null)
                 return BadRequest(new { error });
+            if(error == "415")
+                return Conflict(new { error = "Maximum user limit reached. Please contact your system administrator." });
             return Ok(user);
         }
 
@@ -171,6 +173,12 @@ namespace Nastya_Archiving_project.Controllers
                 return NotFound(response);
 
             return Ok(response);
+        }
+        [HttpPatch("active-or-deactiv-user/{id}")]
+        public async Task<IActionResult> ActiveOrDeActivUser(int id, [FromQuery] bool status)
+        {
+            var result = await _authServices.ActiveOrDeActivUser(id, status);
+            return StatusCode(result.StatusCode, result);
         }
     }
 }

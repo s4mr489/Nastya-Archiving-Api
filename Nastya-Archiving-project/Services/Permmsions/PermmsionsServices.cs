@@ -223,5 +223,127 @@ namespace Nastya_Archiving_project.Services.Permmsions
                 TotalAttempted = targetUserIds.Count
             }, 200, successCount == 0 ? "Failed to copy permissions to any users" : null);
         }
+
+        /// <summary>
+        /// Copies permissions from a group to all users belonging to that group
+        /// </summary>
+        /// <param name="groupId">The ID of the group whose permissions will be copied to its users</param>
+        /// <returns>A response indicating success or failure of the operation</returns>
+        public async Task<BaseResponseDTOs> CopyGroupPermissionsToUsersAsync(int groupId)
+        {
+            // Step 1: Validate the group exists
+            var group = await _context.Usersgroups.FindAsync(groupId);
+            if (group == null)
+                return new BaseResponseDTOs(null, 404, "Group not found.");
+
+            // Step 2: Get all users belonging to this group
+            var usersInGroup = await _context.Users
+                .Where(u => u.GroupId == groupId)
+                .ToListAsync();
+
+            if (!usersInGroup.Any())
+                return new BaseResponseDTOs(null, 404, "No users found in this group.");
+
+            int successCount = 0;
+            List<string> failedUsers = new List<string>();
+
+            // Step 3: Process each user in the group
+            foreach (var user in usersInGroup)
+            {
+                try
+                {
+                    // Step 3.1: Update or create UsersOptionPermission for the user
+                    var optionPermission = await _context.UsersOptionPermissions
+                        .FirstOrDefaultAsync(p => p.UserId == user.Id);
+
+                    if (optionPermission != null)
+                    {
+                        // Update existing permission
+                        optionPermission.AddParameters = group.AddParameters;
+                        optionPermission.AllowDelete = group.AllowDelete;
+                        optionPermission.AllowAddToOther = group.AllowAddToOther;
+                        optionPermission.AllowViewTheOther = group.AllowViewTheOther;
+                        optionPermission.AllowSendMail = group.AllowSendMail;
+                        optionPermission.AllowDownload = group.AllowDownload;
+                        _context.UsersOptionPermissions.Update(optionPermission);
+                    }
+                    else
+                    {
+                        // Create new permission
+                        _context.UsersOptionPermissions.Add(new UsersOptionPermission
+                        {
+                            UserId = user.Id,
+                            AddParameters = group.AddParameters,
+                            AllowDelete = group.AllowDelete,
+                            AllowAddToOther = group.AllowAddToOther,
+                            AllowViewTheOther = group.AllowViewTheOther,
+                            AllowSendMail = group.AllowSendMail,
+                            AllowDownload = group.AllowDownload
+                        });
+                    }
+
+                    // Step 3.2: Copy group's archiving points and department permissions
+                    // For this, we need to find if the group has any specific archiving points or departments
+                    // Since the direct relation is not visible in the model, we'll use a representative user from the group
+
+                    // Find a representative user who already has permissions (if any)
+                    var representativeUser = await _context.Users
+                        .Where(u => u.GroupId == groupId && u.Id != user.Id)
+                        .FirstOrDefaultAsync();
+
+                    if (representativeUser != null)
+                    {
+                        // Get the representative user's archiving points and department permissions
+                        var representativePermissions = await _context.UsersArchivingPointsPermissions
+                            .Where(p => p.UserId == representativeUser.Id)
+                            .ToListAsync();
+
+                        if (representativePermissions.Any())
+                        {
+                            // First, remove existing permissions for the current user
+                            var existingPermissions = await _context.UsersArchivingPointsPermissions
+                                .Where(p => p.UserId == user.Id)
+                                .ToListAsync();
+
+                            if (existingPermissions.Any())
+                            {
+                                _context.UsersArchivingPointsPermissions.RemoveRange(existingPermissions);
+                            }
+
+                            // Then add new permissions based on the representative user
+                            foreach (var permission in representativePermissions)
+                            {
+                                _context.UsersArchivingPointsPermissions.Add(new UsersArchivingPointsPermission
+                                {
+                                    UserId = user.Id,
+                                    ArchivingpointId = permission.ArchivingpointId,
+                                    DepartId = permission.DepartId,
+                                    AccountUnitId = permission.AccountUnitId
+                                });
+                            }
+                        }
+                    }
+
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    // Log the error
+                    failedUsers.Add($"(ID: {user.Id}): {ex.Message}");
+                }
+            }
+
+            // Save all changes in a single transaction
+            await _context.SaveChangesAsync();
+
+            // Prepare the response message
+            string message = $"Successfully copied permissions to {successCount} out of {usersInGroup.Count} users.";
+            if (failedUsers.Any())
+            {
+                message += " Failed for users: " + string.Join(", ", failedUsers);
+            }
+
+            return new BaseResponseDTOs(message, 200);
+        }
     }
 }

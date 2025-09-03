@@ -11,7 +11,9 @@ using Nastya_Archiving_project.Models.DTOs.Auth;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.encrpytion;
+using Nastya_Archiving_project.Services.home;
 using Nastya_Archiving_project.Services.infrastructure;
+using Nastya_Archiving_project.Services.Limitation;
 using Nastya_Archiving_project.Services.SystemInfo;
 using Org.BouncyCastle.Tls.Crypto.Impl.BC;
 using System.Net.WebSockets;
@@ -27,6 +29,7 @@ namespace Nastya_Archiving_project.Services.auth
         private readonly IInfrastructureServices _infrastructureServices;
         private readonly IArchivingSettingsServicers _archivingSettingsServicers;
         private readonly ISystemInfoServices _systemInfoServices;
+        private readonly ILimitationServices _limitationServices;
 
         public AuthServices(AppDbContext context,
                             IMapper mapper,
@@ -34,7 +37,8 @@ namespace Nastya_Archiving_project.Services.auth
                             IEncryptionServices encryptionServices,
                             IInfrastructureServices infrastructureServices,
                             IArchivingSettingsServicers archivingSettingsServicers,
-                            ISystemInfoServices systemInfoServices) : base(mapper, context)
+                            ISystemInfoServices systemInfoServices,
+                            ILimitationServices limitationServices) : base(mapper, context)
         {
             _mapper = mapper;
             _context = context;
@@ -43,10 +47,44 @@ namespace Nastya_Archiving_project.Services.auth
             _infrastructureServices = infrastructureServices;
             _archivingSettingsServicers = archivingSettingsServicers;
             _systemInfoServices = systemInfoServices;
+            _limitationServices = limitationServices;
         }
 
         public async Task<string> Login(LoginFormDTO form, bool IsAdmin)
         {
+            // Check license validity first
+            var limitResponse = await _limitationServices.ReadEncryptedTextFile();
+
+            // Check if the license file exists and is valid
+            if (limitResponse.StatusCode == 404)
+            {
+                // License file not found
+                return "License not found. Please contact your system administrator.";
+            }
+
+            if (limitResponse.StatusCode == 200 && limitResponse.Data != null)
+            {
+                // Cast the dynamic Data property to access the License object
+                dynamic responseData = limitResponse.Data;
+
+                // Check if license has expired or is invalid
+                if (responseData.License != null)
+                {
+                    // Check if license is expired
+                    if (responseData.License.LicenseValidation.IsExpired)
+                    {
+                        return "Your license has expired. Please contact your system administrator.";
+                    }
+
+                }
+            }
+
+            else if (limitResponse.StatusCode != 200)
+            {
+                // Any other error with reading or processing the license
+                return $"License error: {limitResponse.Error ?? "Unknown error"}";
+            }
+
             //check the username and the password 
             var hashUserNamer = _encryptionServices.EncryptString256Bit(form.userName);
             var hashPassword = _encryptionServices.EncryptString256Bit(form.password);
@@ -55,8 +93,12 @@ namespace Nastya_Archiving_project.Services.auth
             var user = await _context.Users.FirstOrDefaultAsync(e => e.UserName == hashUserNamer);
             if (user == null)
                 return "404";
+
             if (user.UserPassword != hashPassword)
                 return "400";
+
+            if (user.Stoped == 1)
+                return "403";
 
             // Defensive: Check for nulls in required int fields
             if (user.Id == 0 || user.Adminst == null)
@@ -95,6 +137,37 @@ namespace Nastya_Archiving_project.Services.auth
 
         public async Task<(RegisterResponseDTOs? user, string? error)> Register(RegisterViewForm form, bool IsAdmin)
         {
+            // Check license validity first
+            var limitResponse = await _limitationServices.ReadEncryptedTextFile();
+
+            // Check if the license file exists and is valid
+            if (limitResponse.StatusCode == 404)
+            {
+                // License file not found
+                return (null, "License not found. Please contact your system administrator.");
+            }
+
+            if (limitResponse.StatusCode == 200 && limitResponse.Data != null)
+            {
+                // Cast the dynamic Data property to access the License object
+                dynamic responseData = limitResponse.Data;
+
+                // Check if license has expired or is invalid
+                if (responseData.License != null)
+                {
+
+
+                    // Check user count limitation if needed
+                    int maxUsers = responseData.License.SystemLimits.MaxUsers;
+                    int currentUsers = await _context.Users.Where(u => u.Stoped == 0).CountAsync();
+
+                    // If we're registering a new user and reached the limit
+                    if (currentUsers >= maxUsers)
+                    {
+                        return (null, "415");
+                    }
+                }
+            }
             //check the user if exists or not
             var hashUserName = _encryptionServices.EncryptString256Bit(form.UserName);
             var user = await _context.Users.FirstOrDefaultAsync(e => e.UserName == hashUserName);
@@ -204,6 +277,7 @@ namespace Nastya_Archiving_project.Services.auth
             if (hashCurrentPassword != user.UserPassword)
                 return "400"; // Bad request - incorrect current password
 
+
             // Update password
             user.UserPassword = _encryptionServices.EncryptString256Bit(pass.newPassword);
 
@@ -300,6 +374,7 @@ namespace Nastya_Archiving_project.Services.auth
             user.Adminst = _encryptionServices.EncryptString256Bit(IsAdmin ? "1" : "0");
             user.EditDate = DateOnly.FromDateTime(DateTime.Now);
             user.Editor = (await _systemInfoServices.GetRealName()).RealName;
+            user.Stoped = user.Stoped; // Retain existing status
             //user.AsmailCenter = form.AsmailCenter;
             //user.AsWfuser = form.AsWfuser;
             //user.DevisionId = form.DevisionId;
@@ -308,7 +383,20 @@ namespace Nastya_Archiving_project.Services.auth
             _context.Users.Update(user);
             await _context.SaveChangesAsync();
 
-            var result = _mapper.Map<RegisterResponseDTOs>(user);
+            var result = new RegisterResponseDTOs
+            {
+                AccountUnitId = user.AccountUnitId,
+                BranchId = user.BranchId,
+                DeparId = user.DepariId,
+                JobTitle = form.JobTitle,
+                Realname = _encryptionServices.DecryptString256Bit(user.Realname),
+                UserName = _encryptionServices.DecryptString256Bit(user.UserName),
+                Id = user.Id,
+                GroupId = user.GroupId,
+                Permtype = _encryptionServices.DecryptString256Bit(user.Permtype),
+                Adminst = _encryptionServices.DecryptString256Bit(user.Adminst),
+                Editor = user.Editor,
+            };
 
             return (result, null);
         }
@@ -336,7 +424,7 @@ namespace Nastya_Archiving_project.Services.auth
 
 
             var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == user.BranchId);
-            var depart = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.DepariId);
+            var depart = await _context.GpDepartments.FirstOrDefaultAsync(a => a.Id == user.DepariId);
             var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == user.GroupId);
             var jobTitle = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == user.JobTitle);
             var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.AccountUnitId);
@@ -524,6 +612,144 @@ namespace Nastya_Archiving_project.Services.auth
                 return new BaseResponseDTOs(null, 200, "The First User In The System Created Successfully.");
             }
             return new BaseResponseDTOs(null, 400, "There Are Users In The DB.");
+        }
+
+        public async Task<BaseResponseDTOs> ActiveOrDeActivUser(int Id, bool status)
+        {
+            try
+            {
+                // Find the user
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == Id);
+                if (user == null)
+                    return new BaseResponseDTOs(null, 404, "User not found.");
+
+                // Get current status for change detection
+                int previousStatus = user.Stoped ?? 1; // Default to inactive if null
+
+                // Get license information - we need this for both activation and deactivation
+                var limitResponse = await _limitationServices.ReadEncryptedTextFile();
+
+                // Check if the license file exists and is valid
+                if (limitResponse.StatusCode == 404)
+                {
+                    return new BaseResponseDTOs(null, 403, "License not found. Cannot change user status.");
+                }
+
+                if (limitResponse.StatusCode == 200 && limitResponse.Data != null)
+                {
+                    // Cast the dynamic Data property to access the License object
+                    dynamic licenseData = limitResponse.Data;
+
+                    // Check if license has expired or is invalid
+                    if (licenseData.License != null)
+                    {
+                        // Check if license is expired
+                        if (licenseData.License.LicenseValidation.IsExpired)
+                        {
+                            return new BaseResponseDTOs(null, 403, "Your license has expired. Cannot change user status.");
+                        }
+
+                        int maxUsers = licenseData.License.SystemLimits.MaxUsers;
+
+                        // Count all active users excluding the current user
+                        int currentActiveUsers = await _context.Users
+                            .Where(u => u.Stoped == 0 && u.Id != Id)
+                            .CountAsync();
+
+                        // Count all users (both active and inactive)
+                        int totalUsers = await _context.Users.CountAsync();
+
+                        // Check based on the operation we're performing
+                        if (status && previousStatus == 1) // Activating a user
+                        {
+                            // Check if activating this user would exceed the max active users limit
+                            if (currentActiveUsers + 1 > maxUsers)
+                            {
+                                return new BaseResponseDTOs(null, 415,
+                                    $"Maximum active user limit ({maxUsers}) reached. Please upgrade your license or deactivate other users before activating this one.");
+                            }
+                        }
+                        else if (!status && previousStatus == 0) // Deactivating a user
+                        {
+                            // Check if we have sufficient active users allowed by license
+                            // This is a safeguard to ensure minimum operational requirements
+                            if (currentActiveUsers <= 1 && totalUsers > 1)
+                            {
+                                return new BaseResponseDTOs(null, 400,
+                                    "Cannot deactivate this user as it would leave the system without any active users.");
+                            }
+
+                            // Note: We allow deactivation even if total user count exceeds license
+                            // since deactivation helps comply with the active user count limit
+                        }
+                    }
+                }
+                else if (limitResponse.StatusCode != 200)
+                {
+                    // Any other error with reading or processing the license
+                    return new BaseResponseDTOs(null, 500,
+                        $"License error: {limitResponse.Error ?? "Unknown error"}. Cannot change user status.");
+                }
+
+                // Update user status (0 = active, 1 = inactive)
+                user.Stoped = status ? 0 : 1;
+
+                // Update the user without creating log entry
+                _context.Users.Update(user);
+                await _context.SaveChangesAsync();
+
+                // Get decrypted user information for the response
+                var userName = _encryptionServices.DecryptString256Bit(user.UserName ?? string.Empty);
+                var realName = _encryptionServices.DecryptString256Bit(user.Realname ?? string.Empty);
+
+                // Prepare the response
+                var message = status
+                    ? "User activated successfully."
+                    : "User deactivated successfully.";
+
+                // Add license info to response
+                var userData = new
+                {
+                    userId = user.Id,
+                    userName = userName,
+                    realName = realName,
+                    newStatus = user.Stoped,
+                    isActive = status
+                };
+
+                // Get updated user counts for the response message
+                int activeUsers = await _context.Users.Where(u => u.Stoped == 0).CountAsync();
+                int inactiveUsers = await _context.Users.Where(u => u.Stoped == 1 || u.Stoped == null).CountAsync();
+
+                // Get max users from license for reference
+                int maxAllowedUsers = 0;
+                if (limitResponse.StatusCode == 200 && limitResponse.Data != null)
+                {
+                    dynamic licData = limitResponse.Data;
+                    if (licData.License != null && licData.License.SystemLimits != null)
+                    {
+                        maxAllowedUsers = licData.License.SystemLimits.MaxUsers;
+                    }
+                }
+
+                // Include license info in the message for both activation and deactivation
+                message += $" Active users: {activeUsers}/{maxAllowedUsers}, Inactive users: {inactiveUsers}.";
+
+                return new BaseResponseDTOs(userData, 200, message);
+            }
+            catch (Exception ex)
+            {
+                // Log the exception details for troubleshooting (console only, not database)
+                Console.WriteLine($"Error updating user status: {ex.Message}");
+
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
+
+                return new BaseResponseDTOs(null, 500,
+                    $"An error occurred while {(status ? "activating" : "deactivating")} the user: {ex.Message}");
+            }
         }
     }
 }

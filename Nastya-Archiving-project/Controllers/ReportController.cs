@@ -1,12 +1,7 @@
-﻿using DocumentFormat.OpenXml.Office2016.Drawing.Command;
-using DocumentFormat.OpenXml.Wordprocessing;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Nastya_Archiving_project.Helper;
+﻿using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Reports;
-using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.rdlcReport;
 using Nastya_Archiving_project.Services.reports;
 
@@ -16,20 +11,19 @@ namespace Nastya_Archiving_project.Controllers
     [ApiController]
     public class ReportController : ControllerBase
     {
-        private readonly IRdlcReportServices _svc;
-        private readonly IReportServices _reportServices;
-        private readonly IInfrastructureServices _infrastructureServices;
-        private readonly ReportGenerator _reportGenerator;
-        public ReportController(IReportServices reportServices, IRdlcReportServices svc)
+        private readonly IReportServices _reportService;
+        private readonly IRdlcReportServices _rdlcReportService;
+
+        public ReportController(IReportServices reportService, IRdlcReportServices rdlcReportService)
         {
-            _reportServices = reportServices;
-            _svc = svc;
+            _reportService = reportService;
+            _rdlcReportService = rdlcReportService;
         }
 
         [HttpGet("General-Report")]
         public async Task<IActionResult> GeneralReport([FromQuery] ReportsViewForm req)
         {
-            var result = await _reportServices.GeneralReport(req);
+            var result = await _reportService.GeneralReport(req);
             if (result.StatusCode == 200)
                 return Ok(result);
             return BadRequest(result);
@@ -41,10 +35,10 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result;
             if (req.resultType == EResultType.statistical)
             {
-                result = await _reportServices.GetDepartmentDocumentCountsAsync(req);
+                result = await _reportService.GetDepartmentDocumentCountsAsync(req);
                 return StatusCode(result.StatusCode, result);
             }
-            result = await _reportServices.GetDepartmentDocumentsWithDetailsAsync(req);
+            result = await _reportService.GetDepartmentDocumentsWithDetailsAsync(req);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -54,12 +48,12 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result;
             if (req.resultType == EResultType.statistical)
             {
-                result = await _reportServices.GetDepartmentEditorDocumentCountsPagedAsync(req);
+                result = await _reportService.GetDepartmentEditorDocumentCountsPagedAsync(req);
                 return StatusCode(result.StatusCode, result);
 
             }
 
-            result = await _reportServices.GetDepartmentEditorDocumentCountsPagedDetilesAsync(req);
+            result = await _reportService.GetDepartmentEditorDocumentCountsPagedDetilesAsync(req);
             return StatusCode(result.StatusCode, result);
 
         }
@@ -70,10 +64,10 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result;
             if (req.resultType == EResultType.statistical)
             {
-                result = await _reportServices.GetDepartmentMonthlyDocumentCountsPagedAsync(req);
+                result = await _reportService.GetDepartmentMonthlyDocumentCountsPagedAsync(req);
                 return StatusCode(result.StatusCode, result);
             }
-            result = await _reportServices.GetDepartmentMonthlyDocumentDetailsPagedAsync(req);
+            result = await _reportService.GetDepartmentMonthlyDocumentDetailsPagedAsync(req);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -84,10 +78,10 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result;
             if (req.resultType == EResultType.statistical)
             {
-                result = await _reportServices.GetSourceMonthlyDocumentCountsPagedAsync(req);
+                result = await _reportService.GetSourceMonthlyDocumentCountsPagedAsync(req);
                 return StatusCode(result.StatusCode, result);
             }
-            result = await _reportServices.GetSourceMonthlyDocumentDetailsPagedAsync(req);
+            result = await _reportService.GetSourceMonthlyDocumentDetailsPagedAsync(req);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -98,10 +92,10 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result;
             if (req.resultType == EResultType.statistical)
             {
-                result = await _reportServices.GetTargeteMonthlyDocumentCountsPagedAsync(req);
+                result = await _reportService.GetTargeteMonthlyDocumentCountsPagedAsync(req);
                 return StatusCode(result.StatusCode, result);
             }
-            result = await _reportServices.GetTargetMonthlyDocumentDetailsPagedAsync(req);
+            result = await _reportService.GetTargetMonthlyDocumentDetailsPagedAsync(req);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -111,10 +105,10 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result;
             if (req.resultType == EResultType.statistical)
             {
-                result = await _reportServices.GetReferencedDocsCountsPagedAsync(req);
+                result = await _reportService.GetReferencedDocsCountsPagedAsync(req);
                 return StatusCode(result.StatusCode, result);
             }
-            result = await _reportServices.GetReferncesDocsDetailsPagedAsync(req);
+            result = await _reportService.GetReferncesDocsDetailsPagedAsync(req);
             return StatusCode(result.StatusCode, result);
         }
 
@@ -124,33 +118,33 @@ namespace Nastya_Archiving_project.Controllers
             BaseResponseDTOs result;
             if (req.resultType == EResultType.statistical)
             {
-                result = await _reportServices.GetMonthlyUsersDocumentCountPagedAsync(req);
+                result = await _reportService.GetMonthlyUsersDocumentCountPagedAsync(req);
                 return StatusCode(result.StatusCode, result);
             }
-            result = await _reportServices.GetMontlyUsersDocumentDetailsPagedList(req);
+            result = await _reportService.GetMontlyUsersDocumentDetailsPagedList(req);
             return StatusCode(result.StatusCode, result);
         }
 
         [HttpGet("Check-Documents-File-Integrity")]
         public async Task<IActionResult> CheckDocumentsFileIntegrity([FromQuery] int pageSize , [FromQuery] int pageNumber)
         {
-            BaseResponseDTOs result = await _reportServices.CheckDocumentsFileIntegrityPagedAsync(pageNumber , pageSize);
+            BaseResponseDTOs result = await _reportService.CheckDocumentsFileIntegrityPagedAsync(pageNumber , pageSize);
             return StatusCode(result.StatusCode, result);
         }
 
 
-        [HttpGet("teste")]
-        public async Task<IActionResult> teste([FromQuery] ReportsViewForm req)
-        {
-            BaseResponseDTOs result = await _reportServices.GetDocumentDetailsReportWithFastReport(req);
-            return StatusCode(result.StatusCode, result);
-        }
+        //[HttpGet("teste")]
+        //public async Task<IActionResult> teste([FromQuery] ReportsViewForm req)
+        //{
+        //    BaseResponseDTOs result = await _reportServices.GetDocumentDetailsReportWithFastReport(req);
+        //    return StatusCode(result.StatusCode, result);
+        //}
 
 
         [HttpGet("archiving")]
         public async Task<IActionResult> GetArchiving([FromQuery] ReportFilter filter, [FromQuery] string format = "pdf", CancellationToken ct = default)
         {
-            var bytes = await _svc.GenerateReportAsync("Report1", format, filter, ct);
+            var bytes = await _rdlcReportService.GenerateReportAsync("GeneralReport", format, filter, ct);
             var contentType = format.ToLowerInvariant() switch
             {
                 "pdf" => "application/pdf",
@@ -165,5 +159,39 @@ namespace Nastya_Archiving_project.Controllers
 
             return File(bytes, contentType, $"Archiving_{DateTime.UtcNow:yyyyMMdd_HHmmss}.{ext}");
         }
+
+        //[HttpPost("rdlc-report")]
+        //public async Task<IActionResult> GenerateRdlcReport([FromQuery] ReportsViewForm request, CancellationToken ct = default)
+        //{
+        //    var response = await _rdlcReportService.GenerateReportFromViewForm(request, ct);
+            
+        //    if (response.StatusCode != 200)
+        //    {
+        //        return StatusCode(response.StatusCode, response);
+        //    }
+            
+        //    // The returned data should be byte[] representing the report
+        //    var reportBytes = (byte[])response.Data;
+            
+        //    // Determine content type and extension based on requested format
+        //    var format = request.outputFormat?.ToLower() ?? "pdf";
+        //    var contentType = format switch
+        //    {
+        //        "pdf" => "application/pdf",
+        //        "excel" => "application/vnd.ms-excel",
+        //        "word" => "application/msword",
+        //        "html" => "text/html",
+        //        _ => "application/pdf"
+        //    };
+        //    var ext = format.Equals("html", StringComparison.OrdinalIgnoreCase) ? "html" :
+        //              format.Equals("excel", StringComparison.OrdinalIgnoreCase) ? "xls" :
+        //              format.Equals("word", StringComparison.OrdinalIgnoreCase) ? "doc" : "pdf";
+            
+        //    // Generate filename based on report type
+        //    var reportTypeName = Enum.GetName(typeof(EReportType), request.reportType ?? EReportType.GeneralReport) ?? "Report";
+        //    var filename = $"{reportTypeName}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.{ext}";
+            
+        //    return File(reportBytes, contentType, filename);
+        //}
     }
 }

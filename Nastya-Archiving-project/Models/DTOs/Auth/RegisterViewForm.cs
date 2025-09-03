@@ -12,7 +12,7 @@
 
         public string? Permtype { get; set; }
 
-        public string? Adminst { get; set; }
+       // public string? Adminst { get; set; }
 
         public string? Editor { get; set; }
 

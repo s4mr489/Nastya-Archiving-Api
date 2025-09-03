@@ -49,28 +49,45 @@ namespace Nastya_Archiving_project.Services.files
             if (user == null)
                 return (null, 0, "User not found.");
 
+            // Check file size against license limits
+            var file = fileForm.File;
+            if (file == null)
+                return (null, 0, "No file was provided.");
+
+            long fileSize = file.Length;
+
+            // Get license storage limit in MB (convert GB to MB)
+            var licenseLimit = await GetLicenseStorageLimitMB();
+            if (licenseLimit <= 0)
+                return (null, fileSize, "Unable to determine storage limit from license.");
+
+            // Convert file size to MB for comparison (with ceiling to ensure we don't allow files that are slightly over limit)
+            double fileSizeMB = Math.Ceiling(fileSize / (1024.0 * 1024.0));
+
+            // Check if file exceeds the license limit
+            if (fileSizeMB > licenseLimit)
+                return (null, fileSize, $"File size ({fileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+
             var group = _context.Usersgroups.FirstOrDefault(g => g.groupid == user.GroupId);
             if (group == null)
                 return (null, 0, "User group not found.");
             var depr = _context.GpDepartments.FirstOrDefault(d => d.Id == user.DepariId);
 
-            var file = fileForm.File;
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
 
             // Accept PDF and Word files
             var isPdf = extension == ".pdf" && file.ContentType == "application/pdf";
             var isDocx = extension == ".docx" &&
                 (file.ContentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-                 file.ContentType == "application/octet-stream" ||
-                 file.ContentType == "application/zip");
+                    file.ContentType == "application/octet-stream" ||
+                    file.ContentType == "application/zip");
             var isDoc = extension == ".doc" &&
                 (file.ContentType == "application/msword" ||
-                 file.ContentType == "application/octet-stream");
+                    file.ContentType == "application/octet-stream");
 
             if (!isPdf && !isDocx && !isDoc)
                 return (null, 0, $"File '{file.FileName}' is not a PDF or Word document.");
 
-            long fileSize = file.Length;
             var storePath = await _context.PArcivingPoints.FirstOrDefaultAsync(s => s.AccountUnitId == user.AccountUnitId && s.DepartId == user.DepariId);
             if (storePath == null)
                 return (null, 0, "Storage path not configured for user's account unit and department.");
@@ -79,14 +96,24 @@ namespace Nastya_Archiving_project.Services.files
             string storePathValue = storePath.StorePath ?? string.Empty;
             string startWithValue = storePath.StartWith ?? string.Empty;
 
+            // Sanitize base path components - remove trailing colons and other invalid characters
+            storePathValue = SanitizeBasePath(storePathValue);
+            startWithValue = SanitizePathComponent(startWithValue);
+
+            // Get and sanitize other path components
+            string yearStr = DateTime.Now.Year.ToString();
+            string departmentName = SanitizePathComponent(depr?.Dscrp ?? "Unknown");
+            string monthStr = DateTime.Now.Month.ToString();
+            string groupName = SanitizePathComponent(_encryptionServices.DecryptString256Bit(group.Groupdscrp));
+
             // Include StartWith in the physical path
             string attachmentsDir = Path.Combine(
                 storePathValue,
-                startWithValue,  // Add StartWith here to match web path
-                DateTime.Now.Year.ToString(),
-                depr?.Dscrp ?? "Unknown",
-                DateTime.Now.Month.ToString(),
-                _encryptionServices.DecryptString256Bit(group.Groupdscrp)
+                startWithValue,
+                yearStr,
+                departmentName,
+                monthStr,
+                groupName
             );
 
             if (!Directory.Exists(attachmentsDir))
@@ -112,14 +139,59 @@ namespace Nastya_Archiving_project.Services.files
             var webPath = Path.Combine(
                 storePathValue.Replace(Path.DirectorySeparatorChar, '/'),
                 startWithValue.Replace(Path.DirectorySeparatorChar, '/'),
-                DateTime.Now.Year.ToString(),
-                depr?.Dscrp ?? "Unknown",
-                DateTime.Now.Month.ToString(),
-                _encryptionServices.DecryptString256Bit(group.Groupdscrp),
+                yearStr,
+                departmentName,
+                monthStr,
+                groupName,
                 fileName
             ).Replace(Path.DirectorySeparatorChar, '/');
 
             return (webPath, fileSize, null);
+        }
+
+        // Helper method to sanitize base file path
+        private string SanitizeBasePath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return string.Empty;
+
+            // Remove trailing colon if it exists (common issue in paths)
+            if (path.EndsWith(":"))
+            {
+                // Keep only the drive letter with colon (e.g., "D:") 
+                // or remove the trailing colon if not at position 1
+                if (path.Length > 2 && path[1] == ':')
+                    path = path.Substring(0, 2);
+                else
+                    path = path.TrimEnd(':');
+            }
+
+            // Ensure path doesn't have invalid characters
+            return path;
+        }
+
+        // Helper method to sanitize path components
+        private string SanitizePathComponent(string component)
+        {
+            if (string.IsNullOrEmpty(component))
+                return "Unknown";
+
+            // Remove characters that are invalid for Windows paths
+            char[] invalidChars = Path.GetInvalidPathChars();
+            string result = new string(component.Where(c => !invalidChars.Contains(c)).ToArray());
+
+            // Also remove other potentially problematic characters for paths
+            result = result.Replace(":", "_")
+                           .Replace("?", "_")
+                           .Replace("*", "_")
+                           .Replace("\"", "_")
+                           .Replace("<", "_")
+                           .Replace(">", "_")
+                           .Replace("|", "_")
+                           .Replace("\\", "_")
+                           .Replace("/", "_");
+
+            return string.IsNullOrEmpty(result) ? "Unknown" : result;
         }
 
 
@@ -265,6 +337,16 @@ namespace Nastya_Archiving_project.Services.files
             if (!Path.GetExtension(requestDTO.File.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
                 return (null, "The uploaded file must be a PDF document.");
 
+            // Check file size against license limits
+            var licenseLimit = await GetLicenseStorageLimitMB();
+            if (licenseLimit <= 0)
+                return (null, "Unable to determine storage limit from license.");
+
+            // Check the size of the uploaded file
+            double uploadedFileSizeMB = Math.Ceiling(requestDTO.File.Length / (1024.0 * 1024.0));
+            if (uploadedFileSizeMB > licenseLimit)
+                return (null, $"File size ({uploadedFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+
             // Create unique temp file paths with clear naming
             var tempId = Guid.NewGuid().ToString("N");
             string tempDir = Path.GetTempPath();
@@ -281,6 +363,18 @@ namespace Nastya_Archiving_project.Services.files
                 string originalPath = ResolveFilePath(requestDTO.OriginalFilePath);
                 if (originalPath == null)
                     return (null, $"Original file not found at: {requestDTO.OriginalFilePath}");
+
+                // Check the size of the original file
+                if (File.Exists(originalPath))
+                {
+                    var originalFileInfo = new FileInfo(originalPath);
+                    double originalFileSizeMB = Math.Ceiling(originalFileInfo.Length / (1024.0 * 1024.0));
+
+                    // Estimate the final size (sum of both files with some overhead)
+                    double estimatedFinalSizeMB = originalFileSizeMB + uploadedFileSizeMB;
+                    if (estimatedFinalSizeMB > licenseLimit)
+                        return (null, $"Estimated size of merged file ({estimatedFinalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                }
 
                 bool isCompressed = originalPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
 
@@ -328,6 +422,12 @@ namespace Nastya_Archiving_project.Services.files
                 // 5. Verify the merged PDF was created successfully
                 if (!File.Exists(mergedPdfPath) || new FileInfo(mergedPdfPath).Length == 0)
                     return (null, "Failed to create merged PDF file.");
+
+                // Check size of merged file
+                var mergedFileInfo = new FileInfo(mergedPdfPath);
+                double mergedFileSizeMB = Math.Ceiling(mergedFileInfo.Length / (1024.0 * 1024.0));
+                if (mergedFileSizeMB > licenseLimit)
+                    return (null, $"Merged file size ({mergedFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
 
                 // 6. Read encryption keys
                 byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"]);
@@ -634,6 +734,27 @@ namespace Nastya_Archiving_project.Services.files
             if (files == null || files.Count < 2)
                 return (null, null, "At least two .docx files are required.");
 
+            // Get license storage limit in MB
+            var licenseLimit = await GetLicenseStorageLimitMB();
+            if (licenseLimit <= 0)
+                return (null, null, "Unable to determine storage limit from license.");
+
+            // Calculate total size of all files
+            long totalSize = files.Sum(f => f.Length);
+            double totalSizeMB = Math.Ceiling(totalSize / (1024.0 * 1024.0));
+
+            // Check if total size exceeds the license limit
+            if (totalSizeMB > licenseLimit)
+                return (null, null, $"Total file size ({totalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+
+            // Check individual files
+            foreach (var file in files)
+            {
+                double fileSizeMB = Math.Ceiling(file.Length / (1024.0 * 1024.0));
+                if (fileSizeMB > licenseLimit)
+                    return (null, null, $"File '{file.FileName}' size ({fileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+            }
+
             var tempPaths = new List<string>();
             try
             {
@@ -673,6 +794,12 @@ namespace Nastya_Archiving_project.Services.files
                     }
                     mainDoc.MainDocumentPart.Document.Save();
                 }
+
+                // Check the size of the merged file
+                var mergedFileInfo = new FileInfo(outputFile);
+                double mergedFileSizeMB = Math.Ceiling(mergedFileInfo.Length / (1024.0 * 1024.0));
+                if (mergedFileSizeMB > licenseLimit)
+                    return (null, null, $"Merged file size ({mergedFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
 
                 // Return the merged file as bytes and its file name
                 var mergedBytes = await File.ReadAllBytesAsync(outputFile);
@@ -813,6 +940,27 @@ namespace Nastya_Archiving_project.Services.files
             var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
             if (user == null)
                 return (null, "User not found.");
+
+            // Get license storage limit in MB
+            var licenseLimit = await GetLicenseStorageLimitMB();
+            if (licenseLimit <= 0)
+                return (null, "Unable to determine storage limit from license.");
+
+            // Calculate total size of all files
+            long totalSize = filesForm.Files.Sum(f => f.Length);
+            double totalSizeMB = Math.Ceiling(totalSize / (1024.0 * 1024.0));
+
+            // Check if total size exceeds the license limit
+            if (totalSizeMB > licenseLimit)
+                return (null, $"Total file size ({totalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+
+            // Also check individual files to make sure none exceed the limit
+            foreach (var file in filesForm.Files)
+            {
+                double fileSizeMB = Math.Ceiling(file.Length / (1024.0 * 1024.0));
+                if (fileSizeMB > licenseLimit)
+                    return (null, $"File '{file.FileName}' size ({fileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+            }
 
             var fileList = new List<(string filePath, string fileType, string? notice)>();
             var userFolder = _encryptionServices.DecryptString256Bit(user.Realname);
@@ -1413,6 +1561,80 @@ namespace Nastya_Archiving_project.Services.files
             catch (Exception ex)
             {
                 return (null, string.Empty, string.Empty, $"Error preparing file for download: {ex.Message}");
+            }
+        }
+
+        // Add this helper method to read license storage limit
+        private async Task<double> GetLicenseStorageLimitMB()
+        {
+            try
+            {
+                // Define path to license file
+                string licensePath = Path.Combine("wwwroot", "licenses", "Limit.txt");
+                if (!File.Exists(licensePath))
+                    return 10; // If no license file found, use default 10 MB limit
+
+                // Read the license file content
+                string fileContent = await File.ReadAllTextAsync(licensePath);
+
+                // Parse the license data to find currentStorageMB instead of MaxStorageGB
+                double storageLimit = 0;
+                string storageLimitEncrypted = null;
+
+                using (StringReader reader = new StringReader(fileContent))
+                {
+                    string line;
+                    string currentSection = null;
+
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        // Skip empty lines
+                        if (string.IsNullOrWhiteSpace(line))
+                            continue;
+
+                        // Check if this is a section header
+                        if (line.StartsWith("[") && line.EndsWith("]"))
+                        {
+                            currentSection = line.Trim('[', ']');
+                            continue;
+                        }
+
+                        // Check for currentStorageMB entry
+                        if (currentSection == "NASTYA-ARCHIVING-LICENSE" && line.StartsWith("currentStorageMB="))
+                        {
+                            storageLimitEncrypted = line.Substring("currentStorageMB=".Length).Trim();
+                            break;
+                        }
+                    }
+                }
+
+                // Decrypt the value if found
+                if (storageLimitEncrypted != null)
+                {
+                    try
+                    {
+                        string decryptedValue = _encryptionServices.DecryptString256Bit(storageLimitEncrypted);
+                        if (double.TryParse(decryptedValue, out storageLimit))
+                        {
+                            // No conversion needed since we're already working in MB
+                            // Force the maximum limit to be 10 MB
+                            return Math.Min(storageLimit, 10);
+                        }
+                    }
+                    catch
+                    {
+                        // If decryption fails, don't return a default value
+                        return 0;
+                    }
+                }
+
+                // Default if not found or couldn't parse - enforce 10 MB limit
+                return 10;
+            }
+            catch (Exception)
+            {
+                // If any error occurs, don't return a default value
+                return 0;
             }
         }
     }

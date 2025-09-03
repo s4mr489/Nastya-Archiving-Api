@@ -51,6 +51,7 @@ namespace Nastya_Archiving_project.Services.usersPermission
             {
                 userId = u.Id,
                 realName = _encryptionServices.DecryptString256Bit(u.Realname),
+                Activation = u.Stoped,
                 // Map other properties as needed
             }).ToList();
 
@@ -87,7 +88,9 @@ namespace Nastya_Archiving_project.Services.usersPermission
                 .Select(p => p.ArchivingpointId ?? 0)
                 .Where(id => id > 0)
                 .ToList();
-
+            var userActivation = await _context.Users
+                .Where(u => userIds.Contains(u.Id))
+                .FirstOrDefaultAsync();
             // Get archiving point details
             var archivingPointNames = await _context.PArcivingPoints
                 .Where(a => archivingPointIds.Contains(a.Id))
@@ -126,27 +129,28 @@ namespace Nastya_Archiving_project.Services.usersPermission
 
             // Create the response
             var result = new List<UsersSearchResponseDTOs>
-    {
-        new UsersSearchResponseDTOs
-        {
-            userId = users.Id ?? 0,
-            realName = _encryptionServices.DecryptString256Bit(_context.Users.FirstOrDefault(u => u.Id == (users.Id ?? 0))?.Realname ?? string.Empty),
-            fileType = asaWfuser.FirstOrDefault(a => a.Id == (users.Id ?? 0))?.Id,
-            usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == users.Id),
-            archivingPoint = archivingPoints
-                .Where(p => p.UserId == users.Id)
-                .Select(p => new ArchivingPermissionResponseDTOs
+            {
+                new UsersSearchResponseDTOs
                 {
-                    archivingPointId = p.ArchivingpointId ?? 0,
-                    archivingPointDscrp = archivingPointNames
-                        .FirstOrDefault(a => a.Id == p.ArchivingpointId)?.Dscrp,
-                    departId = p.DepartId ?? archivingPointNames
-                        .FirstOrDefault(a => a.Id == p.ArchivingpointId)?.DepartId ?? 0,
-                    departmentName = GetDepartmentName(p.DepartId, p.ArchivingpointId, archivingPointNames, departments)
-                })
-                .ToList(),
-        }
-    };
+                    userId = users.Id ?? 0,
+                    realName = _encryptionServices.DecryptString256Bit(_context.Users.FirstOrDefault(u => u.Id == (users.Id ?? 0))?.Realname ?? string.Empty),
+                    fileType = asaWfuser.FirstOrDefault(a => a.Id == (users.Id ?? 0))?.Id,
+                    usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == users.Id),
+                   Activation = userActivation.Stoped,
+                    archivingPoint = archivingPoints
+                        .Where(p => p.UserId == users.Id)
+                        .Select(p => new ArchivingPermissionResponseDTOs
+                        {
+                            archivingPointId = p.ArchivingpointId ?? 0,
+                            archivingPointDscrp = archivingPointNames
+                                .FirstOrDefault(a => a.Id == p.ArchivingpointId)?.Dscrp,
+                            departId = p.DepartId ?? archivingPointNames
+                                .FirstOrDefault(a => a.Id == p.ArchivingpointId)?.DepartId ?? 0,
+                            departmentName = GetDepartmentName(p.DepartId, p.ArchivingpointId, archivingPointNames, departments)
+                        })
+                        .ToList(),
+                }
+            };
 
             return new BaseResponseDTOs(result, 200);
         }
@@ -348,5 +352,7 @@ namespace Nastya_Archiving_project.Services.usersPermission
 
             return new BaseResponseDTOs("Permissions updated and file type deleted successfully.", 200);
         }
+
     }
+
 }

@@ -669,6 +669,8 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.DevisionId).HasColumnName("DevisionID");
             entity.Property(e => e.Editor).HasMaxLength(172);
             entity.Property(e => e.GroupId).HasColumnName("GroupID");
+            entity.Property(e => e.Stoped).HasDefaultValue(0)
+                                          .HasColumnName("Stoped");
             entity.Property(e => e.Permtype)
                 .HasMaxLength(172)
                 .HasColumnName("permtype");

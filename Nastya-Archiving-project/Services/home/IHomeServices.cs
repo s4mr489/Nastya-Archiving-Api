@@ -12,5 +12,8 @@ namespace Nastya_Archiving_project.Services.home
         Task<BaseResponseDTOs> DocsAvaregByDay();
         Task<BaseResponseDTOs> DepartmentCount();
         Task<BaseResponseDTOs> TotalDocsSize();
+        Task<BaseResponseDTOs> UserDocsByType(string timeFrame = null);
+
+       
     }
 }

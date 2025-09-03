@@ -5,6 +5,7 @@
         public int? archivingPointId { get; set; }
         public int? departId { get; set; }
         public string? archivingPointDscrp { get; set; }
+        public int? userActivition { get; set; }
         public string? departmentName { get; set; }
         
     }

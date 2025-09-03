@@ -8,7 +8,18 @@ namespace Nastya_Archiving_project.Services.usersPermission
     {
         Task<List<UsersSearchResponseDTOs>> GetUsersAsync(UsersSearchViewForm search);
         Task<BaseResponseDTOs> GetUserPermissionsAsync(UsersViewForm users);
+        /// <summary>
+        /// this method is used to create the permissions of a user
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns></returns>
         Task<BaseResponseDTOs> CreateUserPermissionsAsync(CreateUserPermissionsRequestDTO request);
+
+        /// <summary>
+        /// this method is used to delete the permissions of a user
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns></returns>
         Task<BaseResponseDTOs> DeleteUserPermissionsAsync(CreateUserPermissionsRequestDTO request);
     }
 }
