@@ -568,5 +568,239 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             await _context.SaveChangesAsync();
             return "200"; // Success
         }
+        /// create filters for all the implmention
+        /// 
+        // Add this method at the top of the ArchivingSettingsServices class
+        private IQueryable<T> ApplyFilters<T>(IQueryable<T> query, object filters) where T : class
+        {
+            if (filters == null)
+                return query;
+
+            // Get all properties of the filter object that have values
+            var filterProperties = filters.GetType().GetProperties()
+                .Where(p => p.GetValue(filters) != null)
+                .ToList();
+
+            foreach (var prop in filterProperties)
+            {
+                var value = prop.GetValue(filters);
+                if (value == null)
+                    continue;
+
+                // Skip empty strings and default values
+                if ((value is string strValue && string.IsNullOrWhiteSpace(strValue)) ||
+                    (value is int intValue && intValue == 0))
+                    continue;
+
+                // Map property names from filter object to entity properties
+                var entityPropName = GetEntityPropertyName(typeof(T), prop.Name);
+                if (entityPropName == null)
+                    continue;
+
+                // Check if the entity has this property
+                var entityProperty = typeof(T).GetProperty(entityPropName);
+                if (entityProperty == null)
+                    continue;
+
+                // Build dynamic expression for filtering
+                var parameter = System.Linq.Expressions.Expression.Parameter(typeof(T), "x");
+                var property = System.Linq.Expressions.Expression.Property(parameter, entityPropName);
+
+                System.Linq.Expressions.Expression condition;
+
+                if (value is string)
+                {
+                    // For string properties, use case-insensitive Contains
+                    var methodInfo = typeof(string).GetMethod("Contains", new[] { typeof(string) });
+                    var constant = System.Linq.Expressions.Expression.Constant(value.ToString());
+
+                    condition = System.Linq.Expressions.Expression.Call(property, methodInfo, constant);
+                }
+                else
+                {
+                    // For numeric and other properties, use equality
+                    var targetType = entityProperty.PropertyType;
+                    var convertedValue = value;
+                    if (targetType.IsGenericType && targetType.GetGenericTypeDefinition() == typeof(Nullable<>))
+                    {
+                        convertedValue = Convert.ChangeType(value, Nullable.GetUnderlyingType(targetType));
+                        var constant = System.Linq.Expressions.Expression.Constant(convertedValue, targetType);
+                        condition = System.Linq.Expressions.Expression.Equal(property, constant);
+                    }
+                    else
+                    {
+                        var constant = System.Linq.Expressions.Expression.Constant(value);
+                        condition = System.Linq.Expressions.Expression.Equal(property, constant);
+                    }
+                }
+
+                var lambda = System.Linq.Expressions.Expression.Lambda<Func<T, bool>>(condition, parameter);
+                query = query.Where(lambda);
+            }
+
+            return query;
+        }
+        
+        // Helper method to map filter property names to entity property names
+        private string GetEntityPropertyName(Type entityType, string filterPropertyName)
+        {
+            // Common mappings between filter properties and entity properties
+            var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                // PArcivingPoint mappings
+                {"pointName", "Dscrp"},
+                {"departmentId", "DepartId"},
+                {"branchId", "BranchId"},
+                {"accountUnitId", "AccountUnitId"},
+                {"startWith", "StartWith"},
+        
+                // ArcivDocDscrp mappings
+                {"docuName", "Dscrp"},
+                {"isCode", "IsoCode"},
+        
+                // ArcivSubDocDscrp mappings
+                {"supDocuName", "Dscrp"},
+                {"DocTypeId", "DocTypeId"},
+        
+                // WfPPrecedence mappings
+                {"precedenceName", "Dscrp"},
+                {"maxDate", "MaxDate"}
+            };
+
+            // If we have a direct mapping, use it
+            if (mappings.TryGetValue(filterPropertyName, out var mappedName))
+                return mappedName;
+
+            // Otherwise, check if the entity has a property with the same name
+            if (entityType.GetProperty(filterPropertyName) != null)
+                return filterPropertyName;
+
+            // If no match found, return null
+            return null;
+        }
+
+        // Updated GetAllArchivingPoints method with filtering and BaseResponseDTOs
+        public async Task<BaseResponseDTOs> GetAllArchivingPoints(ArchivingPointViewForm? filters = null)
+        {
+            var query = _context.PArcivingPoints.AsQueryable();
+
+            // Apply filters if provided
+            if (filters != null)
+            {
+                query = ApplyFilters(query, filters);
+            }
+
+            var points = await query.ToListAsync();
+            if (points == null || points.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No archiving points found");
+
+            var result = points.Select(point => new ArchivingPointResponseDTOs
+            {
+                Id = point.Id,
+                backupPath = point.BackupPath,
+                accountUnitId = point.AccountUnitId,
+                branchId = point.BranchId,
+                departmentId = point.DepartId,
+                pointName = point.Dscrp,
+                startWith = point.StartWith,
+                storePath = point.StorePath
+            }).ToList();
+
+            return new BaseResponseDTOs(result, 200);
+        }
+
+        // Updated GetAllDocsTypes method with filtering and BaseResponseDTOs
+        public async Task<BaseResponseDTOs> GetAllDocsTypes(DocTypeViewform? filters = null)
+        {
+            var query = _context.ArcivDocDscrps.AsQueryable();
+
+            // Apply filters if provided
+            if (filters != null)
+            {
+                query = ApplyFilters(query, filters);
+            }
+
+            var docsTypes = await query.ToListAsync();
+            if (docsTypes == null || docsTypes.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No document types found");
+
+            // Get all department IDs from the document types
+            var departmentIds = docsTypes
+                .Where(d => d.DepartId.HasValue)
+                .Select(d => d.DepartId.Value)
+                .Distinct()
+                .ToList();
+
+            // Load all relevant departments at once
+            var departments = await _context.GpDepartments
+                .Where(d => departmentIds.Contains(d.Id))
+                .ToDictionaryAsync(d => d.Id, d => d);
+
+            var result = docsTypes.Select(d => new DocTypeResponseDTOs
+            {
+                Id = d.Id,
+                docuName = d.Dscrp,
+                departmentId = d.DepartId ?? 0,
+                branchId = d.BranchId ?? 0,
+                AccountUnitId = d.AccountUnitId ?? 0,
+                isCode = d.IsoCode,
+                // Add department name if available
+                departmentName = d.DepartId.HasValue && departments.TryGetValue(d.DepartId.Value, out var dept)
+                    ? dept.Dscrp
+                    : null
+            }).ToList();
+
+            return new BaseResponseDTOs(result, 200);
+        }
+
+        // Updated GetAllSupDocsTypes method with filtering and BaseResponseDTOs
+        public async Task<BaseResponseDTOs> GetAllSupDocsTypes(SupDocsTypeViewform? filters = null)
+        {
+            var query = _context.ArcivSubDocDscrps.AsQueryable();
+
+            // Apply filters if provided
+            if (filters != null)
+            {
+                query = ApplyFilters(query, filters);
+            }
+
+            var sups = await query.ToListAsync();
+            if (sups == null || sups.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No supplementary document types found");
+
+            var result = sups.Select(s => new SupDocsTypeResponseDTOs
+            {
+                Id = s.Id,
+                supDocuName = s.Dscrp,
+                DocTypeId = s.DocTypeId
+            }).ToList();
+
+            return new BaseResponseDTOs(result, 200);
+        }
+
+        // Updated GetAllPrecednces method with filtering and BaseResponseDTOs
+        public async Task<BaseResponseDTOs> GetAllPrecednces(PrecedenceViewForm? filters = null)
+        {
+            var query = _context.WfPPrecedences.AsQueryable();
+
+            // Apply filters if provided
+            if (filters != null)
+            {
+                query = ApplyFilters(query, filters);
+            }
+
+            var precednces = await query.ToListAsync();
+            if (precednces == null || precednces.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No precedences found");
+
+            var result = precednces.Select(p => new PrecedenceResponseDTOs
+            {
+                Id = p.Id,
+                precedenceName = p.Dscrp,
+                MaxDate = p.MaxDate
+            }).ToList();
+
+            return new BaseResponseDTOs(result, 200);
+        }
     }
 }

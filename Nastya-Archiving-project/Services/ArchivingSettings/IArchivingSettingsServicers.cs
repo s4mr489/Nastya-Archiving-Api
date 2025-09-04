@@ -46,5 +46,11 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
         Task<(PrecedenceResponseDTOs? precednce, string? error)> GetPrecednceById(int Id);
         Task<string> DeletePrecednce(int Id);
 
+
+        // Filter implementation methods returning BaseResponseDTOs
+        Task<BaseResponseDTOs> GetAllArchivingPoints(ArchivingPointViewForm? filters = null);
+        Task<BaseResponseDTOs> GetAllDocsTypes(DocTypeViewform? filters = null);
+        Task<BaseResponseDTOs> GetAllSupDocsTypes(SupDocsTypeViewform? filters = null);
+        Task<BaseResponseDTOs> GetAllPrecednces(PrecedenceViewForm? filters = null);
     }
 }

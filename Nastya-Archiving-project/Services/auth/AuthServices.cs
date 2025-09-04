@@ -675,7 +675,7 @@ namespace Nastya_Archiving_project.Services.auth
                             // This is a safeguard to ensure minimum operational requirements
                             if (currentActiveUsers <= 1 && totalUsers > 1)
                             {
-                                return new BaseResponseDTOs(null, 400,
+                                return new BaseResponseDTOs(null, 415,
                                     "Cannot deactivate this user as it would leave the system without any active users.");
                             }
 

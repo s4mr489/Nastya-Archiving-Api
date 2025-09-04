@@ -1,4 +1,5 @@
 ﻿using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.AccountUnit;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Branch;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Derpatment;
@@ -12,9 +13,9 @@ namespace Nastya_Archiving_project.Services.infrastructure
     public interface IInfrastructureServices
     {
         /// Account Unit Implementation
-        Task<(AccountUnitResponseDTOs? accountUnit ,string? error)> PostAccountUint(AccountUnitViewForm req);
-        Task<(AccountUnitResponseDTOs? accountUnit , string? error)> EditAccountUint(AccountUnitViewForm req , int Id);
-        Task<(List<AccountUnitResponseDTOs>? accountUnits , string? error)> GetAllAccountUint();
+        Task<(AccountUnitResponseDTOs? accountUnit, string? error)> PostAccountUint(AccountUnitViewForm req);
+        Task<(AccountUnitResponseDTOs? accountUnit, string? error)> EditAccountUint(AccountUnitViewForm req, int Id);
+        Task<(List<AccountUnitResponseDTOs>? accountUnits, string? error)> GetAllAccountUint();
         Task<(AccountUnitResponseDTOs? accountUnits, string? error)> GetAccountUintById(int Id);
         Task<string> DeleteAccountUint(int accountId);
 
@@ -40,7 +41,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
         Task<(DepartmentResponseDTOs? Department, string? error)> GetDepartmentById(int Id);
         Task<string> DeleteDepartment(int Id);
 
-       //POrganization Implementation
+        //POrganization Implementation
         Task<(OrgniztionResponseDTOs? POrganization, string? error)> PostPOrganization(OrgniztionViewForm req);
         Task<(OrgniztionResponseDTOs? POrganization, string? error)> EditPOrganization(OrgniztionViewForm req, int Id);
         Task<(List<OrgniztionResponseDTOs>? POrganization, string? error)> GetAllPOrganizations();
@@ -54,5 +55,13 @@ namespace Nastya_Archiving_project.Services.infrastructure
         Task<(List<JobTitleResponseDTOs>? Job, string? error)> GetAllJobTitle();
         Task<(JobTitleResponseDTOs? Job, string? error)> GetJobTitleById(int Id);
         Task<string> DeleteJobTitle(int Id);
+
+        /// Query Implementation 
+        Task<BaseResponseDTOs> AccountentUnitFilter(string term);
+        Task<BaseResponseDTOs> BranchFilter(BranchViewForm term);
+        Task<BaseResponseDTOs> DepartmentFilter(DepartmentViewForm req);
+        Task<BaseResponseDTOs> OrgnizationFilter(OrgniztionViewForm req);
+        Task<BaseResponseDTOs> GroupFilter(GroupFilterViewFrom req);
     }
+        
 }

@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.AccountUnit;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Branch;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Derpatment;
@@ -30,7 +31,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
         {
             // Check if the account unit Dscrp already exists
             var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(e => e.Dscrp == req.accountUnitName);
-            if(accountUnit != null)
+            if (accountUnit != null)
                 return (null, "400");
 
             var newAccountUnit = new GpAccountingUnit
@@ -61,7 +62,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 accountUnitDscrp = accountUnit.Dscrp,
             };
 
-            return (response , null);
+            return (response, null);
         }
 
         public async Task<(List<AccountUnitResponseDTOs>? accountUnits, string? error)> GetAllAccountUint()
@@ -79,7 +80,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
             return (response, null);
         }
-        public async Task<(AccountUnitResponseDTOs? accountUnit, string? error)> EditAccountUint(AccountUnitViewForm req , int Id)
+        public async Task<(AccountUnitResponseDTOs? accountUnit, string? error)> EditAccountUint(AccountUnitViewForm req, int Id)
         {
             // Find the existing account unit by Id (assuming req.Id exists)
             var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(e => e.Id == Id);
@@ -109,8 +110,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
         public async Task<string> DeleteAccountUint(int accountId)
         {
             // Check if the account unit exists by Id
-            var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(e => e.Id  == accountId);
-            if( accountUnit == null)
+            var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(e => e.Id == accountId);
+            if (accountUnit == null)
                 return "404";
 
             _context.GpAccountingUnits.Remove(accountUnit);
@@ -121,17 +122,17 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<(GroupsResponseDTOs? group, string? error)> PostGroup(GroupViewForm req)
         {
-            var userId =await _systemInfoServices.GetRealName();
-            if(userId.RealName == null) 
-                return (null , userId.error);
+            var userId = await _systemInfoServices.GetRealName();
+            if (userId.RealName == null)
+                return (null, userId.error);
 
             // Check if the group name already exists
             var checkGroup = await _context.Usersgroups.FirstOrDefaultAsync(e => e.Groupdscrp == req.groupDscrp);
-            if( checkGroup != null)
+            if (checkGroup != null)
                 return (null, "400"); // Group name already exists
 
             var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(e => e.Id == req.AccountUnitId);
-            if(accountUnit == null)
+            if (accountUnit == null)
                 return (null, "404"); // Account unit not found
 
             var newGroup = new Usersgroup
@@ -250,7 +251,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
         public async Task<(GroupsResponseDTOs? group, string? error)> GetGrouptById(int groupId)
         {
             var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == groupId);
-            if(group == null)
+            if (group == null)
                 return (null, "404"); // Group not found
 
             var response = new GroupsResponseDTOs
@@ -273,13 +274,13 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<string> DeleteGroup(int groupId)
         {
-             var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == groupId);
+            var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == groupId);
             if (group == null)
                 return "404"; // Group not found
 
             _context.Usersgroups.Remove(group);
             await _context.SaveChangesAsync();
-            return("Removed Successfully"); // Success
+            return ("Removed Successfully"); // Success
         }
 
         //branch Logic
@@ -287,11 +288,11 @@ namespace Nastya_Archiving_project.Services.infrastructure
         public async Task<(BranchResponseDTOs? Branch, string? error)> PostBranch(BranchViewForm req)
         {
             var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Dscrp == req.branchName);
-            if(branch != null)
+            if (branch != null)
                 return (null, "400"); // Branch name already exists
 
-           await  GetAccountUintById(req.accountUnitId);
-            if(GetAccountUintById == null)
+            await GetAccountUintById(req.accountUnitId);
+            if (GetAccountUintById == null)
                 return (null, "404"); // Account unit not found
 
             var newBranch = new GpBranch
@@ -316,7 +317,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
         public async Task<(BranchResponseDTOs? Branch, string? error)> EditBranch(BranchViewForm req, int Id)
         {
             var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == Id);
-            if(branch == null) 
+            if (branch == null)
                 return (null, "404"); // Branch not found
 
             await GetAccountUintById(req.accountUnitId);
@@ -335,13 +336,13 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 branchName = branch.Dscrp,
                 accountUnitId = branch.AccountUnitId
             };
-            return (response , null); //success update Branch
+            return (response, null); //success update Branch
         }
 
         public async Task<(List<BranchResponseDTOs>? Branch, string? error)> GetAllBranches()
         {
-            var branches =await _context.GpBranches.ToListAsync();
-            if(branches == null || branches.Count == 0)
+            var branches = await _context.GpBranches.ToListAsync();
+            if (branches == null || branches.Count == 0)
                 return ((null, "404")); // No branches found
 
             return (branches.Select(b => new BranchResponseDTOs
@@ -354,8 +355,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<(BranchResponseDTOs? Branch, string? error)> GetBranchById(int Id)
         {
-          var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == Id);
-            if(branch == null)
+            var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == Id);
+            if (branch == null)
                 return (null, "404"); // Branch not found
 
             var response = new BranchResponseDTOs
@@ -383,16 +384,16 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<(DepartmentResponseDTOs? Department, string? error)> PostDepartment(DepartmentViewForm req)
         {
-            var department =await _context.GpDepartments.FirstOrDefaultAsync(d => d.Dscrp == req.DepartmentName);
+            var department = await _context.GpDepartments.FirstOrDefaultAsync(d => d.Dscrp == req.DepartmentName);
             if (department != null)
                 return (null, "400"); // Department name already exists
 
             await GetBranchById(req.BranchId);
-            if(GetBranchById == null)
+            if (GetBranchById == null)
                 return (null, "404"); // Branch not found
 
             await GetAccountUintById(req.AccountUnitId);
-            if(GetAccountUintById == null)
+            if (GetAccountUintById == null)
                 return (null, "404"); // Account unit not found
 
             var newDepartment = new GpDepartment
@@ -409,7 +410,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             {
                 Id = newDepartment.Id,
                 DepartmentName = newDepartment.Dscrp,
-                BranchId = newDepartment.BranchId, 
+                BranchId = newDepartment.BranchId,
                 AccountUnitId = newDepartment.AccountUnitId,
             };
 
@@ -419,7 +420,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
         public async Task<(DepartmentResponseDTOs? Department, string? error)> EditDeparment(DepartmentViewForm req, int Id)
         {
             var departmentId = await _context.GpDepartments.FirstOrDefaultAsync(d => d.Id == Id);
-            if(departmentId == null)
+            if (departmentId == null)
                 return (null, "404"); // Department not found
             var department = await _context.GpDepartments.FirstOrDefaultAsync(d => d.Dscrp == req.DepartmentName);
             if (department != null)
@@ -435,7 +436,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
             departmentId.Dscrp = req.DepartmentName;
             departmentId.BranchId = req.BranchId;
-            departmentId.AccountUnitId = req.AccountUnitId; 
+            departmentId.AccountUnitId = req.AccountUnitId;
 
             _context.Update(departmentId);
             await _context.SaveChangesAsync();
@@ -454,8 +455,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<(List<DepartmentResponseDTOs>? Department, string? error)> GetAllDepartment()
         {
-            var departments =await _context.GpDepartments.ToListAsync();
-            if(departments == null || departments.Count == 0)
+            var departments = await _context.GpDepartments.ToListAsync();
+            if (departments == null || departments.Count == 0)
                 return (null, "404"); // No departments found
 
             return (departments.Select(d => new DepartmentResponseDTOs
@@ -504,8 +505,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
             var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
             if (userPermissions.AddParameters != 1)
                 return (null, "403"); // Forbidden
-            var orgn = await _context.POperations.FirstOrDefaultAsync(o => o.Dscrp== req.Dscrp);
-            if(orgn != null)
+            var orgn = await _context.POperations.FirstOrDefaultAsync(o => o.Dscrp == req.Dscrp);
+            if (orgn != null)
                 return (null, "400"); // Organization already exists
 
             await GetAccountUintById(req.AccountUnitId);
@@ -520,7 +521,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             if (GetDepartmentById == null)
                 return (null, "404"); // Department not found
 
-           var newOrgn = new POrganization
+            var newOrgn = new POrganization
             {
                 Dscrp = req.Dscrp,
                 DepartId = req.DepartId,
@@ -545,7 +546,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
         public async Task<(OrgniztionResponseDTOs? POrganization, string? error)> EditPOrganization(OrgniztionViewForm req, int Id)
         {
-            var orgn =await _context.POrganizations.FirstOrDefaultAsync(o => o.Id == Id);
+            var orgn = await _context.POrganizations.FirstOrDefaultAsync(o => o.Id == Id);
             if (orgn == null)
                 return (null, "404"); // Organization not found
 
@@ -566,7 +567,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             orgn.AccountUnitId = req.AccountUnitId;
             orgn.BranchId = req.BranchId;
 
-           _context.POrganizations.Update(orgn);
+            _context.POrganizations.Update(orgn);
             await _context.SaveChangesAsync();
             var response = new OrgniztionResponseDTOs
             {
@@ -583,10 +584,10 @@ namespace Nastya_Archiving_project.Services.infrastructure
         public async Task<(List<OrgniztionResponseDTOs>? POrganization, string? error)> GetAllPOrganizations()
         {
             var organizations = await _context.POrganizations.ToListAsync();
-            if (organizations == null || organizations.Count  == 0)
+            if (organizations == null || organizations.Count == 0)
                 return (null, "404"); // No organizations found
 
-           return (organizations.Select(o => new OrgniztionResponseDTOs
+            return (organizations.Select(o => new OrgniztionResponseDTOs
             {
                 Id = o.Id,
                 Dscrp = o.Dscrp,
@@ -667,12 +668,12 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 StepId = newJob.StepId
             };
 
-          return (response, null); // Success insert Job Title
+            return (response, null); // Success insert Job Title
         }
 
         public async Task<(JobTitleResponseDTOs? Job, string? error)> EditJobTitle(JobTitleViewForm req, int Id)
         {
-           var job = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == Id);
+            var job = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == Id);
             if (job == null)
                 return (null, "404"); // Job title not found
             // Check for duplicate job title (excluding current)
@@ -714,7 +715,7 @@ namespace Nastya_Archiving_project.Services.infrastructure
             if (jobs == null)
                 return (null, "404"); // Job title not found
 
-           if(jobs == null)
+            if (jobs == null)
                 return (null, "404"); // Job title not found
             var response = new JobTitleResponseDTOs
             {
@@ -737,6 +738,158 @@ namespace Nastya_Archiving_project.Services.infrastructure
             return "200"; // Job title Removed Successfully
         }
 
-        
+        public async Task<BaseResponseDTOs> AccountentUnitFilter(string term)
+        {
+            var accountUnits = await _context.GpAccountingUnits
+                .Where(au => au.Dscrp.Contains(term))
+                .Select(au => new AccountUnitResponseDTOs
+                {
+                    Id = au.Id,
+                    accountUnitDscrp = au.Dscrp
+                })
+                .ToListAsync();
+            if(accountUnits == null || accountUnits.Count == 0)
+            {
+                return new BaseResponseDTOs(null, 404, "No Account Units Found");
+            }
+            return new BaseResponseDTOs(accountUnits, 200, "All Account Units Retrieved Successfully");
+        }
+
+        public async Task<BaseResponseDTOs> BranchFilter(BranchViewForm term)
+        {
+            var query = _context.GpBranches.AsQueryable();
+
+            // Filter by branch name if provided
+            if (!string.IsNullOrEmpty(term.branchName))
+                query = query.Where(b => b.Dscrp.Contains(term.branchName));
+
+            // Filter by account unit id if provided
+            if (term.accountUnitId != 0)
+                query = query.Where(b => b.AccountUnitId == term.accountUnitId);
+
+            // Execute query and project results
+            var branches = await query
+                .Select(b => new BranchResponseDTOs
+                {
+                    Id = b.Id,
+                    branchName = b.Dscrp,
+                    accountUnitId = b.AccountUnitId
+                })
+                .ToListAsync();
+            if (branches == null || branches.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No Branches Found");
+
+            // Return response
+            return new BaseResponseDTOs(branches, 200, "All Branches Retrieved Successfully");
+        }
+
+
+        public async Task<BaseResponseDTOs> DepartmentFilter(DepartmentViewForm req)
+        {
+            var query = _context.GpDepartments.AsQueryable();
+            // Filter by department name if provided
+            if (!string.IsNullOrEmpty(req.DepartmentName))
+                query = query.Where(d => d.Dscrp.Contains(req.DepartmentName));
+            // Filter by branch id if provided
+            if (req.BranchId != 0)
+                query = query.Where(d => d.BranchId == req.BranchId);
+            // Filter by account unit id if provided
+            if (req.AccountUnitId != 0)
+                query = query.Where(d => d.AccountUnitId == req.AccountUnitId);
+            // Execute query and project results
+            var departments = await query
+                .Select(d => new DepartmentResponseDTOs
+                {
+                    Id = d.Id,
+                    DepartmentName = d.Dscrp,
+                    BranchId = d.BranchId,
+                    AccountUnitId = d.AccountUnitId
+                })
+                .ToListAsync();
+            if (departments == null || departments.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No Departments Found");
+            // Return response
+            return new BaseResponseDTOs(departments, 200, "All Departments Retrieved Successfully");
+        }
+
+        public async Task<BaseResponseDTOs> OrgnizationFilter(OrgniztionViewForm req)
+        {
+            var query = _context.POrganizations.AsQueryable();
+            if (req.Dscrp != null)
+                query = query.Where(d => d.Dscrp.Contains(req.Dscrp));
+            if (req.AccountUnitId != 0)
+                query = query.Where(d => d.Equals(req.AccountUnitId));
+            if (req.DepartId != 0)
+                query = query.Where(d => d.Equals(req.BranchId));
+            if (req.BranchId != 0)
+                query = query.Where(d => d.Equals(req.BranchId));
+
+            var orgnization = await query
+                .Select(d => new OrgniztionResponseDTOs
+                {
+                    Id = d.Id,
+                    Dscrp = d.Dscrp,
+                    DepartId = d.DepartId,
+                    AccountUnitId = d.AccountUnitId,
+                    BranchId = d.BranchId
+                })
+                .ToListAsync();
+            if(orgnization == null || orgnization.Count == 0)
+            {
+                return new BaseResponseDTOs(null, 404, "No Organizations Found");
+            }
+            return new BaseResponseDTOs(orgnization, 200, "All Organizations Retrieved Successfully");
+        }
+
+        public async Task<BaseResponseDTOs> GroupFilter(GroupFilterViewFrom req)
+        {
+            var query = _context.Usersgroups.AsQueryable();
+
+            // Filter by AccountUnitId if provided
+            if (req.AccountUnitId.HasValue && req.AccountUnitId.Value != 0)
+                query = query.Where(g => g.AccountUnitId == req.AccountUnitId.Value);
+
+            // First get all groups that might match the criteria
+            var allGroups = await query.ToListAsync();
+
+            // Then filter by name if provided (since we need to decrypt first)
+            var filteredGroups = allGroups;
+            if (!string.IsNullOrEmpty(req.groupDscrp))
+            {
+                filteredGroups = allGroups
+                    .Where(g => {
+                        try
+                        {
+                            // Decrypt the group description and check if it contains the search term
+                            var decryptedDesc = _encryptionServices.DecryptString256Bit(g.Groupdscrp);
+                            return decryptedDesc != null &&
+                                   decryptedDesc.Contains(req.groupDscrp, StringComparison.OrdinalIgnoreCase);
+                        }
+                        catch
+                        {
+                            // If decryption fails, don't include this group
+                            return false;
+                        }
+                    })
+                    .ToList();
+            }
+
+            // Map to DTOs
+            var groups = filteredGroups.Select(g => new GroupsResponseDTOs
+            {
+                groupId = g.groupid,
+                groupDscrp = _encryptionServices.DecryptString256Bit(g.Groupdscrp),
+                Editor = g.Editor,
+                EditDate = g.EditDate,
+                AccountUnitId = g.AccountUnitId,
+            }).ToList();
+
+            if (groups == null || groups.Count == 0)
+            {
+                return new BaseResponseDTOs(null, 404, "No Groups Found");
+            }
+
+            return new BaseResponseDTOs(groups, 200, "All Groups Retrieved Successfully");
+        }
     }
 }

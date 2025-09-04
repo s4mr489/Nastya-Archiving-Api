@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.ArchivingPoint;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.DocsType;
 using Nastya_Archiving_project.Models.DTOs.ArchivingSettings.Precedence;
@@ -254,7 +255,38 @@ namespace Nastya_Archiving_project.Controllers
             var result = await _archivingSettings.DeletePrecednce(id);
             if (result == "404")
                 return NotFound();
-            return Ok(result);
+            return Ok(result);  
         }
+
+
+        // Updated controller methods for filtered endpoints
+        [HttpGet("ArchivingPoint/filter")]
+        public async Task<ActionResult<BaseResponseDTOs>> FilterArchivingPoints([FromQuery] ArchivingPointViewForm filter)
+        {
+            var response = await _archivingSettings.GetAllArchivingPoints(filter);
+            return StatusCode(response.StatusCode, response);
+        }
+
+        [HttpGet("DocType/filter")]
+        public async Task<ActionResult<BaseResponseDTOs>> FilterDocTypes([FromQuery] DocTypeViewform filter)
+        {
+            var response = await _archivingSettings.GetAllDocsTypes(filter);
+            return StatusCode(response.StatusCode, response);
+        }
+
+        [HttpGet("SupDocType/filter")]
+        public async Task<ActionResult<BaseResponseDTOs>> FilterSupDocTypes([FromQuery] SupDocsTypeViewform filter)
+        {
+            var response = await _archivingSettings.GetAllSupDocsTypes(filter);
+            return StatusCode(response.StatusCode, response);
+        }
+
+        [HttpGet("Precedence/filter")]
+        public async Task<ActionResult<BaseResponseDTOs>> FilterPrecedences([FromQuery] PrecedenceViewForm filter)
+        {
+            var response = await _archivingSettings.GetAllPrecednces(filter);
+            return StatusCode(response.StatusCode, response);
+        }
+
     }
 }

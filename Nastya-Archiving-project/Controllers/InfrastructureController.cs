@@ -5,6 +5,7 @@ using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.AccountUnit;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Branch;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Derpatment;
+using Nastya_Archiving_project.Models.DTOs.Infrastruture.Group;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.GroupForm;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.JobTitle;
 using Nastya_Archiving_project.Models.DTOs.Infrastruture.Organization;
@@ -82,7 +83,7 @@ namespace Nastya_Archiving_project.Controllers
             var (group, error) = await _infrastructureServices.PostGroup(req);
             if (error == "400")
                 return BadRequest("Group already exists.");
-            if(error == "404")
+            if (error == "404")
                 return NotFound("Account unit not found.");
             if (group == null)
                 return StatusCode(400, error ?? "Unknown error.");
@@ -348,6 +349,42 @@ namespace Nastya_Archiving_project.Controllers
             if (result == "404")
                 return NotFound();
             return Ok(result);
+        }
+
+        [HttpGet("AccountUnit-Filter")]
+        public async Task<IActionResult> AccountentUnitFilter([FromQuery] string term)
+        {
+            var result = await _infrastructureServices.AccountentUnitFilter(term);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Branch-Filter")]
+        public async Task<IActionResult> BranchFilter([FromQuery] BranchViewForm term)
+        {
+            var result = await _infrastructureServices.BranchFilter(term);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Department-Filter")]
+        public async Task<IActionResult> DepartmentFilter([FromQuery] DepartmentViewForm term)
+        {
+            var result = await _infrastructureServices.DepartmentFilter(term);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Orgnization-Filter")]
+        public async Task<IActionResult> OrgnizationFilter([FromQuery] OrgniztionViewForm term)
+        {
+            var result = await _infrastructureServices.OrgnizationFilter(term);
+            return StatusCode(result.StatusCode, result);
+
+        }
+
+        [HttpGet("Group-Filter")]
+        public async Task<IActionResult> GroupFilter([FromQuery] GroupFilterViewFrom term)
+        {
+            var result = await _infrastructureServices.GroupFilter(term);
+            return StatusCode(result.StatusCode, result);
         }
     }
 }

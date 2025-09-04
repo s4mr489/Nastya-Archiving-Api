@@ -136,7 +136,11 @@ namespace Nastya_Archiving_project.Services.usersPermission
                     realName = _encryptionServices.DecryptString256Bit(_context.Users.FirstOrDefault(u => u.Id == (users.Id ?? 0))?.Realname ?? string.Empty),
                     fileType = asaWfuser.FirstOrDefault(a => a.Id == (users.Id ?? 0))?.Id,
                     usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == users.Id),
-                   Activation = userActivation.Stoped,
+                    Activation = userActivation.Stoped,
+                    // Convert DateOnly? to DateTime? (if needed) - this is the fix for the error
+                        JoinDate = userActivation.EditDate.HasValue
+                                ? new DateTime(userActivation.EditDate.Value.Year, userActivation.EditDate.Value.Month, userActivation.EditDate.Value.Day)
+                                : DateTime.MinValue, //
                     archivingPoint = archivingPoints
                         .Where(p => p.UserId == users.Id)
                         .Select(p => new ArchivingPermissionResponseDTOs
