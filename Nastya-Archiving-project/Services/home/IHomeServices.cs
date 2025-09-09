@@ -14,6 +14,6 @@ namespace Nastya_Archiving_project.Services.home
         Task<BaseResponseDTOs> TotalDocsSize();
         Task<BaseResponseDTOs> UserDocsByType(string timeFrame = null);
 
-       
+        Task<BaseResponseDTOs> UserCountByStuts();
     }
 }

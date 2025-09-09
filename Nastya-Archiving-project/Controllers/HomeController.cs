@@ -179,5 +179,12 @@ namespace Nastya_Archiving_project.Controllers
                 return Ok(result);
             return StatusCode(result.StatusCode, result);
         }
+
+        [HttpGet("GetUseCount-By-Status")]
+        public async Task<IActionResult> GetUseCountByStatus()
+        {
+            var result = await _homeServices.UserCountByStuts();
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

@@ -45,5 +45,13 @@ namespace Nastya_Archiving_project.Controllers
             var result = await _userPermissionsServices.DeleteUserPermissionsAsync(request);
             return StatusCode(result.StatusCode, result);
         }
+
+        [HttpGet("get-all-permissionsAndInfo/{Id}")]
+        public async Task<ActionResult<BaseResponseDTOs>> GetAllPermissionsAndInfo(int Id)
+        {
+            var result = await _userPermissionsServices.GetAllPermissionsAndInfoForUser(Id);
+            return StatusCode(result.StatusCode, result);
+        }
+
     }
 }

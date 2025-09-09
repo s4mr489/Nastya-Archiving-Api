@@ -447,6 +447,23 @@ namespace Nastya_Archiving_project.Services.home
                     $"Error creating limitation info folder: {ex.Message}"
                 );
             }
+
+        }
+
+        public async Task<BaseResponseDTOs> UserCountByStuts()
+        {
+            var stopedUser = await _context.Users.Where(u => u.Stoped == 1).CountAsync();
+            var activeUser = await _context.Users.Where(u => u.Stoped == 0).CountAsync();
+
+            return new BaseResponseDTOs(
+                new
+                {
+                    ActiveUsers = activeUser,
+                    StopedUsers = stopedUser
+                },
+                200,
+                null
+            );
         }
     }
 }

@@ -21,5 +21,11 @@ namespace Nastya_Archiving_project.Services.usersPermission
         /// <param name="request"></param>
         /// <returns></returns>
         Task<BaseResponseDTOs> DeleteUserPermissionsAsync(CreateUserPermissionsRequestDTO request);
+        /// <summary>
+        /// this implementation is used to get all permissions and info for a user
+        /// </summary>
+        /// <param name="Id"></param>
+        /// <returns>users permission and departmenents and the info and the optionsPermission to print</returns>
+        Task<BaseResponseDTOs> GetAllPermissionsAndInfoForUser(int Id);
     }
 }

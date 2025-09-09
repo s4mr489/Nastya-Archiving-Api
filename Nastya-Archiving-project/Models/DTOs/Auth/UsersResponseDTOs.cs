@@ -11,5 +11,8 @@
         public string? depart { get; set; }
         public string? jobTitl { get; set; }
         public string? permission { get; set; }
+        public string? phoneNo { get; set; }
+        public string? address { get; set; }
+        public string? email { get; set; }
     }
 }

@@ -2,8 +2,10 @@
 using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models;
 using Nastya_Archiving_project.Models.DTOs;
+using Nastya_Archiving_project.Models.DTOs.Infrastruture.Derpatment;
 using Nastya_Archiving_project.Models.DTOs.Search.UsersSearch;
 using Nastya_Archiving_project.Models.DTOs.UserPermission;
+using Nastya_Archiving_project.Services.auth;
 using Nastya_Archiving_project.Services.encrpytion;
 
 namespace Nastya_Archiving_project.Services.usersPermission
@@ -12,6 +14,7 @@ namespace Nastya_Archiving_project.Services.usersPermission
     {
         private readonly AppDbContext _context;
         private readonly IEncryptionServices _encryptionServices;
+        private readonly IAuthServices _authServices;
 
         public UserPermissionServices(AppDbContext context , IEncryptionServices encryptionServices ) : base(null , context)
         {
@@ -65,6 +68,10 @@ namespace Nastya_Archiving_project.Services.usersPermission
                 userId = u.Id,
                 realName = u.Realname != null ? _encryptionServices.DecryptString256Bit(u.Realname) : null,
                 Activation = u.Stoped,
+                JoinDate = u.EditDate.HasValue
+                    ? new DateTime(u.EditDate.Value.Year, u.EditDate.Value.Month, u.EditDate.Value.Day)
+                    : DateTime.MinValue,
+
                 // Map other properties as needed
             }).ToList();
 
@@ -370,6 +377,36 @@ namespace Nastya_Archiving_project.Services.usersPermission
             return new BaseResponseDTOs("Permissions updated and file type deleted successfully.", 200);
         }
 
+        public async Task<BaseResponseDTOs> GetAllPermissionsAndInfoForUser(int Id)
+        {
+           var user =await _context.Users.FirstOrDefaultAsync(u => u.Id == Id);
+            if(user == null)
+            {
+                return new BaseResponseDTOs(null, 404, "User not found.");
+            }
+            var userInfo = new UserPermissionAndInfosResponseDTOs
+            {
+                Id = user.Id,
+                RealName = user.Realname != null ? _encryptionServices.DecryptString256Bit(user.Realname) : null,
+                Email = user.Email != null ? user.Email : null,
+                PhoneNumber = user.PhoneNo != null ? user.PhoneNo : null,
+                Address = user.Address != null ? user.Address : null,
+                IsActive = user.Stoped == 1 ? "Stopped" : "Active",
+                usersOptionPermissions = await _context.UsersOptionPermissions
+                    .Where(p => p.UserId == Id)
+                    .ToListAsync(),
+                UserDepartement = await (from ud in _context.UsersArchivingPointsPermissions
+                                        join d in _context.GpDepartments on ud.DepartId equals d.Id
+                                        where ud.UserId == Id && ud.DepartId != null
+                                        select new DepartmentResponseDTOs
+                                        {
+                                            Id = d.Id,
+                                            DepartmentName = d.Dscrp
+                                        }).Distinct().ToListAsync()
+            };
+
+            return new BaseResponseDTOs(userInfo, 200);
+        }
     }
 
 }

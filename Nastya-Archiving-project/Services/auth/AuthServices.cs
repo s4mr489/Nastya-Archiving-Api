@@ -324,7 +324,10 @@ namespace Nastya_Archiving_project.Services.auth
                     group = _context.Usersgroups.FirstOrDefault(g => g.groupid == u.GroupId)?.Groupdscrp,
                     accountUnit = _context.GpAccountingUnits.FirstOrDefault(a => a.Id == u.AccountUnitId)?.Dscrp,
                     jobTitl = _context.PJobTitles.FirstOrDefault(j => j.Id == u.JobTitle)?.Dscrp,
-                    permission = _encryptionServices.DecryptString256Bit(u.Adminst)
+                    permission = _encryptionServices.DecryptString256Bit(u.Adminst),
+                    address = u.Address ,
+                    email = u.Email,
+                    phoneNo = u.PhoneNo
                 })
                 .Where(dto => dto != null)
                 .ToList();
@@ -386,6 +389,9 @@ namespace Nastya_Archiving_project.Services.auth
             user.EditDate = DateOnly.FromDateTime(DateTime.Now);
             user.Editor = (await _systemInfoServices.GetRealName()).RealName;
             user.Stoped = user.Stoped; // Retain existing status
+            user.Address = form.Address ?? user.Address;
+            user.Email = form.Email ?? user.Email;
+            user.PhoneNo = form.PhoneNo ?? user.PhoneNo;    
             //user.AsmailCenter = form.AsmailCenter;
             //user.AsWfuser = form.AsWfuser;
             //user.DevisionId = form.DevisionId;
@@ -407,6 +413,9 @@ namespace Nastya_Archiving_project.Services.auth
                 Permtype = _encryptionServices.DecryptString256Bit(user.Permtype),
                 Adminst = _encryptionServices.DecryptString256Bit(user.Adminst),
                 Editor = user.Editor,
+                Address = user.Address , 
+                PhoneNo = user.PhoneNo, 
+                Email = user.Email 
             };
 
             return (result, null);
@@ -451,6 +460,9 @@ namespace Nastya_Archiving_project.Services.auth
                 jobTitl = jobTitle?.Dscrp,
                 Id = user.Id,
                 permission = _encryptionServices.DecryptString256Bit(user.Adminst),
+                address = user.Address ,
+                phoneNo = user.PhoneNo ,
+                email = user.Email 
             };
             return (userDto, null);
         }
