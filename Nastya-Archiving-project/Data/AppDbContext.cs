@@ -675,6 +675,16 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(172)
                 .HasColumnName("permtype");
             entity.Property(e => e.Realname).HasMaxLength(172);
+            entity.Property(e => e.Email)
+            .HasMaxLength(100)
+            .HasColumnName("Email");
+            entity.Property(e => e.PhoneNo)
+            .HasMaxLength(20)
+            .HasColumnName("PhoneNo");
+            entity.Property(e => e.Address)
+            .HasColumnName("Adress_")
+            .HasMaxLength(50);
+
             entity.Property(e => e.UserName).HasMaxLength(172);
             entity.Property(e => e.UserPassword).HasMaxLength(172);
         });

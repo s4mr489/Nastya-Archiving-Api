@@ -67,7 +67,8 @@ namespace Nastya_Archiving_project.Controllers
 
         //that should remove when i done from it because it's danger 
         [HttpGet("test")]
-        public async Task<IActionResult> Test(string username , string password)
+        public async Task<IActionResult> Test(
+            )
         {
             var users = await _context.Users.ToListAsync();
 
@@ -75,12 +76,13 @@ namespace Nastya_Archiving_project.Controllers
             var result = users.Select(user => new
             {
                 user.Id,
-                user.Realname,
-                DecryptedUserName = _encryptionServices.DecryptString256Bit(user.UserName),
-                DecryptedPassword = _encryptionServices.DecryptString256Bit(user.UserPassword),
-                user.GroupId,       
-                DecryptedPermtype =_encryptionServices.DecryptString256Bit(user.Permtype),
-                DecryptedAdminst = _encryptionServices.DecryptString256Bit(user.Adminst),
+                RealName = user.Realname,
+                // Add null checks before decryption
+                DecryptedUserName = user.UserName != null ? _encryptionServices.DecryptString256Bit(user.UserName) : null,
+                DecryptedPassword = user.UserPassword != null ? _encryptionServices.DecryptString256Bit(user.UserPassword) : null,
+                user.GroupId,
+                DecryptedPermtype = user.Permtype != null ? _encryptionServices.DecryptString256Bit(user.Permtype) : null,
+                DecryptedAdminst = user.Adminst != null ? _encryptionServices.DecryptString256Bit(user.Adminst) : null,
                 user.Editor,
                 user.EditDate,
                 user.AccountUnitId,
@@ -90,7 +92,8 @@ namespace Nastya_Archiving_project.Controllers
                 user.BranchId,
                 user.AsWfuser,
                 user.AsmailCenter,
-                user.JobTitle
+                user.JobTitle,
+                user.Stoped
             }).ToList();
 
             return Ok(result);
@@ -138,9 +141,9 @@ namespace Nastya_Archiving_project.Controllers
         }
 
         [HttpGet("GetAllUsers")]
-        public async Task<IActionResult> GetAllUsers([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
+        public async Task<IActionResult> GetAllUsers([FromQuery]string? realName ,[FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
         {
-            var (users, error) = await _authServices.GetAllUsers(pageNumber, pageSize);
+            var (users, error) = await _authServices.GetAllUsers( realName , pageNumber, pageSize);
             if (error != null)
                 return NotFound(error);
             return Ok(users);

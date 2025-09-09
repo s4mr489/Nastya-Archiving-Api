@@ -204,6 +204,9 @@ namespace Nastya_Archiving_project.Services.auth
                 Adminst = _encryptionServices.EncryptString256Bit(IsAdmin ? "1" : "0"),
                 EditDate = DateOnly.FromDateTime(DateTime.Now),
                 Editor = (await _systemInfoServices.GetRealName()).RealName,
+                Address = form.Address,
+                Email = form.Email,
+                PhoneNo = form.PhoneNo,
                 //AsmailCenter = form.AsmailCenter,
                 //AsWfuser = form.AsWfuser,
                 //DevisionId = form.DevisionId,  // this prop null until understand it 
@@ -248,6 +251,9 @@ namespace Nastya_Archiving_project.Services.auth
                 Permtype = _encryptionServices.DecryptString256Bit(user.Permtype),
                 Adminst = _encryptionServices.DecryptString256Bit(user.Adminst),
                 Editor = user.Editor,
+                Email = user.Email,
+                PhoneNo = user.PhoneNo,
+                Address = user.Address
             };
 
             return (result, null);
@@ -288,9 +294,14 @@ namespace Nastya_Archiving_project.Services.auth
             return "200"; // Success
         }
 
-        public async Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(int pageNumber = 1, int pageSize = 10)
+        public async Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(string realName ,int pageNumber = 1, int pageSize = 10 )
         {
             var usersQuery = _context.Users.AsQueryable();
+            if(string.IsNullOrEmpty(realName) == false)
+            {
+                var encryptedRealName = _encryptionServices.EncryptString256Bit(realName);
+                usersQuery = usersQuery.Where(u => u.Realname.Contains(encryptedRealName));
+            }
 
             var totalCount = await usersQuery.CountAsync();
             if (totalCount == 0)

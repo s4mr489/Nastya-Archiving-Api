@@ -23,6 +23,7 @@ namespace Nastya_Archiving_project.Services.usersPermission
         {
             var query = _context.Users.AsQueryable();
 
+            // Apply all non-encrypted filters
             if (search.accountUnitId.HasValue)
                 query = query.Where(d => d.AccountUnitId == search.accountUnitId.Value);
             if (search.branchId.HasValue)
@@ -30,27 +31,39 @@ namespace Nastya_Archiving_project.Services.usersPermission
             if (search.departmentId.HasValue)
                 query = query.Where(d => d.DepariId == search.departmentId.Value);
 
+            // Skip the realname filter for now (we'll apply it after decryption)
+
+            // Get all users based on the other filters
+            var users = await query.OrderByDescending(d => d.Id).ToListAsync();
+
+            // Now decrypt and filter by realname if needed
+            if (!string.IsNullOrEmpty(search.userRealName))
+            {
+                users = users.Where(u =>
+                    u.Realname != null &&
+                    _encryptionServices.DecryptString256Bit(u.Realname)
+                        .Contains(search.userRealName, StringComparison.OrdinalIgnoreCase)
+                ).ToList();
+            }
+
+            // Apply pagination after filtering
             int pageNumber = search.pageNumber != null && search.pageNumber > 0 ? search.pageNumber.Value : 1;
             int pageSize = search.pageSize != null && search.pageSize > 0 ? search.pageSize.Value : 20;
 
-            var users = await query
-                .OrderByDescending(d => d.Id)
+            users = users
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .ToListAsync();
+                .ToList();
 
             if (users == null || users.Count == 0)
             {
-                // Option 1: Return an empty list (recommended for list endpoints)
                 return new List<UsersSearchResponseDTOs>();
-                // Option 2: Throw an exception or handle as needed
-                // throw new Exception("No users found matching the criteria.");
             }
 
             var result = users.Select(u => new UsersSearchResponseDTOs
             {
                 userId = u.Id,
-                realName = _encryptionServices.DecryptString256Bit(u.Realname),
+                realName = u.Realname != null ? _encryptionServices.DecryptString256Bit(u.Realname) : null,
                 Activation = u.Stoped,
                 // Map other properties as needed
             }).ToList();
