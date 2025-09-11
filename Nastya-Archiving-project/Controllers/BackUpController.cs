@@ -142,6 +142,20 @@ namespace Nastya_Archiving_project.Controllers
                 });
             }
         }
+
+        [HttpGet("Get-Last-Four-Parttions-For-BackUp")]
+        public async Task<IActionResult> BackUpParttions()
+        {
+            var result = await _systemInfoServices.GetLastFourPartitions();
+            return StatusCode(result.StatusCode , result);
+        }
+
+        [HttpGet("Get-Storage-For-BackUp")]
+        public async Task<IActionResult> Storage()
+        {
+            var result = await _systemInfoServices.GetIPartition();
+            return StatusCode(result.StatusCode, result);
+        }
         public class BackupRequest
         {
             public string BackupPath { get; set; } = "";

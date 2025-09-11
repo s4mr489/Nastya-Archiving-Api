@@ -399,5 +399,110 @@ namespace Nastya_Archiving_project.Services.SystemInfo
             // Check if any of the archiving points belong to the requested department
             return archivingPointsWithDepartIds.Any(ap => ap.DepartId == departId);
         }
+
+        /// <summary>
+        /// Gets the last 4 partitions on the server from W to Z (if available)
+        /// </summary>
+        /// <returns>BaseResponseDTOs containing a list of drive letters with their free space in GB</returns>
+        public async Task<BaseResponseDTOs> GetLastFourPartitions()
+        {
+            try
+            {
+                var result = new List<object>();
+
+                // Define the target drive letters (W, X, Y, Z)
+                var targetDrives = new[] { "W", "X", "Y", "Z" };
+
+                // Get all available drives
+                var allDrives = DriveInfo.GetDrives();
+
+                // Filter and get only the required drives
+                foreach (var letter in targetDrives)
+                {
+                    var drive = allDrives.FirstOrDefault(d =>
+                        d.IsReady &&
+                        d.DriveType == DriveType.Fixed &&
+                        d.Name.StartsWith(letter, StringComparison.OrdinalIgnoreCase));
+
+                    if (drive != null)
+                    {
+                        double freeSpaceGB = Math.Round(drive.TotalFreeSpace / (1024.0 * 1024 * 1024), 2);
+                        double totalSpaceGB = Math.Round(drive.TotalSize / (1024.0 * 1024 * 1024), 2);
+
+                        result.Add(new
+                        {
+                            DriveLetter = drive.Name.TrimEnd('\\', '/'),
+                            FreeSpaceGB = freeSpaceGB,
+                            TotalSpaceGB = totalSpaceGB,
+                            UsedSpaceGB = Math.Round(totalSpaceGB - freeSpaceGB, 2),
+                            PercentageFree = Math.Round((freeSpaceGB / totalSpaceGB) * 100, 2)
+                        });
+                    }
+                }
+
+                if (result.Count == 0)
+                {
+                    return new BaseResponseDTOs(null, 404, "No drives found from W to Z");
+                }
+
+                return new BaseResponseDTOs(result, 200);
+            }
+            catch (Exception ex)
+            {
+                return new BaseResponseDTOs(null, 500, $"Error retrieving drive information: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Gets information about partitions I through V if they exist on the server
+        /// </summary>
+        /// <returns>BaseResponseDTOs containing drive letters and space information</returns>
+        public async Task<BaseResponseDTOs> GetIPartition()
+        {
+            try
+            {
+                // Define the target drive letters (I through V)
+                var targetDrives = new[] { "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V" };
+                var result = new List<object>();
+
+                // Get all available drives
+                var allDrives = DriveInfo.GetDrives();
+
+                // Filter and get only the required drives (I through V)
+                foreach (var letter in targetDrives)
+                {
+                    var drive = allDrives.FirstOrDefault(d =>
+                        d.IsReady &&
+                        d.DriveType == DriveType.Fixed &&
+                        d.Name.StartsWith(letter, StringComparison.OrdinalIgnoreCase));
+
+                    if (drive != null)
+                    {
+                        double freeSpaceGB = Math.Round(drive.TotalFreeSpace / (1024.0 * 1024 * 1024), 2);
+                        double totalSpaceGB = Math.Round(drive.TotalSize / (1024.0 * 1024 * 1024), 2);
+
+                        result.Add(new
+                        {
+                            DriveLetter = drive.Name.TrimEnd('\\', '/'),
+                            FreeSpaceGB = freeSpaceGB,
+                            TotalSpaceGB = totalSpaceGB,
+                            UsedSpaceGB = Math.Round(totalSpaceGB - freeSpaceGB, 2),
+                            PercentageFree = Math.Round((freeSpaceGB / totalSpaceGB) * 100, 2)
+                        });
+                    }
+                }
+
+                if (result.Count == 0)
+                {
+                    return new BaseResponseDTOs(null, 404, "No drives found from I to V");
+                }
+
+                return new BaseResponseDTOs(result, 200, "Drives I through V retrieved successfully");
+            }
+            catch (Exception ex)
+            {
+                return new BaseResponseDTOs(null, 500, $"Error retrieving drive information: {ex.Message}");
+            }
+        }
     }
 }

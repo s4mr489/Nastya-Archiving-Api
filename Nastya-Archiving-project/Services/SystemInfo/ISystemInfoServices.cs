@@ -15,5 +15,7 @@ namespace Nastya_Archiving_project.Services.SystemInfo
         Task<string> ExportTableToExcelAsync<T>(string filePath) where T : class;
 
         Task<bool> CheckUserHaveDepart(int departId, int userId);
+        Task<BaseResponseDTOs> GetLastFourPartitions();
+        Task<BaseResponseDTOs> GetIPartition();
     }
 }
