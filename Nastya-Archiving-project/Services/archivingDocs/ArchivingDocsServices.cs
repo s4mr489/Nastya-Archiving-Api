@@ -599,6 +599,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 ReferenceTo = joinedDocs.ParentRefrenceNO,
                 RefrenceNo = joinedDocs.ChildRefrenceNo,
             };
+            docs.ReferenceTo = "True";
             childDocs.ReferenceTo = joinedDocs.ParentRefrenceNO;
 
             _context.JoinedDocs.Add(joinedDocs);
