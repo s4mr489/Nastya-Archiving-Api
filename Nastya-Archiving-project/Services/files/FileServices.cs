@@ -1671,10 +1671,6 @@ namespace Nastya_Archiving_project.Services.files
                 if (resolvedOldPath == null || !File.Exists(resolvedOldPath))
                     return (null, $"Original file not found at: {oldFilePath}");
 
-                // Analyze path structure to find the document type segment
-                // In this application, the path structure is: 
-                // storePath/startWith/year/department/month/docType/filename.ext.gz
-
                 // Get the directory and filename
                 string oldDirectory = Path.GetDirectoryName(resolvedOldPath);
                 string fileName = Path.GetFileName(resolvedOldPath);
@@ -1684,25 +1680,25 @@ namespace Nastya_Archiving_project.Services.files
 
                 // Split path into segments
                 string[] pathSegments = oldDirectory.Split(Path.DirectorySeparatorChar);
-                
+
                 // We need enough segments to have a valid path with a document type
                 if (pathSegments.Length < 2)
                     return (null, "The file path structure is not valid for document type update.");
-                
+
                 // Assuming the document type is the last segment in the directory path
                 // (right before the filename)
                 int docTypeIndex = pathSegments.Length - 1;
-                
+
                 // Create a copy of the segments array and replace the document type
                 string[] newPathSegments = (string[])pathSegments.Clone();
                 newPathSegments[docTypeIndex] = newDocType;
-                
+
                 // Reconstruct the directory path with the new document type
                 string newDirectory = string.Join(Path.DirectorySeparatorChar.ToString(), newPathSegments);
-                
+
                 // Create the full new path
                 string newPath = Path.Combine(newDirectory, fileName);
-                
+
                 // Ensure the new directory exists
                 if (!Directory.Exists(newDirectory))
                 {
@@ -1720,8 +1716,18 @@ namespace Nastya_Archiving_project.Services.files
                 if (File.Exists(newPath))
                     return (null, $"A file already exists at the new location: {newPath}");
 
-                // Move the file to the new location
-                File.Move(resolvedOldPath, newPath);
+                try
+                {
+                    // First try to copy the file to ensure it succeeds
+                    File.Copy(resolvedOldPath, newPath);
+
+                    // Then delete the original
+                    File.Delete(resolvedOldPath);
+                }
+                catch (Exception ex)
+                {
+                    return (null, $"File operation failed: {ex.Message}");
+                }
 
                 // Convert back to web-friendly path format for return
                 string webPath = newPath.Replace(Path.DirectorySeparatorChar, '/');

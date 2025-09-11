@@ -263,21 +263,19 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
             if (docTypeResponse.docsType == null)
                 return (null, "Invalid document type.");
-            
+
             // Store original values for logging
             var originalDocData = FormatRecordData(docs);
-            
+
+            // Keep track of whether the document type is changing
+            bool isDocTypeChanging = req.DocType != 0 && req.DocType != docs.DocType;
+            int originalDocType = docs.DocType;
+
             // Update properties
             docs.DocNo = req.DocNo ?? docs.DocNo;
             docs.DocDate = req.DocDate ?? docs.DocDate;
-           // docs.DocSource = req.DocSource;
-           // docs.DocTarget = req.DocTarget;
             docs.DocTitle = req.DocTitle ?? docs.DocTitle;
-            docs.DocType = docTypeResponse.docsType.Id;
-            docs.SubDocType = req.SubDocType  != null ? req.SubDocType : null;
-           // docs.DepartId = departId != null ? int.Parse(departId) : null;
-           // docs.BranchId = branchId != null ? int.Parse(branchId) : null;
-          //  docs.AccountUnitId = accountUnitId != null ? int.Parse(accountUnitId) : null;
+            docs.SubDocType = req.SubDocType != null ? req.SubDocType : null;
             docs.BoxfileNo = req.BoxfileNo ?? docs.BoxfileNo;
             docs.EditDate = DateTime.UtcNow;
             docs.Editor = (await _systemInfoServices.GetRealName()).RealName;
@@ -287,18 +285,73 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             docs.Notes = req.Notes ?? docs.Notes;
             docs.WordsTosearch = req.WordsTosearch ?? docs.WordsTosearch;
 
+            // If document type is changing, update it first
+            if (isDocTypeChanging)
+            {
+                Console.WriteLine($"Document type changing from {originalDocType} to {req.DocType}");
+                docs.DocType = docTypeResponse.docsType.Id;
+            }
 
-            var changePath = await _fileServices.UpdateFilePathAsync(docs.ImgUrl, docTypeResponse.docsType.departmentName);
-            docs.ImgUrl = changePath.updatedFilePath;
+            // Only attempt to update file path if there's a valid ImgUrl and doc type is changing
+            if (isDocTypeChanging && !string.IsNullOrEmpty(docs.ImgUrl))
+            {
+                try
+                {
+                    Console.WriteLine($"Attempting to update file path for document {docs.Id}. Current path: {docs.ImgUrl}");
 
-            await _context.SaveChangesAsync();
-            
+                    // Try with both docuName and departmentName since we're not sure which one is needed
+                    var changePath = await _fileServices.UpdateFilePathAsync(docs.ImgUrl, docTypeResponse.docsType.docuName);
+
+                    if (changePath.error != null)
+                    {
+                        Console.WriteLine($"Error updating file path with docuName: {changePath.error}");
+
+                        // If docuName fails, try with departmentName as fallback
+                        if (!string.IsNullOrEmpty(docTypeResponse.docsType.departmentName))
+                        {
+                            Console.WriteLine($"Trying with departmentName: {docTypeResponse.docsType.departmentName}");
+                            changePath = await _fileServices.UpdateFilePathAsync(docs.ImgUrl, docTypeResponse.docsType.departmentName);
+                        }
+                    }
+
+                    if (changePath.error != null)
+                    {
+                        Console.WriteLine($"Error updating file path: {changePath.error}");
+                    }
+                    else if (!string.IsNullOrEmpty(changePath.updatedFilePath))
+                    {
+                        Console.WriteLine($"File path updated successfully: {changePath.updatedFilePath}");
+                        docs.ImgUrl = changePath.updatedFilePath;
+                    }
+                    else
+                    {
+                        Console.WriteLine("File path update returned empty result");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Exception during file path update: {ex.Message}");
+                }
+            }
+
+            // Save changes to the database
+            try
+            {
+                await _context.SaveChangesAsync();
+                Console.WriteLine($"Document {docs.Id} saved with ImgUrl: {docs.ImgUrl}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving document changes: {ex.Message}");
+                return (null, $"Error saving document: {ex.Message}");
+            }
+
             // Log the document update action with the formatted data
             string updatedDocData = FormatRecordData(docs);
             await LogUserAction(
-                model: "Archiving", 
+                model: "Archiving",
                 tableName: "Arciving_Docs",
-                tableNameA: "جدول ارشفة الوثائق", 
+                tableNameA: "جدول ارشفة الوثائق",
                 recordId: docs.RefrenceNo.ToString(),
                 recordData: updatedDocData,
                 operationType: "Update",
@@ -331,10 +384,10 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 DocSize = docs.DocSize,
                 BranchId = docs.BranchId,
                 Notes = docs.Notes,
-                FileType = fileType != null ? int.Parse(fileType) : null, // <-- FIXED LINE
+                FileType = fileType != null ? int.Parse(fileType) : null,
                 TheMonth = docs.TheMonth,
-                SubDocType = docs.SubDocType, // <-- FIXED LINE
-                Fourth = docs.Fourth, // <-- FIXED LINE
+                SubDocType = docs.SubDocType,
+                Fourth = docs.Fourth,
             };
             return (response, null);
         }
