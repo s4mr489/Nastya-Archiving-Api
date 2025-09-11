@@ -152,13 +152,12 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             return sb.ToString();
         }
 
-        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> PostArchivingDocs(ArchivingDocsViewForm req ,FileViewForm file)
+        public async Task<(ArchivingDocsResponseDTOs? docs, string? error)> PostArchivingDocs(ArchivingDocsViewForm req, FileViewForm file)
         {
-            //check the docs if exists By docs  Number and docs type Id
-            var docs =await  _context.ArcivingDocs.FirstOrDefaultAsync(e => e.DocNo== req.DocNo && e.DocType== req.DocType);
-            if(docs != null)
+            //check the docs if exists By docs Number and docs type Id
+            var docs = await _context.ArcivingDocs.FirstOrDefaultAsync(e => e.DocNo == req.DocNo && e.DocType == req.DocType);
+            if (docs != null)
                 return (null, "This document already exists.");
-
 
             // Inside your method, for example in PostArchivingDocs:
             var claimsIdentity = (ClaimsIdentity)_httpContext.HttpContext.User.Identity;
@@ -174,25 +173,25 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
 
-
             if (!int.TryParse(userId.Id, out int userIdInt))
                 return (null, "Invalid user ID.");
             var hasPermission = await _systemInfoServices.CheckUserHaveDepart(req.DepartId, userIdInt);
 
-
-            if(userPermissions.AllowAddToOther == 0  && hasPermission == false && req.DepartId.ToString() != departId || userPermissions.AllowAddToOther == 1 && hasPermission == false && req.DepartId.ToString() != departId)
-                return(null, "403"); // Forbidden
-           
+            if (userPermissions.AllowAddToOther == 0 && hasPermission == false && req.DepartId.ToString() != departId ||
+               userPermissions.AllowAddToOther == 1 && hasPermission == false && req.DepartId.ToString() != departId)
+                return (null, "403"); // Forbidden
 
             var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
             if (docTypeResponse.docsType == null)
                 return (null, "Invalid document type.");
 
-
+            // Set document type description for file upload
             file.DocTypeDscrption = docTypeResponse.docsType.docuName;
-            var docFile = (await _fileServices.upload(file));
-            if (docFile.error != null)
-                return (null, "File upload failed.");
+
+            // Upload file only once and store the result
+            var uploadResult = await _fileServices.upload(file);
+            if (uploadResult.error != null)
+                return (null, $"File upload failed: {uploadResult.error}");
 
             // If the claim is not found, you can set it to null or handle it as needed
             // that manual mapper to the ArcivingDoc model
@@ -201,7 +200,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 RefrenceNo = await _systemInfoServices.GetLastRefNo(),
                 DocNo = req.DocNo,
                 DocDate = req.DocDate,
-                DocSize = (await _fileServices.upload(file)).fileSize,
+                DocSize = uploadResult.fileSize, // Use the file size from the upload result
                 DocSource = req.DocSource,
                 DocTarget = req.DocTarget,
                 DocTitle = req.DocTitle,
@@ -214,7 +213,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 EditDate = DateTime.UtcNow,
                 Editor = (await _systemInfoServices.GetRealName()).RealName,
                 Ipaddress = (await _systemInfoServices.GetUserIpAddress()),
-                ImgUrl = docFile.file,
+                ImgUrl = uploadResult.file, // Use the file path from the upload result
                 FileType = fileType != null ? int.Parse(fileType) : null,
                 Subject = req.Subject,
                 TheMonth = DateTime.UtcNow.Month,
@@ -234,15 +233,15 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             // Log the document creation action
             await LogUserAction(
-                model: "Archiving", 
+                model: "Archiving",
                 tableName: "Arciving_Docs",
-                tableNameA: "جدول ارشفة الوثائق", 
+                tableNameA: "جدول ارشفة الوثائق",
                 recordId: newDoc.RefrenceNo,
                 recordData: recordData,
                 operationType: "Add",
                 accountUnitId: newDoc.AccountUnitId
             );
-                
+
             var response = _mapper.Map<ArchivingDocsResponseDTOs>(newDoc);
             return (response, null);
         }
@@ -287,6 +286,10 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             docs.ReferenceTo = req.ReferenceTo ?? docs.ReferenceTo;
             docs.Notes = req.Notes ?? docs.Notes;
             docs.WordsTosearch = req.WordsTosearch ?? docs.WordsTosearch;
+
+
+            var changePath = await _fileServices.UpdateFilePathAsync(docs.ImgUrl, docTypeResponse.docsType.departmentName);
+            docs.ImgUrl = changePath.updatedFilePath;
 
             await _context.SaveChangesAsync();
             

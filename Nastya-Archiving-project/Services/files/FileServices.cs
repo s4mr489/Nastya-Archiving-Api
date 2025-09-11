@@ -1332,7 +1332,7 @@ namespace Nastya_Archiving_project.Services.files
                             destinationPath = Path.Combine(tempDir, $"{fileNameWithoutExt}_{uniqueSuffix}{fileExtension}");
                         }
 
-                        // Decrypt and decompress the file
+                        // Decrypt and compress the file
                         await DecryptAndProcessFile(filePath, destinationPath, key, isGzipped);
                         successCount++;
                     }
@@ -1644,12 +1644,12 @@ namespace Nastya_Archiving_project.Services.files
 
 
         /// <summary>
-        /// Updates a file's path by moving it to a new location and removing it from the original location
+        /// Updates a file's path by changing only the document type segment in the path and moving the file
         /// </summary>
         /// <param name="oldFilePath">The current file path</param>
-        /// <param name="newFilePath">The new file path where the file should be moved to</param>
+        /// <param name="newDocType">The new document type description to use in the path</param>
         /// <returns>Tuple containing the updated file path (if successful) and any error message</returns>
-        public async Task<(string? updatedFilePath, string? error)> UpdateFilePathAsync(string oldFilePath, string newFilePath)
+        public async Task<(string? updatedFilePath, string? error)> UpdateFilePathAsync(string oldFilePath, string newDocType)
         {
             try
             {
@@ -1657,21 +1657,54 @@ namespace Nastya_Archiving_project.Services.files
                 if (string.IsNullOrWhiteSpace(oldFilePath))
                     return (null, "Original file path is required.");
 
-                if (string.IsNullOrWhiteSpace(newFilePath))
-                    return (null, "New file path is required.");
+                if (string.IsNullOrWhiteSpace(newDocType))
+                    return (null, "New document type is required.");
 
-                // Normalize paths
-                oldFilePath = oldFilePath.Replace('/', Path.DirectorySeparatorChar);
-                newFilePath = newFilePath.Replace('/', Path.DirectorySeparatorChar);
+                // Sanitize the new document type
+                newDocType = SanitizePathComponent(newDocType);
 
-                // Resolve the full paths
-                string? resolvedOldPath = ResolveFilePath(oldFilePath);
+                // Normalize paths for processing
+                string normalizedOldPath = oldFilePath.Replace('/', Path.DirectorySeparatorChar);
+
+                // Resolve the full path to the existing file
+                string? resolvedOldPath = ResolveFilePath(normalizedOldPath);
                 if (resolvedOldPath == null || !File.Exists(resolvedOldPath))
                     return (null, $"Original file not found at: {oldFilePath}");
 
-                // Ensure the directory for the new path exists
-                string? newDirectory = Path.GetDirectoryName(newFilePath);
-                if (!string.IsNullOrEmpty(newDirectory) && !Directory.Exists(newDirectory))
+                // Analyze path structure to find the document type segment
+                // In this application, the path structure is: 
+                // storePath/startWith/year/department/month/docType/filename.ext.gz
+
+                // Get the directory and filename
+                string oldDirectory = Path.GetDirectoryName(resolvedOldPath);
+                string fileName = Path.GetFileName(resolvedOldPath);
+
+                if (string.IsNullOrEmpty(oldDirectory))
+                    return (null, "Could not determine directory from file path.");
+
+                // Split path into segments
+                string[] pathSegments = oldDirectory.Split(Path.DirectorySeparatorChar);
+                
+                // We need enough segments to have a valid path with a document type
+                if (pathSegments.Length < 2)
+                    return (null, "The file path structure is not valid for document type update.");
+                
+                // Assuming the document type is the last segment in the directory path
+                // (right before the filename)
+                int docTypeIndex = pathSegments.Length - 1;
+                
+                // Create a copy of the segments array and replace the document type
+                string[] newPathSegments = (string[])pathSegments.Clone();
+                newPathSegments[docTypeIndex] = newDocType;
+                
+                // Reconstruct the directory path with the new document type
+                string newDirectory = string.Join(Path.DirectorySeparatorChar.ToString(), newPathSegments);
+                
+                // Create the full new path
+                string newPath = Path.Combine(newDirectory, fileName);
+                
+                // Ensure the new directory exists
+                if (!Directory.Exists(newDirectory))
                 {
                     try
                     {
@@ -1683,32 +1716,15 @@ namespace Nastya_Archiving_project.Services.files
                     }
                 }
 
-                // Check if the file is encrypted/compressed (GZ extension)
-                bool isCompressed = resolvedOldPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+                // Check if destination file already exists
+                if (File.Exists(newPath))
+                    return (null, $"A file already exists at the new location: {newPath}");
 
-                // Ensure destination has same extension
-                if (isCompressed && !newFilePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
-                    newFilePath += ".gz";
+                // Move the file to the new location
+                File.Move(resolvedOldPath, newPath);
 
-                // Ensure new path is fully qualified
-                if (!Path.IsPathRooted(newFilePath))
-                {
-                    newFilePath = Path.Combine(Directory.GetCurrentDirectory(), newFilePath);
-                }
-
-                // Check if destination already exists
-                if (File.Exists(newFilePath))
-                    return (null, $"Destination file already exists: {newFilePath}");
-
-                // Move the file
-                File.Move(resolvedOldPath, newFilePath);
-
-                // Convert back to web-friendly path format
-                string webPath = newFilePath.Replace(Path.DirectorySeparatorChar, '/');
-
-                // Update path in database if needed
-                // This would depend on your specific requirements
-                // Example: _context.Files.Where(f => f.FilePath == oldFilePath).Update(f => f.FilePath = webPath);
+                // Convert back to web-friendly path format for return
+                string webPath = newPath.Replace(Path.DirectorySeparatorChar, '/');
 
                 return (webPath, null);
             }
