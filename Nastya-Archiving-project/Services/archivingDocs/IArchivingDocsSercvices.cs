@@ -44,5 +44,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             int pageSize = 10,
             bool getLastImage = false,
             bool getFirstImage = false);
+
+        Task<BaseResponseDTOs> UnbindDoucAllDocsFromTheParent(string parentSystemId);
     }
 }

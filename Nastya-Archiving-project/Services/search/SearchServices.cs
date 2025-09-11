@@ -570,6 +570,12 @@ namespace Nastya_Archiving_project.Services.search
                     .ToListAsync();
                 var docTypeNames = docTypes.ToDictionary(x => x.Id, x => x.Dscrp);
 
+                // Get reference information from JoinedDocs table
+                var refNos = pagedDocs.Select(d => d.RefrenceNo).ToList();
+                var joinedDocs = await _context.JoinedDocs
+                    .Where(j => refNos.Contains(j.ChildRefrenceNo))
+                    .ToDictionaryAsync(j => j.ChildRefrenceNo, j => j.ParentRefrenceNO);
+
                 var result = pagedDocs.Select(d => new DetialisSearchResponseDTOs
                 {
                     Id = d.Id,
@@ -579,14 +585,14 @@ namespace Nastya_Archiving_project.Services.search
                     editDate = d.EditDate.HasValue ? d.EditDate.Value : null,
                     subject = d.Subject,
                     source = d.DocSource != null ? d.DocSource.ToString() : null,
-                    ReferenceTo = d.ReferenceTo,
+                    ReferenceTo = joinedDocs.TryGetValue(d.RefrenceNo, out var parentRef) ? parentRef : d.ReferenceTo,
                     fileType = d.FileType != null ? d.FileType.ToString() : null,
                     supdocType = d.SubDocType,
                     BoxOn = d.BoxfileNo != null ? d.BoxfileNo : null,
                     Notice = d.Notes != null ? d.Notes : null,
                     systemId = d.RefrenceNo != null ? d.RefrenceNo : null,
                     docsTitle = docTypeNames.ContainsKey(d.DocType) ? docTypeNames[d.DocType] : null, // Add docType name
-                    
+
                 }).ToList();
 
                 if (result == null || result.Count == 0)
@@ -832,9 +838,30 @@ namespace Nastya_Archiving_project.Services.search
             if (req.source.HasValue)
                 query = query.Where(d => d.DocSource != null && d.DocSource.Value == req.source.Value);
 
-            // Fixed condition for ReferenceTo - treating it as a string comparison
+            // Check for related document references
             if (!string.IsNullOrEmpty(req.relateTo))
-                query = query.Where(d => d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo));
+            {
+                // Look for documents that either:
+                // 1. Have the relateTo value directly in their ReferenceTo field
+                // 2. Have an entry in the JoinedDocs table where this document is the parent
+                var joinedDocRefs = _context.JoinedDocs
+                    .Where(j => j.ParentRefrenceNO == req.relateTo)
+                    .Select(j => j.ChildRefrenceNo)
+                    .ToList();
+
+                if (joinedDocRefs.Any())
+                {
+                    // If we found related documents in JoinedDocs, include documents with matching RefrenceNo
+                    query = query.Where(d =>
+                        (d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo)) ||
+                        joinedDocRefs.Contains(d.RefrenceNo));
+                }
+                else
+                {
+                    // If no joined documents found, just check the ReferenceTo field
+                    query = query.Where(d => d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo));
+                }
+            }
 
             if (!string.IsNullOrWhiteSpace(req.wordToSearch))
                 query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
@@ -890,29 +917,115 @@ namespace Nastya_Archiving_project.Services.search
                 .Where(dt => docTypeIds.Contains(dt.Id))
                 .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
 
-            var result = pagedDocs.Select(d => new
+            // Get reference information from JoinedDocs table
+            var refNos = pagedDocs.Select(d => d.RefrenceNo).ToList();
+            var joinedDocs = await _context.JoinedDocs
+                .Where(j => refNos.Contains(j.ChildRefrenceNo))
+                .ToDictionaryAsync(j => j.ChildRefrenceNo, j => j.ParentRefrenceNO);
+
+            // Collect all parent reference numbers
+            var allParentRefNos = new HashSet<string>();
+
+            foreach (var doc in pagedDocs)
             {
-                d.Id,
-                d.RefrenceNo,
-                d.ImgUrl,
-                d.DocNo,
-                d.DocDate,
-                d.DocTarget,
-                d.DocSource,
-                d.DocType,
-                DocTypeName = docTypes.TryGetValue(d.DocType, out var typeName) ? typeName : null,
-                d.BoxfileNo,
-                d.Subject,
-                d.ReferenceTo
+                if (joinedDocs.TryGetValue(doc.RefrenceNo, out var parentRef))
+                {
+                    allParentRefNos.Add(parentRef);
+                }
+                else if (!string.IsNullOrEmpty(doc.ReferenceTo))
+                {
+                    allParentRefNos.Add(doc.ReferenceTo);
+                }
+            }
+
+            // Get parent document details
+            var parentDocs = await _context.ArcivingDocs
+                .Where(d => allParentRefNos.Contains(d.RefrenceNo))
+                .ToListAsync();
+
+            // Create a dictionary for quick lookup of parent documents by reference number
+            var parentDocsByRef = parentDocs.ToDictionary(d => d.RefrenceNo, d => d);
+
+            // Get parent document type names
+            var parentDocTypeIds = parentDocs.Select(d => d.DocType).Distinct().ToList();
+            var parentDocTypes = await _context.ArcivDocDscrps
+                .Where(dt => parentDocTypeIds.Contains(dt.Id))
+                .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
+
+            // Prepare the result items with parent reference information
+            var resultItems = pagedDocs.Select(d =>
+            {
+                // Determine parent reference number
+                string parentRefNo = joinedDocs.TryGetValue(d.RefrenceNo, out var joinedParentRef)
+                    ? joinedParentRef
+                    : d.ReferenceTo;
+
+                // Try to get parent document
+                bool hasParentDoc = parentDocsByRef.TryGetValue(parentRefNo, out var parentDoc);
+
+                return new
+                {
+                    d.Id,
+                    d.RefrenceNo,
+                    d.ImgUrl,
+                    d.DocNo,
+                    d.DocDate,
+                    d.DocTarget,
+                    d.DocSource,
+                    d.DocType,
+                    DocTypeName = docTypes.TryGetValue(d.DocType, out var typeName) ? typeName : null,
+                    d.BoxfileNo,
+                    d.Subject,
+                    ParentReferenceNo = parentRefNo,
+                    ParentDocument = hasParentDoc ? new
+                    {
+                        parentDoc.Id,
+                        parentDoc.RefrenceNo,
+                        parentDoc.ImgUrl,
+                        parentDoc.DocNo,
+                        parentDoc.DocDate,
+                        parentDoc.DocTarget,
+                        parentDoc.DocSource,
+                        parentDoc.DocType,
+                        DocTypeName = parentDocTypes.TryGetValue(parentDoc.DocType, out var parentTypeName) ? parentTypeName : null,
+                        parentDoc.BoxfileNo,
+                        parentDoc.Subject
+                    } : null
+                };
             }).ToList();
 
-            if (result.Count == 0)
+            if (resultItems.Count == 0)
                 return new BaseResponseDTOs(null, 404, "No documents found with ReferenceTo matching your criteria.");
+
+            // Group results by parent reference number
+            var groupedResult = resultItems
+                .GroupBy(item => item.ParentReferenceNo)
+                .OrderBy(group => group.Key)
+                .Select(group => new
+                {
+                    ParentReferenceNo = group.Key,
+                    ParentDocument = group.First().ParentDocument, // Include parent document information
+                    Documents = group.Select(doc => new
+                    {
+                        doc.Id,
+                        doc.RefrenceNo,
+                        doc.ImgUrl,
+                        doc.DocNo,
+                        doc.DocDate,
+                        doc.DocTarget,
+                        doc.DocSource,
+                        doc.DocType,
+                        doc.DocTypeName,
+                        doc.BoxfileNo,
+                        doc.Subject
+                    }).ToList()
+                })
+                .ToList();
 
             return new BaseResponseDTOs(
                 new
                 {
-                    Data = result,
+                    Data = groupedResult,
                     TotalCount = totalCount,
                     TotalPages = totalPages,
                     PageNumber = pageNumber,

@@ -171,5 +171,12 @@ namespace Nastya_Archiving_project.Controllers
                 return StatusCode(500, new { error = $"An error occurred: {ex.Message}" });
             }
         }
+
+        [HttpPatch("Unbind-All-Docs-From-Parent/{parentSystemId}")]
+        public async Task<IActionResult> UnbindAllDocsFromTheParent(string parentSystemId)
+        {
+            var result = await _archivingDocsSercvices.UnbindDoucAllDocsFromTheParent(parentSystemId);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

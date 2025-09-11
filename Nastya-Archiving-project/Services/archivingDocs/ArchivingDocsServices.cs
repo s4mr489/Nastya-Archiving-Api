@@ -183,12 +183,14 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             if(userPermissions.AllowAddToOther == 0  && hasPermission == false && req.DepartId.ToString() != departId || userPermissions.AllowAddToOther == 1 && hasPermission == false && req.DepartId.ToString() != departId)
                 return(null, "403"); // Forbidden
 
+            var docFile = (await _fileServices.upload(file)).file;
+            if (docFile == null)
+                return (null, "File upload failed.");
 
             var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
             if (docTypeResponse.docsType == null)
                 return (null, "Invalid document type.");
-
-
+            
             // If the claim is not found, you can set it to null or handle it as needed
             // that manual mapper to the ArcivingDoc model
             var newDoc = new ArcivingDoc
@@ -209,7 +211,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 EditDate = DateTime.UtcNow,
                 Editor = (await _systemInfoServices.GetRealName()).RealName,
                 Ipaddress = (await _systemInfoServices.GetUserIpAddress()),
-                ImgUrl =(await _fileServices.upload(file)).file,
+                ImgUrl =docFile,
                 FileType  = fileType != null ? int.Parse(fileType) : null,
                 Subject = req.Subject,
                 TheMonth = DateTime.UtcNow.Month,
@@ -433,7 +435,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 return (null, "Document not found.");
 
             var JoinedDocs = await _context.JoinedDocs.FirstOrDefaultAsync(d => d.ChildRefrenceNo == systemId);
-           if (JoinedDocs != null)
+            if (JoinedDocs != null)
             {
                 // If the document is joined, remove the join entry
                 _context.JoinedDocs.Remove(JoinedDocs);
@@ -515,6 +517,10 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             if (docs == null)
                 return new BaseResponseDTOs(null, 404, "not Found Parent Docs");
 
+            var childDocs = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.RefrenceNo == req.childReferenceId);
+            if (childDocs == null)
+                return new BaseResponseDTOs(null, 404, "not Found Child Docs");
+
             var joineDocs = await _context.JoinedDocs.FirstOrDefaultAsync(d => d.ParentRefrenceNO == req.parentReferenceId && d.ChildRefrenceNo == req.childReferenceId);
             if (joineDocs != null)
                 return new BaseResponseDTOs(null, 400, "The Docs Already joind");
@@ -523,8 +529,8 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var joinedDocs = new T_JoinedDoc
             {
                 BreafcaseNo = req.BreafcaseNo,
-                ParentRefrenceNO = req.parentReferenceId,
                 ChildRefrenceNo = req?.childReferenceId,
+                ParentRefrenceNO = req.parentReferenceId,
                 editDate = DateTime.UtcNow,
             };
            
@@ -534,7 +540,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 ReferenceTo = joinedDocs.ParentRefrenceNO,
                 RefrenceNo = joinedDocs.ChildRefrenceNo,
             };
-            docs.ReferenceTo = joinedDocs.ChildRefrenceNo;
+            childDocs.ReferenceTo = joinedDocs.ParentRefrenceNO;
 
             _context.JoinedDocs.Add(joinedDocs);
             await _context.SaveChangesAsync();
@@ -670,6 +676,19 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             {
                 return (null, $"An error occurred while retrieving image URLs: {ex.Message}", 0);
             }
+        }
+
+        public async Task<BaseResponseDTOs> UnbindDoucAllDocsFromTheParent(string parentSystemId)
+        {
+            var docs = await _context.ArcivingDocs.Where(d => d.ReferenceTo == parentSystemId).ToListAsync();
+            if (docs == null || docs.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No documents found linked to the specified parent.");
+            foreach (var doc in docs)
+            {
+                doc.ReferenceTo = null; // Unbind each document by setting ReferenceTo to null
+            }
+            await _context.SaveChangesAsync();
+            return new BaseResponseDTOs(null, 200, "All linked documents have been unbound from the parent successfully.");
         }
     }
 }

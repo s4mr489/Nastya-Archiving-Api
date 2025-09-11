@@ -49,5 +49,13 @@ namespace Nastya_Archiving_project.Services.files
         
         // This method downloads decrypted files and returns them as a byte array with metadata
         Task<(byte[]? fileBytes, string fileName, string contentType, string? error)> DownloadDecryptedFiles(List<string> fileUrls, string archiveName = "DecryptedFiles");
+
+        /// <summary>
+        /// Updates a file's path by moving it to a new location and removing it from the original location
+        /// </summary>
+        /// <param name="oldFilePath">The current file path</param>
+        /// <param name="newFilePath">The new file path where the file should be moved to</param>
+        /// <returns>Tuple containing the updated file path (if successful) and any error message</returns>
+        Task<(string? updatedFilePath, string? error)> UpdateFilePathAsync(string oldFilePath, string newFilePath);
     }
 }

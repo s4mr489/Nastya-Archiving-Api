@@ -1,54 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner">
   <AutoRefresh>0</AutoRefresh>
-  <DataSources>
-    <DataSource Name="ArcivingDocsDataSource">
-      <ConnectionProperties>
-        <DataProvider>System.Data.DataSet</DataProvider>
-        <ConnectString>/* Local Connection */</ConnectString>
-      </ConnectionProperties>
-    </DataSource>
-  </DataSources>
   <DataSets>
-    <DataSet Name="ArcivingDocsDataSource">
+    <DataSet Name="ArcivingDocs">
       <Query>
-        <DataSourceName>ArcivingDocsDataSource</DataSourceName>
+        <DataSourceName />
         <CommandText />
       </Query>
-      <Fields>
-        <Field Name="Id">
-          <DataField>Id</DataField>
-          <rd:TypeName>System.Int32</rd:TypeName>
-        </Field>
-        <Field Name="RefrenceNo">
-          <DataField>RefrenceNo</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="DocNo">
-          <DataField>DocNo</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="DocDate">
-          <DataField>DocDate</DataField>
-          <rd:TypeName>System.DateTime</rd:TypeName>
-        </Field>
-        <Field Name="Subject">
-          <DataField>Subject</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="Editor">
-          <DataField>Editor</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-        <Field Name="EditDate">
-          <DataField>EditDate</DataField>
-          <rd:TypeName>System.DateTime</rd:TypeName>
-        </Field>
-        <Field Name="ImgUrl">
-          <DataField>ImgUrl</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
-      </Fields>
     </DataSet>
   </DataSets>
   <ReportSections>
@@ -381,7 +339,7 @@
                 </TablixMember>
               </TablixMembers>
             </TablixRowHierarchy>
-            <DataSetName>ArcivingDocsDataSource</DataSetName>
+            <DataSetName>ArcivingDocs</DataSetName>
             <Top>0.75in</Top>
             <Left>0.5in</Left>
             <Height>0.5in</Height>
@@ -464,6 +422,12 @@
       <Prompt>Generated Date</Prompt>
     </ReportParameter>
   </ReportParameters>
+  <ReportParametersLayout>
+    <GridLayoutDefinition>
+      <NumberOfColumns>4</NumberOfColumns>
+      <NumberOfRows>2</NumberOfRows>
+    </GridLayoutDefinition>
+  </ReportParametersLayout>
   <rd:ReportUnitType>Inch</rd:ReportUnitType>
   <rd:ReportID>b0a01f21-ca69-4d71-8c62-511976427f7b</rd:ReportID>
 </Report>

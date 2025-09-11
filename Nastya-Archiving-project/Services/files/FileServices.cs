@@ -66,7 +66,7 @@ namespace Nastya_Archiving_project.Services.files
 
             // Check if file exceeds the license limit
             if (fileSizeMB > licenseLimit)
-                return (null, fileSize, $"File size ({fileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                return (null, fileSize, $"  حجم الملف المراد رفعه هو : {fileSizeMB} , وهو يتجاوز الحد المسموح به : {licenseLimit}.");
 
             var group = _context.Usersgroups.FirstOrDefault(g => g.groupid == user.GroupId);
             if (group == null)
@@ -952,7 +952,7 @@ namespace Nastya_Archiving_project.Services.files
 
             // Check if total size exceeds the license limit
             if (totalSizeMB > licenseLimit)
-                return (null, $"Total file size ({totalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                return (null, $"  حجم الملف المراد رفعه هو : {totalSizeMB} , وهو يتجاوز الحد المسموح به : {licenseLimit}.");
 
             // Also check individual files to make sure none exceed the limit
             foreach (var file in filesForm.Files)
@@ -1635,6 +1635,82 @@ namespace Nastya_Archiving_project.Services.files
             {
                 // If any error occurs, don't return a default value
                 return 0;
+            }
+        }
+
+
+        /// <summary>
+        /// Updates a file's path by moving it to a new location and removing it from the original location
+        /// </summary>
+        /// <param name="oldFilePath">The current file path</param>
+        /// <param name="newFilePath">The new file path where the file should be moved to</param>
+        /// <returns>Tuple containing the updated file path (if successful) and any error message</returns>
+        public async Task<(string? updatedFilePath, string? error)> UpdateFilePathAsync(string oldFilePath, string newFilePath)
+        {
+            try
+            {
+                // Validate inputs
+                if (string.IsNullOrWhiteSpace(oldFilePath))
+                    return (null, "Original file path is required.");
+
+                if (string.IsNullOrWhiteSpace(newFilePath))
+                    return (null, "New file path is required.");
+
+                // Normalize paths
+                oldFilePath = oldFilePath.Replace('/', Path.DirectorySeparatorChar);
+                newFilePath = newFilePath.Replace('/', Path.DirectorySeparatorChar);
+
+                // Resolve the full paths
+                string? resolvedOldPath = ResolveFilePath(oldFilePath);
+                if (resolvedOldPath == null || !File.Exists(resolvedOldPath))
+                    return (null, $"Original file not found at: {oldFilePath}");
+
+                // Ensure the directory for the new path exists
+                string? newDirectory = Path.GetDirectoryName(newFilePath);
+                if (!string.IsNullOrEmpty(newDirectory) && !Directory.Exists(newDirectory))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(newDirectory);
+                    }
+                    catch (Exception ex)
+                    {
+                        return (null, $"Failed to create destination directory: {ex.Message}");
+                    }
+                }
+
+                // Check if the file is encrypted/compressed (GZ extension)
+                bool isCompressed = resolvedOldPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+
+                // Ensure destination has same extension
+                if (isCompressed && !newFilePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+                    newFilePath += ".gz";
+
+                // Ensure new path is fully qualified
+                if (!Path.IsPathRooted(newFilePath))
+                {
+                    newFilePath = Path.Combine(Directory.GetCurrentDirectory(), newFilePath);
+                }
+
+                // Check if destination already exists
+                if (File.Exists(newFilePath))
+                    return (null, $"Destination file already exists: {newFilePath}");
+
+                // Move the file
+                File.Move(resolvedOldPath, newFilePath);
+
+                // Convert back to web-friendly path format
+                string webPath = newFilePath.Replace(Path.DirectorySeparatorChar, '/');
+
+                // Update path in database if needed
+                // This would depend on your specific requirements
+                // Example: _context.Files.Where(f => f.FilePath == oldFilePath).Update(f => f.FilePath = webPath);
+
+                return (webPath, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, $"Error updating file path: {ex.Message}");
             }
         }
     }

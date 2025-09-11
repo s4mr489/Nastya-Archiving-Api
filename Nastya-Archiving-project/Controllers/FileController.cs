@@ -49,7 +49,7 @@ namespace Nastya_Archiving_project.Controllers
             if (error != null)
             {
                 // Return 415 Unsupported Media Type for file size errors
-                if (error.Contains("exceeds the license limit") || error.Contains("file size"))
+                if (error.Contains("حجم الملف المراد رفعه هو") || error.Contains("file size"))
                 {
                     return StatusCode(415, error);
                 }
