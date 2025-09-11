@@ -68,9 +68,11 @@ namespace Nastya_Archiving_project.Services.files
             if (fileSizeMB > licenseLimit)
                 return (null, fileSize, $"  حجم الملف المراد رفعه هو : {fileSizeMB} , وهو يتجاوز الحد المسموح به : {licenseLimit}.");
 
-            var group = _context.Usersgroups.FirstOrDefault(g => g.groupid == user.GroupId);
-            if (group == null)
-                return (null, 0, "User group not found.");
+            // Check if DocType is valid
+            //var docType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(d => d.Id == fileForm.DocTypeDscrption);
+            //if (docType == null)
+            //    return (null, 0, $"Document type with ID {fileForm.DocType} not found.");
+
             var depr = _context.GpDepartments.FirstOrDefault(d => d.Id == user.DepariId);
 
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
@@ -104,16 +106,18 @@ namespace Nastya_Archiving_project.Services.files
             string yearStr = DateTime.Now.Year.ToString();
             string departmentName = SanitizePathComponent(depr?.Dscrp ?? "Unknown");
             string monthStr = DateTime.Now.Month.ToString();
-            string groupName = SanitizePathComponent(_encryptionServices.DecryptString256Bit(group.Groupdscrp));
+            
+            // Use document type description instead of group description
+            
 
-            // Include StartWith in the physical path
+            // Include StartWith in the physical path with docTypeName instead of groupName
             string attachmentsDir = Path.Combine(
                 storePathValue,
                 startWithValue,
                 yearStr,
                 departmentName,
                 monthStr,
-                groupName
+                fileForm.DocTypeDscrption  // Using document type instead of group description
             );
 
             if (!Directory.Exists(attachmentsDir))
@@ -142,7 +146,7 @@ namespace Nastya_Archiving_project.Services.files
                 yearStr,
                 departmentName,
                 monthStr,
-                groupName,
+                fileForm.DocTypeDscrption,
                 fileName
             ).Replace(Path.DirectorySeparatorChar, '/');
 

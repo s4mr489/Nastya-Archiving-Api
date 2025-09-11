@@ -182,15 +182,18 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             if(userPermissions.AllowAddToOther == 0  && hasPermission == false && req.DepartId.ToString() != departId || userPermissions.AllowAddToOther == 1 && hasPermission == false && req.DepartId.ToString() != departId)
                 return(null, "403"); // Forbidden
-
-            var docFile = (await _fileServices.upload(file)).file;
-            if (docFile == null)
-                return (null, "File upload failed.");
+           
 
             var docTypeResponse = await _archivingSettingsServicers.GetDocsTypeById(req.DocType);
             if (docTypeResponse.docsType == null)
                 return (null, "Invalid document type.");
-            
+
+
+            file.DocTypeDscrption = docTypeResponse.docsType.docuName;
+            var docFile = (await _fileServices.upload(file));
+            if (docFile.error != null)
+                return (null, "File upload failed.");
+
             // If the claim is not found, you can set it to null or handle it as needed
             // that manual mapper to the ArcivingDoc model
             var newDoc = new ArcivingDoc
@@ -211,8 +214,8 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 EditDate = DateTime.UtcNow,
                 Editor = (await _systemInfoServices.GetRealName()).RealName,
                 Ipaddress = (await _systemInfoServices.GetUserIpAddress()),
-                ImgUrl =docFile,
-                FileType  = fileType != null ? int.Parse(fileType) : null,
+                ImgUrl = docFile.file,
+                FileType = fileType != null ? int.Parse(fileType) : null,
                 Subject = req.Subject,
                 TheMonth = DateTime.UtcNow.Month,
                 Theyear = DateTime.UtcNow.Year,
