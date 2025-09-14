@@ -71,6 +71,56 @@ namespace Nastya_Archiving_project.Extinstion
             return app;
         }
 
+        /// <summary>
+        /// Configures static files middleware to enable direct file downloads to desktop
+        /// </summary>
+        /// <param name="app">The application builder</param>
+        /// <returns>The application builder for chaining</returns>
+        public static IApplicationBuilder UseDirectDownloads(this IApplicationBuilder app)
+        {
+            var env = app.ApplicationServices.GetRequiredService<IWebHostEnvironment>();
+
+            // Configure static files middleware with download options
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                OnPrepareResponse = ctx =>
+                {
+                    string path = ctx.Context.Request.Path.Value;
+
+                    // Check if this is a request for a file in the Downloads folder
+                    if (path?.StartsWith("/Downloads/", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        // Get filename from the path
+                        string filename = Path.GetFileName(path);
+
+                        // Check if download parameter is present
+                        bool isDownload = ctx.Context.Request.Query.ContainsKey("download");
+
+                        // Check if this is a database backup file (.bak extension)
+                        bool isDatabaseBackup = path.EndsWith(".bak", StringComparison.OrdinalIgnoreCase);
+
+                        // Also check for trigger file
+                        string triggerPath = Path.Combine(env.WebRootPath, path.TrimStart('/') + ".download");
+                        bool hasTriggerFile = File.Exists(triggerPath);
+
+                        // Force download for database backups or if explicitly requested
+                        if (isDownload || isDatabaseBackup || hasTriggerFile)
+                        {
+                            // Set content disposition to attachment to force download
+                            ctx.Context.Response.Headers.Append("Content-Disposition", $"attachment; filename=\"{filename}\"");
+
+                            // No caching for downloads
+                            ctx.Context.Response.Headers.Append("Cache-Control", "no-cache, no-store");
+                            ctx.Context.Response.Headers.Append("Pragma", "no-cache");
+                            ctx.Context.Response.Headers.Append("Expires", "0");
+                        }
+                    }
+                }
+            });
+
+            return app;
+        }
+
         //public static async Task<IApplicationBuilder> UseSeeder(this IApplicationBuilder app)
         //{
         //    using (var scope = app.ApplicationServices.CreateScope())

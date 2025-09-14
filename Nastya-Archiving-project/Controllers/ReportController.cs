@@ -4,6 +4,7 @@ using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Reports;
 using Nastya_Archiving_project.Services.rdlcReport;
 using Nastya_Archiving_project.Services.reports;
+using static Nastya_Archiving_project.Services.reports.ResportServices;
 
 namespace Nastya_Archiving_project.Controllers
 {
@@ -124,11 +125,18 @@ namespace Nastya_Archiving_project.Controllers
             result = await _reportService.GetMontlyUsersDocumentDetailsPagedList(req);
             return StatusCode(result.StatusCode, result);
         }
+        /// <summary>
+        /// check documents file integrity with pagination
+        /// </summary>
+        /// <param name="pageSize"></param>
+        /// <param name="pageNumber"></param>
+        /// <param name="statusFilter">0: all , 1: not found , 2: damged , 3: non affected</param>
+        /// <returns></returns>
 
         [HttpGet("Check-Documents-File-Integrity")]
-        public async Task<IActionResult> CheckDocumentsFileIntegrity([FromQuery] int pageSize , [FromQuery] int pageNumber)
+        public async Task<IActionResult> CheckDocumentsFileIntegrity([FromQuery] int pageSize , [FromQuery] int pageNumber, FileIntegrityStatus statusFilter = FileIntegrityStatus.All)
         {
-            BaseResponseDTOs result = await _reportService.CheckDocumentsFileIntegrityPagedAsync(pageNumber , pageSize);
+            BaseResponseDTOs result = await _reportService.CheckDocumentsFileIntegrityPagedAsync(pageNumber , pageSize, statusFilter);
             return StatusCode(result.StatusCode, result);
         }
 

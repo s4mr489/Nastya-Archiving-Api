@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Nastya_Archiving_project.Data;
+using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Services.SystemInfo;
 
 namespace Nastya_Archiving_project.Controllers
@@ -29,51 +30,27 @@ namespace Nastya_Archiving_project.Controllers
 
 
         /// <summary>
-        /// Creates a backup of the database
+        /// Exports all database data to CSV files and returns the ZIP archive for direct download
         /// </summary>
-        /// <param name="backupPath">Directory path where the backup will be stored</param>
-        /// <returns>Result of the backup operation</returns>
-        [HttpPost("backup-all-databases")]
+        /// <param name="exportDirectory">Directory path where the export files will be stored</param>
+        /// <returns>Tuple containing success status, message, file path and file content for direct download</returns>
+        [HttpPost("backup-all-databases-TO-Excel")]
         [Authorize(Roles = "Admin")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> BackupAllDatabases([FromBody] BackupRequest request)
+        public async Task<IActionResult> ExportDatabase(string exportDirectory)
         {
-            if (string.IsNullOrEmpty(request.BackupPath))
+            var result = await _systemInfoServices.ExportAllDatabaseData(exportDirectory);
+
+            if (!result.Success)
             {
-                return BadRequest(new { Error = "Backup path is required" });
+                return BadRequest(result.Message);
             }
 
-            try
-            {
-                var (success, message, backupFiles) = await _systemInfoServices.ExportAllDatabaseData(request.BackupPath);
-
-                if (success)
-                {
-                    return Ok(new
-                    {
-                        Success = true,
-                        Message = message,
-                        BackupFiles = backupFiles,
-                        DatabaseCount = backupFiles.Count,
-                        Timestamp = DateTime.UtcNow
-                    });
-                }
-                else
-                {
-                    return StatusCode(500, new { Success = false, Error = message });
-                }
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    Success = false,
-                    Error = "An unexpected error occurred while backing up databases",
-                    Details = ex.Message
-                });
-            }
+            // Return the file for direct download
+            string fileName = Path.GetFileName(result.ExportFilePath);
+            return File(result.FileContent, "application/zip", fileName);
         }
 
 
@@ -86,39 +63,30 @@ namespace Nastya_Archiving_project.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> CreateAdvancedDatabaseBackup([FromBody]BackupRequest request)
+        public async Task<IActionResult> BackupDatabase(string backupDirectory)
         {
-            try
-            {
-                var (success, message, backupFilePath) = await _systemInfoServices.CreateAdvancedDatabaseBackup(
-                    request.BackupPath
-                );
+            var result = await _systemInfoServices.CreateAdvancedDatabaseBackup(backupDirectory);
 
-                if (success)
-                {
-                    return Ok(new
-                    {
-                        Success = true,
-                        Message = message,
-                        BackupFilePath = backupFilePath,
-                        Timestamp = DateTime.UtcNow
-                    });
-
-                }
-                else
-                {
-                    return StatusCode(500, new { Success = false, Error = message });
-                }
-            }
-            catch (Exception ex)
+            if (!result.Success)
             {
-                return StatusCode(500, new
-                {
-                    Success = false,
-                    Error = "An unexpected error occurred while backing up the database",
-                    Details = ex.Message
-                });
+                return BadRequest(result.Message);
             }
+
+            // Return the file for download
+            string fileName = Path.GetFileName(result.BackupFilePath);
+            return File(result.FileContent, "application/octet-stream", fileName);
+        }
+        /// <summary>
+        /// this endpoint used to backUp the files from the archive path to the user path
+        /// </summary>
+        /// <param name="sourcePath"></param>
+        /// <param name="accountUnit"></param>
+        /// <returns></returns>
+        [HttpPost("Back-Up-Files-To-Path")]
+        public async Task<BaseResponseDTOs> BackUpFiles(int archivePointId , bool allFiles =false)
+        {
+            var result = await _systemInfoServices.BackUpFiles(archivePointId, allFiles);
+            return result;
         }
 
         [HttpGet("Get-Backup-path")]
@@ -150,7 +118,7 @@ namespace Nastya_Archiving_project.Controllers
             return StatusCode(result.StatusCode , result);
         }
 
-        [HttpGet("Get-Storage-For-BackUp")]
+        [HttpGet("Get-Storage-For-Arcive")]
         public async Task<IActionResult> Storage()
         {
             var result = await _systemInfoServices.GetIPartition();

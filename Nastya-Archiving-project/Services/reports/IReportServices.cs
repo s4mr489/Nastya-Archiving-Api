@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Reports;
+using static Nastya_Archiving_project.Services.reports.ResportServices;
 
 namespace Nastya_Archiving_project.Services.reports
 {
@@ -30,10 +32,7 @@ namespace Nastya_Archiving_project.Services.reports
 
         Task<BaseResponseDTOs> GetReferncesDocsDetailsPagedAsync(ReportsViewForm req);
         Task<BaseResponseDTOs> GetReferencedDocsCountsPagedAsync(ReportsViewForm req);
-
-        Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize);
-        //Task<BaseResponseDTOs> CheckFilesAsync(ReportsViewForm req);
-
+        Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize, FileIntegrityStatus statusFilter = FileIntegrityStatus.All);
         Task<BaseResponseDTOs> GetDocumentDetailsReportWithFastReport(ReportsViewForm req);
     }
 }

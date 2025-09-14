@@ -37,6 +37,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
             var newAccountUnit = new GpAccountingUnit
             {
                 Dscrp = req.accountUnitName,
+                BackupPath = req.backupPath,
+                StorePath = req.storePath
             };
             _context.GpAccountingUnits.Add(newAccountUnit);
             await _context.SaveChangesAsync();
@@ -45,6 +47,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
             {
                 Id = newAccountUnit.Id,
                 accountUnitDscrp = newAccountUnit.Dscrp,
+                BackupPath = newAccountUnit.BackupPath,
+                StorePath = newAccountUnit.StorePath
             };
 
             return (rsponse, null);
@@ -60,6 +64,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
             {
                 Id = accountUnit.Id,
                 accountUnitDscrp = accountUnit.Dscrp,
+                BackupPath = accountUnit.BackupPath,
+                StorePath = accountUnit.StorePath
             };
 
             return (response, null);
@@ -76,6 +82,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
             {
                 Id = e.Id,
                 accountUnitDscrp = e.Dscrp,
+                BackupPath = e.BackupPath,
+                StorePath = e.StorePath
             }).ToList();
 
             return (response, null);
@@ -95,6 +103,8 @@ namespace Nastya_Archiving_project.Services.infrastructure
 
             // Update properties
             accountUnit.Dscrp = req.accountUnitName;
+            accountUnit.BackupPath = req.backupPath;
+            accountUnit.StorePath = req.storePath;
 
             _context.GpAccountingUnits.Update(accountUnit);
             await _context.SaveChangesAsync();
@@ -745,7 +755,9 @@ namespace Nastya_Archiving_project.Services.infrastructure
                 .Select(au => new AccountUnitResponseDTOs
                 {
                     Id = au.Id,
-                    accountUnitDscrp = au.Dscrp
+                    accountUnitDscrp = au.Dscrp,
+                    BackupPath = au.BackupPath,
+                    StorePath = au.StorePath
                 })
                 .ToListAsync();
             if(accountUnits == null || accountUnits.Count == 0)

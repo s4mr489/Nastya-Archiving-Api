@@ -290,6 +290,8 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Dscrp).HasMaxLength(30);
+            entity.Property(e => e.StorePath).HasMaxLength(250);
+            entity.Property(e => e.BackupPath).HasMaxLength(250);
         });
 
         modelBuilder.Entity<GpBranch>(entity =>

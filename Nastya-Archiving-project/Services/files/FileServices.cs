@@ -123,7 +123,7 @@ namespace Nastya_Archiving_project.Services.files
             if (!Directory.Exists(attachmentsDir))
                 Directory.CreateDirectory(attachmentsDir);
 
-            var fileName = $"{await _systemInfo.GetLastRefNo()}-{Guid.NewGuid()}{extension}.gz";
+            var fileName = $"{await _systemInfo.GetLastRefNo()}{extension}.gz";
             var filePath = Path.Combine(attachmentsDir, fileName);
 
             byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"]);

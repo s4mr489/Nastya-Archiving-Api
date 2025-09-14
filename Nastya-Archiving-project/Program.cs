@@ -45,6 +45,7 @@ app.UseCustomSwaggerWithAuth("Nastya-Archiving-Swagger");
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseDirectDownloads(); // Add direct download support
 
 //.UsePrinterWebSockets();
 

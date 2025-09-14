@@ -7,7 +7,5 @@
         public int branchId { get; set; }
         public int accountUnitId { get; set; }
         public string? startWith { get; set; }
-        public string? storePath { get; set; }
-        public string? backupPath { get; set; }
     }
 }

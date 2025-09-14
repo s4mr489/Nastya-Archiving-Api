@@ -44,18 +44,16 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             var depart = await _infrastucatre.GetDepartmentById(req.departmentId);
             if (depart.Department== null)
                 return (null , "404"); 
-            if (req.backupPath == req.storePath)
-                return (null, "400");// storepath and the backuppath shouldn't be in the same path 
 
             point = new PArcivingPoint
             {
                 AccountUnitId = req.accountUnitId,
-                BackupPath = req.backupPath,
+                BackupPath = unit.accountUnits.BackupPath,
                 BranchId = req.branchId,
                 DepartId = req.departmentId,
                 Dscrp = req.pointName,
                 StartWith = req.startWith,
-                StorePath = req.storePath,
+                StorePath = unit.accountUnits.StorePath,
             };
 
             _context.PArcivingPoints.Add(point);
@@ -101,17 +99,12 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             if (depart.Department == null)
                 return (null, "404");
 
-            if (req.backupPath == req.storePath)
-                return (null, "400"); // StorePath and BackupPath shouldn't be the same
-
             // Update properties
             point.AccountUnitId = req.accountUnitId;
-            point.BackupPath = req.backupPath;
             point.BranchId = req.branchId;
             point.DepartId = req.departmentId;
             point.Dscrp = req.pointName;
             point.StartWith = req.startWith;
-            point.StorePath = req.storePath;
 
             _context.PArcivingPoints.Update(point);
             await _context.SaveChangesAsync();

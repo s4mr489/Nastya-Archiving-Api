@@ -1057,7 +1057,6 @@ namespace Nastya_Archiving_project.Services.search
                 .Where(d => childRefs.Contains(d.RefrenceNo))
                 .Select(d => new
                 {
-                    
                     d.RefrenceNo,
                     systemId = d.ImgUrl,
                     d.ImgUrl,
@@ -1070,6 +1069,8 @@ namespace Nastya_Archiving_project.Services.search
                     d.Subject
                 })
                 .ToListAsync();
+            if (docs.Count == 0 || docs == null)
+                return new BaseResponseDTOs(null, 404, "there is no Joined Docs");
 
             // Merge joined info with document details
             var result = joined.Select(j =>

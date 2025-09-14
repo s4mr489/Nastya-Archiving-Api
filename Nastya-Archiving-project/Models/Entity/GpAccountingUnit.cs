@@ -8,4 +8,6 @@ public partial class GpAccountingUnit
     public int Id { get; set; }
 
     public string? Dscrp { get; set; }
+    public string? StorePath { get; set; }
+    public string? BackupPath { get; set; }
 }

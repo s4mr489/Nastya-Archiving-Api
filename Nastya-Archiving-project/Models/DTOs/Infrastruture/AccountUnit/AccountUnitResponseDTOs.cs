@@ -4,5 +4,7 @@
     {
         public int Id { get; set; }
         public string? accountUnitDscrp { get; set; }
+        public string? StorePath { get; set; }
+        public string? BackupPath { get; set; }
     }
 }

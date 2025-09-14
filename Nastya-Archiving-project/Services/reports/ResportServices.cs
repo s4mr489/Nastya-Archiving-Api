@@ -1177,14 +1177,14 @@ namespace Nastya_Archiving_project.Services.reports
         //        PageSize = pageSize
         //    }, 200, null);
         //}
-        public async Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize)
+
+        public async Task<BaseResponseDTOs> CheckDocumentsFileIntegrityPagedAsync(int page, int pageSize, FileIntegrityStatus statusFilter = FileIntegrityStatus.All)
         {
             try
             {
                 // Validate parameters
                 page = Math.Max(1, page);
                 pageSize = Math.Clamp(pageSize, 1, 100);
-                int skip = (page - 1) * pageSize;
 
                 // Query documents with file paths
                 var query = _context.ArcivingDocs
@@ -1192,17 +1192,10 @@ namespace Nastya_Archiving_project.Services.reports
                     .Where(d => d.ImgUrl != null && d.DocSize != null)
                     .OrderByDescending(d => d.EditDate);
 
-                // Get total count for pagination
-                int totalCount = await query.CountAsync();
-                int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+                // Get all documents for classification first
+                var allDocs = await query.ToListAsync();
 
-                // Get paged documents
-                var docs = await query
-                    .Skip(skip)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                // Get encryption keys (same as in upload method)
+                // Get encryption keys
                 byte[]? key = null;
                 try
                 {
@@ -1213,38 +1206,58 @@ namespace Nastya_Archiving_project.Services.reports
                     return new BaseResponseDTOs(null, 500, $"Error retrieving encryption key: {ex.Message}");
                 }
 
-                var result = new List<object>();
-                foreach (var doc in docs)
+                // Classify all documents
+                var classifiedResults = new List<object>();
+                int notFoundCount = 0;
+                int damagedCount = 0;
+                int notAffectedCount = 0;
+
+                foreach (var doc in allDocs)
                 {
                     string? filePath = doc.ImgUrl;
-                    decimal? expectedSize = doc.DocSize; // Original uncompressed file size stored in DB
-                    long? actualSize = null; // Current file size on disk (encrypted+compressed)
+                    string? fileName = filePath != null ? Path.GetFileName(filePath) : null;
+                    decimal? expectedSize = doc.DocSize;
+                    long? actualSize = null;
                     bool isAffected = false;
                     string? statusMessage = null;
+                    FileIntegrityStatus fileStatus = FileIntegrityStatus.NotAffected;
 
-                    if (!string.IsNullOrEmpty(filePath))
+                    if (string.IsNullOrEmpty(filePath))
                     {
-                        // Resolve the actual file path from the web path
+                        isAffected = true;
+                        statusMessage = "Document has no file path";
+                        fileStatus = FileIntegrityStatus.NotFound;
+                        notFoundCount++;
+                    }
+                    else
+                    {
                         string? resolvedFilePath = ResolveFilePath(filePath);
 
-                        if (resolvedFilePath != null && File.Exists(resolvedFilePath))
+                        if (resolvedFilePath == null || !File.Exists(resolvedFilePath))
+                        {
+                            isAffected = true;
+                            statusMessage = "File does not exist on disk";
+                            fileStatus = FileIntegrityStatus.NotFound;
+                            notFoundCount++;
+                        }
+                        else
                         {
                             try
                             {
                                 var fileInfo = new FileInfo(resolvedFilePath);
                                 actualSize = fileInfo.Length;
+                                bool hasIssue = false;
 
-                                // Check if file is a compressed and encrypted file as expected
+                                // Check if file is compressed
                                 bool isGzipped = resolvedFilePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
-
                                 if (!isGzipped)
                                 {
-                                    isAffected = true;
+                                    hasIssue = true;
                                     statusMessage = "File is not in the expected compressed format (.gz)";
                                 }
-                                else if (fileInfo.Length < 16) // IV size is 16 bytes
+                                else if (fileInfo.Length < 16)
                                 {
-                                    isAffected = true;
+                                    hasIssue = true;
                                     statusMessage = "File is too small to be valid (less than 16 bytes)";
                                 }
                                 else
@@ -1252,12 +1265,10 @@ namespace Nastya_Archiving_project.Services.reports
                                     // Verify the file can be decrypted
                                     try
                                     {
-                                        // Read just the IV to validate encryption
                                         using var fs = new FileStream(resolvedFilePath, FileMode.Open, FileAccess.Read);
                                         byte[] iv = new byte[16];
                                         await fs.ReadAsync(iv, 0, 16);
 
-                                        // Verify the file can be decrypted by reading a small portion
                                         using var aes = Aes.Create();
                                         aes.Key = key;
                                         aes.IV = iv;
@@ -1267,81 +1278,98 @@ namespace Nastya_Archiving_project.Services.reports
                                         using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
                                         using var cryptoStream = new CryptoStream(fs, decryptor, CryptoStreamMode.Read);
 
-                                        // Try to read a small buffer to verify decryption works
                                         byte[] buffer = new byte[1024];
                                         int bytesRead = await cryptoStream.ReadAsync(buffer, 0, buffer.Length);
 
                                         if (bytesRead <= 0)
                                         {
-                                            isAffected = true;
+                                            hasIssue = true;
                                             statusMessage = "File cannot be decrypted properly";
                                         }
                                         else if (expectedSize.HasValue)
                                         {
-                                            // For valid files, the expectedSize (DocSize in DB) should be the original 
-                                            // uncompressed size, while actualSize is the compressed+encrypted size
-                                            // Typically the actualSize should be smaller, but not too small
-
-                                            // Check for drastic file size difference 
-                                            // Typically compressed files are 20-80% of original size
                                             long expectedSizeValue = Convert.ToInt64(expectedSize.Value);
                                             double ratio = (double)actualSize.Value / expectedSizeValue;
 
-                                            // If compressed size is more than 95% of original or less than 5% of original,
-                                            // something is likely wrong
                                             if (ratio > 0.95 || ratio < 0.05)
                                             {
-                                                isAffected = true;
+                                                hasIssue = true;
                                                 statusMessage = $"Suspicious compression ratio: {ratio:P2}";
                                             }
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        isAffected = true;
+                                        hasIssue = true;
                                         statusMessage = $"Error validating file: {ex.Message}";
                                     }
+                                }
+
+                                if (hasIssue)
+                                {
+                                    isAffected = true;
+                                    fileStatus = FileIntegrityStatus.Damaged;
+                                    damagedCount++;
+                                }
+                                else
+                                {
+                                    fileStatus = FileIntegrityStatus.NotAffected;
+                                    notAffectedCount++;
+                                    statusMessage = "File is valid";
                                 }
                             }
                             catch (Exception ex)
                             {
                                 isAffected = true;
                                 statusMessage = $"Error accessing file: {ex.Message}";
+                                fileStatus = FileIntegrityStatus.Damaged;
+                                damagedCount++;
                             }
                         }
-                        else
-                        {
-                            isAffected = true;
-                            statusMessage = "File does not exist on disk";
-                        }
-                    }
-                    else
-                    {
-                        isAffected = true;
-                        statusMessage = "Document has no file path";
                     }
 
-                    // Add result to the list
-                    result.Add(new
+                    classifiedResults.Add(new
                     {
                         DocumentId = doc.Id,
                         FilePath = filePath,
-                        ExpectedSize = expectedSize,    // Original uncompressed size stored in DB
-                        ActualSize = actualSize,        // Current compressed+encrypted size on disk
+                        FileName = fileName,  // Added file name property
+                        ExpectedSize = expectedSize,
+                        ActualSize = actualSize,
                         IsAffected = isAffected,
-                        StatusMessage = statusMessage
+                        StatusMessage = statusMessage,
+                        IntegrityStatus = fileStatus
                     });
                 }
 
-                // Return response with pagination metadata
+                // Apply status filter
+                var filteredResults = statusFilter == FileIntegrityStatus.All
+                    ? classifiedResults
+                    : classifiedResults.Where(r => (FileIntegrityStatus)((dynamic)r).IntegrityStatus == statusFilter).ToList();
+
+                // Apply pagination
+                int totalFilteredCount = filteredResults.Count;
+                int totalFilteredPages = (int)Math.Ceiling(totalFilteredCount / (double)pageSize);
+                var pagedResults = filteredResults
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                // Return response with classification and pagination metadata
                 return new BaseResponseDTOs(new
                 {
-                    Data = result,
-                    TotalCount = totalCount,
-                    TotalPages = totalPages,
+                    Data = pagedResults,
+                    TotalCount = totalFilteredCount,
+                    TotalPages = totalFilteredPages,
                     PageNumber = page,
                     PageSize = pageSize,
-                    AffectedCount = result.Count(r => (bool)((dynamic)r).IsAffected)
+                    StatusCounts = new
+                    {
+                        NotFound = notFoundCount,
+                        Damaged = damagedCount,
+                        NotAffected = notAffectedCount,
+                        Total = allDocs.Count
+                    },
+                    CurrentFilter = statusFilter.ToString()
                 }, 200, null);
             }
             catch (Exception ex)
@@ -1349,6 +1377,8 @@ namespace Nastya_Archiving_project.Services.reports
                 return new BaseResponseDTOs(null, 500, $"Error checking file integrity: {ex.Message}");
             }
         }
+
+
         public async Task<BaseResponseDTOs> GetMontlyUsersDocumentDetailsPagedList(ReportsViewForm req)
         {
             if (req.resultType == EResultType.Detailed)
