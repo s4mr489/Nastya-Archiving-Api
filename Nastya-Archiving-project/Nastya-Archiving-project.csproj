@@ -20,25 +20,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="Models\DTOs\Reports\GeneralReportReponseDTOs.cs" />
+    <Compile Remove="Models\DTOs\ReportsViewForm\GeneralReportReponseDTOs.cs" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Remove="Report\GeneralReport.rdlc" />
-    <None Remove="Report\Report1.rdlc" />
-  </ItemGroup>
+	<ItemGroup>
+		<Content Include="Report\*.rdlc">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+	
+ 
+
+  
 
   <ItemGroup>
-    <Content Include="Report\GeneralReport.rdlc">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Report\Report1.rdlc">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="Models\DTOs\Reports\GeneralReportReponseDTOs.cs" />
+    <None Include="Models\DTOs\ReportsViewForm\GeneralReportReponseDTOs.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -72,8 +68,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore.Swagger" Version="9.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" Version="9.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="9.0.1" />
-    <PackageReference Include="System.Drawing.Common" Version="9.0.8" />
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.8" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.9" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.9" />
   </ItemGroup>
 
 </Project>
