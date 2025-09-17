@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner">
+	<!-- Data sources and datasets remain the same -->
+	<DataSources>
+		<DataSource Name="DocumentDetailsDataSource">
+			<ConnectionProperties>
+				<DataProvider>System.Data.DataSet</DataProvider>
+				<ConnectString>/* Local Connection */</ConnectString>
+			</ConnectionProperties>
+			<rd:DataSourceID>9e462d7a-2f6a-4f04-9e4b-87f5e9ab1234</rd:DataSourceID>
+		</DataSource>
+	</DataSources>
+	<DataSets>
+		<DataSet Name="DocumentDetailsDataSet">
+			<!-- Fields remain the same -->
+			<Query>
+				<DataSourceName>DocumentDetailsDataSource</DataSourceName>
+				<CommandText>/* Local Query */</CommandText>
+			</Query>
+			<Fields>
+				<!-- All your fields remain the same -->
+				<Field Name="Id">
+					<DataField>Id</DataField>
+					<rd:TypeName>System.Int32</rd:TypeName>
+				</Field>
+				<!-- Other fields -->
+			</Fields>
+		</DataSet>
+	</DataSets>
+	<ReportSections>
+		<ReportSection>
+			<Body>
+				<ReportItems>
+					<Textbox Name="DocumentDetailsTitle">
+						<CanGrow>true</CanGrow>
+						<KeepTogether>true</KeepTogether>
+						<Paragraphs>
+							<Paragraph>
+								<TextRuns>
+									<TextRun>
+										<Value>Document Details</Value>
+										<Style>
+											<FontSize>12pt</FontSize>
+											<FontWeight>Bold</FontWeight>
+										</Style>
+									</TextRun>
+								</TextRuns>
+								<Style>
+									<TextAlign>Center</TextAlign>
+								</Style>
+							</Paragraph>
+						</Paragraphs>
+						<Top>0.25in</Top>
+						<Left>1.5in</Left>
+						<Height>0.3in</Height>
+						<Width>5in</Width>
+						<Style>
+							<Border>
+								<Style>None</Style>
+							</Border>
+						</Style>
+					</Textbox>
+					<Tablix Name="DocumentDetailsTable">
+						<TablixBody>
+							<TablixColumns>
+								<TablixColumn>
+									<Width>1in</Width>
+								</TablixColumn>
+							</TablixColumns>
+							<TablixRows>
+								<TablixRow>
+									<Height>0.25in</Height>
+									<TablixCells>
+										<TablixCell>
+											<CellContents>
+												<Textbox Name="IdHeader">
+													<CanGrow>true</CanGrow>
+													<KeepTogether>true</KeepTogether>
+													<Paragraphs>
+														<Paragraph>
+															<TextRuns>
+																<TextRun>
+																	<Value>ID</Value>
+																	<Style>
+																		<FontWeight>Bold</FontWeight>
+																	</Style>
+																</TextRun>
+															</TextRuns>
+															<Style>
+																<TextAlign>Center</TextAlign>
+															</Style>
+														</Paragraph>
+													</Paragraphs>
+													<Style>
+														<Border>
+															<Style>Solid</Style>
+														</Border>
+														<BackgroundColor>LightGrey</BackgroundColor>
+													</Style>
+												</Textbox>
+											</CellContents>
+										</TablixCell>
+									</TablixCells>
+								</TablixRow>
+								<TablixRow>
+									<Height>0.25in</Height>
+									<TablixCells>
+										<TablixCell>
+											<CellContents>
+												<Textbox Name="Id">
+													<CanGrow>true</CanGrow>
+													<KeepTogether>true</KeepTogether>
+													<Paragraphs>
+														<Paragraph>
+															<TextRuns>
+																<TextRun>
+																	<Value>=Fields!Id.Value</Value>
+																	<Style />
+																</TextRun>
+															</TextRuns>
+															<Style>
+																<TextAlign>Center</TextAlign>
+															</Style>
+														</Paragraph>
+													</Paragraphs>
+													<Style>
+														<Border>
+															<Style>Solid</Style>
+														</Border>
+													</Style>
+												</Textbox>
+											</CellContents>
+										</TablixCell>
+									</TablixCells>
+								</TablixRow>
+							</TablixRows>
+						</TablixBody>
+						<TablixColumnHierarchy>
+							<TablixMembers>
+								<TablixMember />
+							</TablixMembers>
+						</TablixColumnHierarchy>
+						<TablixRowHierarchy>
+							<TablixMembers>
+								<TablixMember>
+									<KeepWithGroup>After</KeepWithGroup>
+								</TablixMember>
+								<TablixMember>
+									<Group Name="Details" />
+								</TablixMember>
+							</TablixMembers>
+						</TablixRowHierarchy>
+						<DataSetName>DocumentDetailsDataSet</DataSetName>
+						<Top>0.75in</Top>
+						<Left>3.5in</Left>
+						<Height>0.5in</Height>
+						<Width>1in</Width>
+						<ZIndex>1</ZIndex>
+						<Style>
+							<Border>
+								<Style>None</Style>
+							</Border>
+						</Style>
+					</Tablix>
+				</ReportItems>
+				<Height>3in</Height>
+				<Style />
+			</Body>
+			<Width>8in</Width>
+			<Page>
+				<PageHeader>
+					<Height>0.5in</Height>
+					<PrintOnFirstPage>true</PrintOnFirstPage>
+					<PrintOnLastPage>true</PrintOnLastPage>
+					<ReportItems>
+						<Textbox Name="HeaderTitle">
+							<CanGrow>true</CanGrow>
+							<KeepTogether>true</KeepTogether>
+							<Paragraphs>
+								<Paragraph>
+									<TextRuns>
+										<TextRun>
+											<Value>Document Details Report</Value>
+											<Style>
+												<FontSize>14pt</FontSize>
+												<FontWeight>Bold</FontWeight>
+											</Style>
+										</TextRun>
+									</TextRuns>
+									<Style>
+										<TextAlign>Center</TextAlign>
+									</Style>
+								</Paragraph>
+							</Paragraphs>
+							<Top>0.1in</Top>
+							<Left>2in</Left>
+							<Height>0.3in</Height>
+							<Width>4in</Width>
+							<Style />
+						</Textbox>
+					</ReportItems>
+					<Style />
+				</PageHeader>
+				<PageFooter>
+					<Height>0.4in</Height>
+					<PrintOnFirstPage>true</PrintOnFirstPage>
+					<PrintOnLastPage>true</PrintOnLastPage>
+					<ReportItems>
+						<Textbox Name="ReportPageNumber">
+							<CanGrow>true</CanGrow>
+							<KeepTogether>true</KeepTogether>
+							<Paragraphs>
+								<Paragraph>
+									<TextRuns>
+										<TextRun>
+											<Value>="Page " &amp; Globals!PageNumber &amp; " of " &amp; Globals!TotalPages</Value>
+											<Style>
+												<FontStyle>Italic</FontStyle>
+												<FontSize>8pt</FontSize>
+											</Style>
+										</TextRun>
+									</TextRuns>
+									<Style>
+										<TextAlign>Right</TextAlign>
+									</Style>
+								</Paragraph>
+							</Paragraphs>
+							<Top>0.1in</Top>
+							<Left>5.5in</Left>
+							<Height>0.25in</Height>
+							<Width>2in</Width>
+							<Style>
+								<Border>
+									<Style>None</Style>
+								</Border>
+								<VerticalAlign>Middle</VerticalAlign>
+							</Style>
+						</Textbox>
+					</ReportItems>
+					<Style>
+						<Border>
+							<Style>None</Style>
+						</Border>
+					</Style>
+				</PageFooter>
+				<PageHeight>11.69in</PageHeight>
+				<PageWidth>8.27in</PageWidth>
+				<LeftMargin>0.1in</LeftMargin>
+				<RightMargin>0.1in</RightMargin>
+				<TopMargin>0.25in</TopMargin>
+				<BottomMargin>0.25in</BottomMargin>
+				<Style />
+			</Page>
+		</ReportSection>
+	</ReportSections>
+	<!-- Parameters section remains the same -->
+	<ReportParameters>
+		<ReportParameter Name="ReportTitle">
+			<DataType>String</DataType>
+			<Nullable>false</Nullable>
+			<AllowBlank>true</AllowBlank>
+			<Prompt>Report Title</Prompt>
+		</ReportParameter>
+		<ReportParameter Name="GeneratedDate">
+			<DataType>String</DataType>
+			<Nullable>false</Nullable>
+			<AllowBlank>true</AllowBlank>
+			<Prompt>Report Generation Date</Prompt>
+		</ReportParameter>
+		<ReportParameter Name="SearchCriteria">
+			<DataType>String</DataType>
+			<Nullable>false</Nullable>
+			<AllowBlank>true</AllowBlank>
+			<Prompt>Search Criteria</Prompt>
+		</ReportParameter>
+	</ReportParameters>
+	<rd:ReportUnitType>Inch</rd:ReportUnitType>
+	<rd:ReportID>5f27209b-1c39-4c8d-98b2-5f0cf5ea1234</rd:ReportID>
+</Report>

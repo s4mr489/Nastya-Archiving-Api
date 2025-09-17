@@ -1,9 +1,13 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Reporting.NETCore;
 using Nastya_Archiving_project.Helper.Enums;
 using Nastya_Archiving_project.Models.DTOs;
 using Nastya_Archiving_project.Models.DTOs.Reports;
+using Nastya_Archiving_project.Models.DTOs.Search.QuikSearch;
 using Nastya_Archiving_project.Services.rdlcReport;
 using Nastya_Archiving_project.Services.reports;
+using Nastya_Archiving_project.Services.search;
+using System.Text;
 using static Nastya_Archiving_project.Services.reports.ResportServices;
 
 namespace Nastya_Archiving_project.Controllers
@@ -14,11 +18,15 @@ namespace Nastya_Archiving_project.Controllers
     {
         private readonly IReportServices _reportService;
         private readonly IRdlcReportServices _rdlcReportService;
+        private readonly ISearchServices _searchServices;
+        private readonly ILogger<ReportController> _logger;
 
-        public ReportController(IReportServices reportService, IRdlcReportServices rdlcReportService)
+        public ReportController(IReportServices reportService, IRdlcReportServices rdlcReportService, ISearchServices searchServices, ILogger<ReportController> logger)
         {
             _reportService = reportService;
             _rdlcReportService = rdlcReportService;
+            _searchServices = searchServices;
+            _logger = logger;
         }
 
         [HttpGet("General-Report")]
@@ -172,15 +180,15 @@ namespace Nastya_Archiving_project.Controllers
         //public async Task<IActionResult> GenerateRdlcReport([FromQuery] ReportsViewForm request, CancellationToken ct = default)
         //{
         //    var response = await _rdlcReportService.GenerateReportFromViewForm(request, ct);
-            
+
         //    if (response.StatusCode != 200)
         //    {
         //        return StatusCode(response.StatusCode, response);
         //    }
-            
+
         //    // The returned data should be byte[] representing the report
         //    var reportBytes = (byte[])response.Data;
-            
+
         //    // Determine content type and extension based on requested format
         //    var format = request.outputFormat?.ToLower() ?? "pdf";
         //    var contentType = format switch
@@ -194,12 +202,180 @@ namespace Nastya_Archiving_project.Controllers
         //    var ext = format.Equals("html", StringComparison.OrdinalIgnoreCase) ? "html" :
         //              format.Equals("excel", StringComparison.OrdinalIgnoreCase) ? "xls" :
         //              format.Equals("word", StringComparison.OrdinalIgnoreCase) ? "doc" : "pdf";
-            
+
         //    // Generate filename based on report type
         //    var reportTypeName = Enum.GetName(typeof(EReportType), request.reportType ?? EReportType.GeneralReport) ?? "Report";
         //    var filename = $"{reportTypeName}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.{ext}";
-            
+
         //    return File(reportBytes, contentType, filename);
         //}
+
+
+        [HttpGet("documents")]
+        public async Task<IActionResult> GenerateDocumentsReport([FromQuery] QuikeSearchViewForm searchCriteria, string format = "PDF")
+        {
+            // Get data from search service
+            var (docs, error) = await _searchServices.QuikeSearch(searchCriteria);
+
+            if (error != null)
+                return BadRequest(error);
+
+            if (docs == null || docs.Count == 0)
+                return NotFound("No documents found matching the search criteria.");
+
+            try
+            {
+                // Set up the report - Use the correct folder name consistently
+                string reportPath = Path.Combine(Directory.GetCurrentDirectory(), "Report", "DocumentReport.rdlc");
+
+                // Check if file exists and log info
+                if (!System.IO.File.Exists(reportPath))
+                {
+                    _logger.LogError($"Report file not found at: {reportPath}");
+                    return NotFound($"Report template not found. Please check if '{reportPath}' exists.");
+                }
+
+                _logger.LogInformation($"Loading report from: {reportPath}");
+                using var reportStream = new FileStream(reportPath, FileMode.Open);
+
+                // Configure report parameters
+                var parameters = new[] {
+                    new ReportParameter("ReportTitle", "Documents Search Results"),
+                    new ReportParameter("GeneratedDate", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                    new ReportParameter("SearchCriteria", GetSearchCriteriaDescription(searchCriteria))
+                };
+
+                // Setup the report
+                LocalReport report = new LocalReport();
+                report.LoadReportDefinition(reportStream);
+                report.DataSources.Add(new ReportDataSource("DocumentsDataSet", docs));
+                report.SetParameters(parameters);
+
+                // Render the report
+                byte[] reportContent;
+                string contentType;
+                string fileExtension;
+
+                switch (format.ToUpper())
+                {
+                    case "EXCEL":
+                        reportContent = report.Render("EXCEL");
+                        contentType = "application/vnd.ms-excel";
+                        fileExtension = "xlsx";
+                        break;
+                    case "WORD":
+                        reportContent = report.Render("WORD");
+                        contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                        fileExtension = "docx";
+                        break;
+                    case "PDF":
+                    default:
+                        reportContent = report.Render("PDF");
+                        contentType = "application/pdf";
+                        fileExtension = "pdf";
+                        break;
+                }
+
+                // Explicitly call the FileResult method from ControllerBase
+                return base.File(reportContent, contentType, $"Documents_{DateTime.Now:yyyyMMddHHmmss}.{fileExtension}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating report");
+                return StatusCode(500, $"Error generating report: {ex.Message}\nInner exception: {ex.InnerException?.Message}");
+            }
+        }
+
+        [HttpGet("details-report")]
+        public async Task<IActionResult> GenerateDetailsReport([FromQuery] QuikeSearchViewForm searchCriteria, string format = "PDF")
+        {
+            // Get detailed data from search service
+            var (docs, error) = await _searchServices.DetailsSearch(searchCriteria);
+
+            if (error != null)
+                return BadRequest(error);
+
+            if (docs == null || docs.Count == 0)
+                return NotFound("No documents found matching the search criteria.");
+
+            try
+            {
+                // Set up the report - Use the correct folder name consistently
+                string reportPath = Path.Combine(Directory.GetCurrentDirectory(), "Report", "DocumentDetailsReport.rdlc");
+
+                // Check if file exists and log info
+                if (!System.IO.File.Exists(reportPath))
+                {
+                    _logger.LogError($"Report file not found at: {reportPath}");
+                    return NotFound($"Report template not found. Please check if '{reportPath}' exists.");
+                }
+
+                _logger.LogInformation($"Loading report from: {reportPath}");
+                using var reportStream = new FileStream(reportPath, FileMode.Open);
+
+                // Configure report parameters
+                var parameters = new[] {
+                    new ReportParameter("ReportTitle", "Detailed Document Report"),
+                    new ReportParameter("GeneratedDate", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                    new ReportParameter("SearchCriteria", GetSearchCriteriaDescription(searchCriteria))
+                };
+
+                // Setup the report
+                LocalReport report = new LocalReport();
+                report.LoadReportDefinition(reportStream);
+                report.DataSources.Add(new ReportDataSource("DocumentDetailsDataSet", docs));
+                report.SetParameters(parameters);
+
+                // Render the report
+                byte[] reportContent;
+                string contentType;
+                string fileExtension;
+
+                switch (format.ToUpper())
+                {
+                    case "EXCEL":
+                        reportContent = report.Render("EXCELOPENXML"); // Use EXCELOPENXML instead of EXCEL
+                        contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                        fileExtension = "xlsx";
+                        break;
+                    case "PDF":
+                    default:
+                        reportContent = report.Render("PDF");
+                        contentType = "application/pdf";
+                        fileExtension = "pdf";
+                        break;
+                }
+
+                // Explicitly call the FileResult method from ControllerBase
+                return base.File(reportContent, contentType, $"DocumentDetails_{DateTime.Now:yyyyMMddHHmmss}.{fileExtension}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating report");
+                return StatusCode(500, $"Error generating report: {ex.Message}\nInner exception: {ex.InnerException?.Message}");
+            }
+        }
+
+        private string GetSearchCriteriaDescription(QuikeSearchViewForm criteria)
+        {
+            StringBuilder sb = new StringBuilder();
+
+            if (!string.IsNullOrWhiteSpace(criteria.docsNumber))
+                sb.Append($"Document #: {criteria.docsNumber}, ");
+
+            if (!string.IsNullOrWhiteSpace(criteria.subject))
+                sb.Append($"Subject: {criteria.subject}, ");
+
+            if (criteria.from.HasValue)
+                sb.Append($"From: {criteria.from.Value:yyyy-MM-dd}, ");
+
+            if (criteria.to.HasValue)
+                sb.Append($"To: {criteria.to.Value:yyyy-MM-dd}, ");
+
+            if (sb.Length > 2)
+                sb.Length -= 2; // Remove trailing comma and space
+
+            return sb.Length > 0 ? sb.ToString() : "All documents";
+        }
     }
 }
