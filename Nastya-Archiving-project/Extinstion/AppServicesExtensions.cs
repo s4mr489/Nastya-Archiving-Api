@@ -147,6 +147,14 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddEndpointsApiExplorer();
             services.AddSignalR();
             services.AddMemoryCache();
+            services.AddControllersWithViews()
+               .AddJsonOptions(options => {
+                   options.JsonSerializerOptions.PropertyNamingPolicy = null;
+               });
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+            // Configure services for RDLC
+           
             return services;
         }
         public static IServiceCollection AddMapperConfig(this IServiceCollection services)
