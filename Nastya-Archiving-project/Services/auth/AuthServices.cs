@@ -294,25 +294,43 @@ namespace Nastya_Archiving_project.Services.auth
             return "200"; // Success
         }
 
-        public async Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(string realName ,int pageNumber = 1, int pageSize = 10 )
+        public async Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(string realName, int pageNumber = 1, int pageSize = 10)
         {
             var usersQuery = _context.Users.AsQueryable();
-            if(string.IsNullOrEmpty(realName) == false)
+            List<User> users;
+
+            if (!string.IsNullOrEmpty(realName))
             {
-                var encryptedRealName = _encryptionServices.EncryptString256Bit(realName);
-                usersQuery = usersQuery.Where(u => u.Realname.Contains(encryptedRealName));
+                // Fetch all users for in-memory filtering since real names are encrypted
+                users = await usersQuery.ToListAsync();
+
+                // Filter by decrypted real name: exact or partial match (case-insensitive)
+                users = users
+                    .Where(u =>
+                    {
+                        var decryptedName = _encryptionServices.DecryptString256Bit(u.Realname ?? "");
+                        return !string.IsNullOrEmpty(decryptedName) &&
+                               (decryptedName.Equals(realName, StringComparison.OrdinalIgnoreCase) ||
+                                decryptedName.Contains(realName, StringComparison.OrdinalIgnoreCase));
+                    })
+                    .ToList();
+            }
+            else
+            {
+                users = await usersQuery.ToListAsync();
             }
 
-            var totalCount = await usersQuery.CountAsync();
+            var totalCount = users.Count;
             if (totalCount == 0)
                 return (null, "No users found.");
 
-            var users = await usersQuery
+            // Apply paging after filtering
+            var pagedUsers = users
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .ToListAsync();
+                .ToList();
 
-            var usersDtoList = users
+            var usersDtoList = pagedUsers
                 .Where(u => u != null)
                 .Select(u => new UsersResponseDTOs()
                 {
@@ -325,7 +343,7 @@ namespace Nastya_Archiving_project.Services.auth
                     accountUnit = _context.GpAccountingUnits.FirstOrDefault(a => a.Id == u.AccountUnitId)?.Dscrp,
                     jobTitl = _context.PJobTitles.FirstOrDefault(j => j.Id == u.JobTitle)?.Dscrp,
                     permission = _encryptionServices.DecryptString256Bit(u.Adminst),
-                    address = u.Address ,
+                    address = u.Address,
                     email = u.Email,
                     phoneNo = u.PhoneNo
                 })
@@ -382,7 +400,7 @@ namespace Nastya_Archiving_project.Services.auth
             user.JobTitle = form.JobTitle;
             user.Realname = _encryptionServices.EncryptString256Bit(form.Realname);
             user.UserName = _encryptionServices.EncryptString256Bit(form.UserName);
-            // user.UserPassword = _encryptionServices.EncryptString256Bit(form.UserPassword);
+            user.UserPassword = _encryptionServices.EncryptString256Bit(form.UserPassword);
             user.GroupId = form.GroupId;
             user.Permtype = _encryptionServices.EncryptString256Bit(form.Permtype);
             user.Adminst = _encryptionServices.EncryptString256Bit(IsAdmin ? "1" : "0");

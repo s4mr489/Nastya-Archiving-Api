@@ -572,9 +572,42 @@ WHERE TABLE_TYPE = 'BASE TABLE'";
                 // Get all available drives
                 var allDrives = DriveInfo.GetDrives();
 
-                // Filter and get only the required drives (I through V)
+                // Get all StorePath paths from the PArcivingPoints table to exclude used drives
+                var backupPaths = await _context.GpAccountingUnits
+                    .Where(p => p.StorePath != null && p.StorePath != "")
+                    .Select(p => p.StorePath)
+                    .ToListAsync();
+
+                // Extract drive letters from backup paths that are in the I-V range
+                var usedDriveLetters = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var path in backupPaths)
+                {
+                    try
+                    {
+                        // Use Path.GetPathRoot to get the root of the path, which includes the drive letter
+                        var pathRoot = Path.GetPathRoot(path);
+                        if (!string.IsNullOrEmpty(pathRoot) && pathRoot.Length >= 1)
+                        {
+                            var driveLetter = pathRoot.Substring(0, 1).ToUpperInvariant();
+                            if (targetDrives.Contains(driveLetter))
+                            {
+                                usedDriveLetters.Add(driveLetter);
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore invalid paths
+                    }
+                }
+
+                // Filter and get only the required drives (I through V) that are not used in PArcivingPoints
                 foreach (var letter in targetDrives)
                 {
+                    // Skip this drive letter if it's used by an account unit
+                    if (usedDriveLetters.Contains(letter))
+                        continue;
+
                     var drive = allDrives.FirstOrDefault(d =>
                         d.IsReady &&
                         d.DriveType == DriveType.Fixed &&
@@ -598,10 +631,10 @@ WHERE TABLE_TYPE = 'BASE TABLE'";
 
                 if (result.Count == 0)
                 {
-                    return new BaseResponseDTOs(null, 404, "No drives found from I to V");
+                    return new BaseResponseDTOs(null, 404, "No available drives found from I to V");
                 }
 
-                return new BaseResponseDTOs(result, 200, "Drives I through V retrieved successfully");
+                return new BaseResponseDTOs(result, 200, "Available drives I through V retrieved successfully");
             }
             catch (Exception ex)
             {

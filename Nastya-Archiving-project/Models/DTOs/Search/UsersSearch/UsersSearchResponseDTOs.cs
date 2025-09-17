@@ -8,6 +8,7 @@
         public int? Activation { get; set; }
         public DateTime JoinDate { get; set; }
         public string? realName { get; set; }
+        public string? username { get; set; }
         public UsersOptionPermission? usersOptionPermission { get; set; }
         public List<ArchivingPermissionResponseDTOs>? archivingPoint { get; set; }
     }

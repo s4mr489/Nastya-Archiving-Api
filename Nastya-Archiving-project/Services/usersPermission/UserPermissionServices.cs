@@ -153,6 +153,7 @@ namespace Nastya_Archiving_project.Services.usersPermission
                 new UsersSearchResponseDTOs
                 {
                     userId = users.Id ?? 0,
+                    username = _encryptionServices.DecryptString256Bit(_context.Users.FirstOrDefault(u => u.Id == (users.Id ?? 0))?.UserName),
                     realName = _encryptionServices.DecryptString256Bit(_context.Users.FirstOrDefault(u => u.Id == (users.Id ?? 0))?.Realname ?? string.Empty),
                     fileType = asaWfuser.FirstOrDefault(a => a.Id == (users.Id ?? 0))?.Id,
                     usersOptionPermission = optionPermissions.FirstOrDefault(p => p.UserId == users.Id),
@@ -387,6 +388,7 @@ namespace Nastya_Archiving_project.Services.usersPermission
             var userInfo = new UserPermissionAndInfosResponseDTOs
             {
                 Id = user.Id,
+                username = user.UserName != null ? _encryptionServices.DecryptString256Bit(user.UserName) : null,
                 RealName = user.Realname != null ? _encryptionServices.DecryptString256Bit(user.Realname) : null,
                 Email = user.Email != null ? user.Email : null,
                 PhoneNumber = user.PhoneNo != null ? user.PhoneNo : null,

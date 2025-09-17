@@ -6,6 +6,7 @@ namespace Nastya_Archiving_project.Models.DTOs.UserPermission
     public class UserPermissionAndInfosResponseDTOs
     {
         public int Id { get; set; }
+        public string? username { get; set; } = null!;
         public string? RealName { get; set; } = null!;
         public string? Email { get; set; } = null!;
         public string? PhoneNumber { get; set; } = null!;
