@@ -45,7 +45,8 @@ namespace Nastya_Archiving_project.Services.userInterface
                 {
                     Pagedscrp = requestDTOs.dscription,
                     Pageurl = requestDTOs.pageUrl,
-                    Outputtype = requestDTOs.outPutType,
+                    outputTypeName = requestDTOs.outPutType,
+                    Outputtype = requestDTOs.outPutTypeName,
                     Program = requestDTOs.program,
                     Serials = requestDTOs.serial,
                     AccountUnitId = requestDTOs.AccountUnitId
@@ -66,9 +67,9 @@ namespace Nastya_Archiving_project.Services.userInterface
         public async Task<Dictionary<string, List<UserInterfaceResponseDTOs>>> GetPageUrlsGroupedByOutputType()
         {
             var result = await _context.Usersinterfaces
-               .Where(ui => ui.Outputtype != null && ui.Pageurl != null)
-               .OrderBy(ui => ui.Outputtype)
-               .GroupBy(ui => ui.Outputtype)
+               .Where(ui => ui.outputTypeName != null && ui.Pageurl != null) // Changed from Outputtype to outputTypeName
+               .OrderBy(ui => ui.outputTypeName)
+               .GroupBy(ui => ui.outputTypeName)
                .ToDictionaryAsync(
                    g => g.Key!,
                    g => g.Select(ui => new UserInterfaceResponseDTOs

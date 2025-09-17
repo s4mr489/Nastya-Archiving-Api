@@ -186,6 +186,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.DocTypeId).HasColumnName("DocTypeID");
             entity.Property(e => e.Dscrp).HasMaxLength(50);
+            entity.Property(e => e.accountUnitId).HasColumnName("AccountUnitID");
+            entity.Property(e => e.branchId).HasColumnName("BranchID");
+            entity.Property(e => e.departId).HasColumnName("DepartID");
         });
 
         modelBuilder.Entity<ArcivingDoc>(entity =>
@@ -842,6 +845,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Outputtype)
                 .HasMaxLength(20)
                 .HasColumnName("outputtype");
+            entity.Property(e => e.outputTypeName)
+                .HasMaxLength(20)
+                .HasColumnName("outputTypeName");
             entity.Property(e => e.Pagedscrp)
                 .HasMaxLength(50)
                 .HasColumnName("pagedscrp");

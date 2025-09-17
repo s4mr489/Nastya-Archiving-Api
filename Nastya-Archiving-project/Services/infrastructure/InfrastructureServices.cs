@@ -830,11 +830,11 @@ namespace Nastya_Archiving_project.Services.infrastructure
             if (req.Dscrp != null)
                 query = query.Where(d => d.Dscrp.Contains(req.Dscrp));
             if (req.AccountUnitId != 0)
-                query = query.Where(d => d.Equals(req.AccountUnitId));
+                query = query.Where(d => d.AccountUnitId == req.AccountUnitId);
             if (req.DepartId != 0)
-                query = query.Where(d => d.Equals(req.BranchId));
+                query = query.Where(d => d.DepartId == req.DepartId); // Also note this should use req.DepartId, not req.BranchId
             if (req.BranchId != 0)
-                query = query.Where(d => d.Equals(req.BranchId));
+                query = query.Where(d => d.BranchId == req.BranchId);
 
             var orgnization = await query
                 .Select(d => new OrgniztionResponseDTOs

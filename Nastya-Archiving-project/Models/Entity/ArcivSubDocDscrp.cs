@@ -10,4 +10,7 @@ public partial class ArcivSubDocDscrp
     public string? Dscrp { get; set; }
 
     public int? DocTypeId { get; set; }
+    public int? accountUnitId { get; set; }
+    public int? branchId { get; set; }
+    public int? departId { get; set; }
 }

@@ -369,7 +369,10 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             sup = new ArcivSubDocDscrp
             {
                 Dscrp = req.supDocuName,
-                DocTypeId = req.DocTypeId
+                DocTypeId = req.DocTypeId,
+                accountUnitId = req.accountUnitId,
+                branchId = req.branchId,
+                departId = req.departId
             };
 
             _context.ArcivSubDocDscrps.Add(sup);
@@ -378,7 +381,10 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             {
                 Id = sup.Id,
                 supDocuName = sup.Dscrp,
-                DocTypeId = sup?.DocTypeId
+                DocTypeId = sup?.DocTypeId,
+                accountUnitId = sup?.accountUnitId,
+                branchId = sup?.branchId,
+                departId = sup.departId
             };
 
             return (rseponse, null);    
@@ -393,7 +399,11 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             {
                 Id = sup.Id,
                 supDocuName = sup.Dscrp,
-                DocTypeId = sup.DocTypeId
+                DocTypeId = sup.DocTypeId,
+                accountUnitId = sup.accountUnitId,
+                branchId = sup.branchId,
+                departId = sup.departId
+
             };
             return (response, null);
         }
@@ -407,7 +417,10 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
                 {
                     Id = d.Id,
                     supDocuName = d.Dscrp,
-                    DocTypeId = d.DocTypeId
+                    DocTypeId = d.DocTypeId,
+                    accountUnitId = d.accountUnitId,
+                    branchId = d.branchId,
+                    departId = d.departId
                 })
                 .ToListAsync();
             if (sup == null || !sup.Any())
@@ -427,7 +440,10 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             {
                 Id = s.Id,
                 supDocuName = s.Dscrp,
-                DocTypeId = s.DocTypeId
+                DocTypeId = s.DocTypeId,
+                accountUnitId = s.accountUnitId,
+                branchId = s.branchId,
+                departId = s.departId
             }).ToList();
 
             return (response, null);
@@ -450,6 +466,9 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
 
             sup.Dscrp = req.supDocuName;
             sup.DocTypeId = req.DocTypeId;
+            sup.accountUnitId = req.accountUnitId;
+            sup.branchId = req.branchId;
+            sup.departId = req.departId;
 
             _context.ArcivSubDocDscrps.Update(sup);
             await _context.SaveChangesAsync();
@@ -458,7 +477,10 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             {
                 Id = sup.Id,
                 supDocuName = sup.Dscrp,
-                DocTypeId = sup.DocTypeId
+                DocTypeId = sup.DocTypeId,
+                accountUnitId = sup.accountUnitId,
+                branchId = sup.branchId,
+                departId = sup.departId
             };
             return (response, null);
         }
@@ -765,7 +787,10 @@ namespace Nastya_Archiving_project.Services.ArchivingSettings
             {
                 Id = s.Id,
                 supDocuName = s.Dscrp,
-                DocTypeId = s.DocTypeId
+                DocTypeId = s.DocTypeId,
+                accountUnitId = s.accountUnitId,
+                branchId = s.branchId,
+                departId = s.departId
             }).ToList();
 
             return new BaseResponseDTOs(result, 200);

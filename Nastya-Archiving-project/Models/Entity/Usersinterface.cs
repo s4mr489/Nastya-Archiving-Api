@@ -12,7 +12,7 @@ public partial class Usersinterface
     public string? Pageurl { get; set; }
 
     public string? Outputtype { get; set; }
-
+    public string? outputTypeName { get; set; }
     public string? Program { get; set; }
 
     public int? Serials { get; set; }
