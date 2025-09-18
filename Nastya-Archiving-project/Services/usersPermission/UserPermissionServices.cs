@@ -380,31 +380,62 @@ namespace Nastya_Archiving_project.Services.usersPermission
 
         public async Task<BaseResponseDTOs> GetAllPermissionsAndInfoForUser(int Id)
         {
-           var user =await _context.Users.FirstOrDefaultAsync(u => u.Id == Id);
-            if(user == null)
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == Id);
+            if (user == null)
             {
                 return new BaseResponseDTOs(null, 404, "User not found.");
             }
+
+            // Get account unit description
+            var accountUnit = await _context.GpAccountingUnits
+                .FirstOrDefaultAsync(a => a.Id == user.AccountUnitId);
+
+            // Get branch description
+            var branch = await _context.GpBranches
+                .FirstOrDefaultAsync(b => b.Id == user.BranchId);
+
+            // Get department description
+            var department = await _context.GpDepartments
+                .FirstOrDefaultAsync(d => d.Id == user.DepariId);
+
+            // Get group description - handling encrypted group description
+            var group = await _context.Usersgroups
+                .FirstOrDefaultAsync(g => g.groupid == user.GroupId);
+
+            string groupDscrp = null;
+            if (group != null && !string.IsNullOrEmpty(group.Groupdscrp))
+            {
+                groupDscrp = _encryptionServices.DecryptString256Bit(group.Groupdscrp);
+            }
+
             var userInfo = new UserPermissionAndInfosResponseDTOs
             {
                 Id = user.Id,
                 username = user.UserName != null ? _encryptionServices.DecryptString256Bit(user.UserName) : null,
                 RealName = user.Realname != null ? _encryptionServices.DecryptString256Bit(user.Realname) : null,
-                Email = user.Email != null ? user.Email : null,
-                PhoneNumber = user.PhoneNo != null ? user.PhoneNo : null,
-                Address = user.Address != null ? user.Address : null,
+                accountUnit = user.AccountUnitId,
+                accountUnitDscrp = accountUnit?.Dscrp,
+                branch = user.BranchId,
+                branchDscrp = branch?.Dscrp,
+                depart = user.DepariId,
+                departDscrp = department?.Dscrp,
+                group = user.GroupId,
+                groupDscrp = groupDscrp,
+                Email = user.Email,
+                PhoneNumber = user.PhoneNo,
+                Address = user.Address,
                 IsActive = user.Stoped == 1 ? "Stopped" : "Active",
                 usersOptionPermissions = await _context.UsersOptionPermissions
                     .Where(p => p.UserId == Id)
                     .ToListAsync(),
                 UserDepartement = await (from ud in _context.UsersArchivingPointsPermissions
-                                        join d in _context.GpDepartments on ud.DepartId equals d.Id
-                                        where ud.UserId == Id && ud.DepartId != null
-                                        select new DepartmentResponseDTOs
-                                        {
-                                            Id = d.Id,
-                                            DepartmentName = d.Dscrp
-                                        }).Distinct().ToListAsync()
+                                         join d in _context.GpDepartments on ud.DepartId equals d.Id
+                                         where ud.UserId == Id && ud.DepartId != null
+                                         select new DepartmentResponseDTOs
+                                         {
+                                             Id = d.Id,
+                                             DepartmentName = d.Dscrp
+                                         }).Distinct().ToListAsync()
             };
 
             return new BaseResponseDTOs(userInfo, 200);

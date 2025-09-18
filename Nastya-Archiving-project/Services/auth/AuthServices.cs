@@ -360,14 +360,45 @@ namespace Nastya_Archiving_project.Services.auth
 
         public async Task<string> RemoveUser(int Id)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == Id);
-            if (user == null)
-                return "400";
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == Id);
+                if (user == null)
+                    return "400";
 
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
+                // Remove user permissions
+                var userPermissions = await _context.UsersOptionPermissions
+                    .Where(p => p.UserId == Id)
+                    .ToListAsync();
 
-            return "200";
+                if (userPermissions.Any())
+                {
+                    _context.UsersOptionPermissions.RemoveRange(userPermissions);
+                }
+
+                // Remove user archiving point permissions
+                var archivingPermissions = await _context.UsersArchivingPointsPermissions
+                    .Where(p => p.UserId == Id)
+                    .ToListAsync();
+
+                if (archivingPermissions.Any())
+                {
+                    _context.UsersArchivingPointsPermissions.RemoveRange(archivingPermissions);
+                }
+
+                // Remove the user
+                _context.Users.Remove(user);
+                await _context.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+                return "200";
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync();
+                return "500";
+            }
         }
 
         public async Task<(RegisterResponseDTOs? user, string? error)> EditUser(int id, RegisterViewForm form, bool IsAdmin)
@@ -392,6 +423,9 @@ namespace Nastya_Archiving_project.Services.auth
 
             if ((await _infrastructureServices.GetJobTitleById(form.JobTitle)).Job == null)
                 return (null, "Job title not found.");
+
+            if(form.UserPassword == null)
+                return (null, "Password cannot be null.");
 
             // Update user properties
             user.AccountUnitId = form.AccountUnitId;

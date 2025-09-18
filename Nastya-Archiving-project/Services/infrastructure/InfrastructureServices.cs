@@ -469,12 +469,19 @@ namespace Nastya_Archiving_project.Services.infrastructure
             if (departments == null || departments.Count == 0)
                 return (null, "404"); // No departments found
 
+            // Get all archiving points and create a lookup by department ID
+            var archivingPointsByDept = await _context.PArcivingPoints
+                .Where(ap => ap.DepartId.HasValue)
+                .GroupBy(ap => ap.DepartId.Value)
+                .ToDictionaryAsync(g => g.Key, g => g.ToList());
+
             return (departments.Select(d => new DepartmentResponseDTOs
             {
                 Id = d.Id,
                 DepartmentName = d.Dscrp,
                 BranchId = d.BranchId,
-                AccountUnitId = d.AccountUnitId
+                AccountUnitId = d.AccountUnitId,
+                hasArchivingPoint = archivingPointsByDept.ContainsKey(d.Id)
             }).ToList(), null); // Return list of departments
         }
 

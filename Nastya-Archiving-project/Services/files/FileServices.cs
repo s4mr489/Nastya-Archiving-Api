@@ -991,7 +991,7 @@ namespace Nastya_Archiving_project.Services.files
                 }
 
                 // Sanitize and uniquify file name
-                var safeFileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}_{Guid.NewGuid()}{extension}";
+                var safeFileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}{extension}";
                 var newFilePath = Path.Combine(wwwrootDir, safeFileName);
 
                 await using (var stream = new FileStream(newFilePath, FileMode.Create))
