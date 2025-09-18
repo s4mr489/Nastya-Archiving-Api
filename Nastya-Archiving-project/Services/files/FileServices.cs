@@ -40,7 +40,6 @@ namespace Nastya_Archiving_project.Services.files
         //upload single pdf file and encrypt it using AES encryption
         public async Task<(string? file, long fileSize, string? error)> upload(FileViewForm fileForm)
         {
-            // Get the user's info
             var userId = (await _systemInfo.GetUserId()).Id;
             if (string.IsNullOrEmpty(userId))
                 return (null, 0, "User ID is not available.");
@@ -49,35 +48,22 @@ namespace Nastya_Archiving_project.Services.files
             if (user == null)
                 return (null, 0, "User not found.");
 
-            // Check file size against license limits
             var file = fileForm.File;
             if (file == null)
                 return (null, 0, "No file was provided.");
 
             long fileSize = file.Length;
-
-            // Get license storage limit in MB (convert GB to MB)
             var licenseLimit = await GetLicenseStorageLimitMB();
             if (licenseLimit <= 0)
                 return (null, fileSize, "Unable to determine storage limit from license.");
 
-            // Convert file size to MB for comparison (with ceiling to ensure we don't allow files that are slightly over limit)
             double fileSizeMB = Math.Ceiling(fileSize / (1024.0 * 1024.0));
-
-            // Check if file exceeds the license limit
             if (fileSizeMB > licenseLimit)
                 return (null, fileSize, $"  حجم الملف المراد رفعه هو : {fileSizeMB} , وهو يتجاوز الحد المسموح به : {licenseLimit}.");
 
-            // Check if DocType is valid
-            //var docType = await _context.ArcivDocDscrps.FirstOrDefaultAsync(d => d.Id == fileForm.DocTypeDscrption);
-            //if (docType == null)
-            //    return (null, 0, $"Document type with ID {fileForm.DocType} not found.");
-
             var depr = _context.GpDepartments.FirstOrDefault(d => d.Id == user.DepariId);
-
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
 
-            // Accept PDF and Word files
             var isPdf = extension == ".pdf" && file.ContentType == "application/pdf";
             var isDocx = extension == ".docx" &&
                 (file.ContentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
@@ -94,30 +80,32 @@ namespace Nastya_Archiving_project.Services.files
             if (storePath == null)
                 return (null, 0, "Storage path not configured for user's account unit and department.");
 
-            // Ensure StorePath and StartWith are not null
             string storePathValue = storePath.StorePath ?? string.Empty;
             string startWithValue = storePath.StartWith ?? string.Empty;
 
-            // Sanitize base path components - remove trailing colons and other invalid characters
-            storePathValue = SanitizeBasePath(storePathValue);
-            startWithValue = SanitizePathComponent(startWithValue);
+            // If StorePath is a partition (e.g., "E:"), use it as the root
+            if (storePathValue.Length == 2 && storePathValue[1] == ':' && char.IsLetter(storePathValue[0]))
+            {
+                storePathValue = storePathValue.EndsWith("\\") ? storePathValue : storePathValue + "\\";
+            }
+            else
+            {
+                storePathValue = SanitizeBasePath(storePathValue);
+            }
 
-            // Get and sanitize other path components
+            startWithValue = SanitizePathComponent(startWithValue);
             string yearStr = DateTime.Now.Year.ToString();
             string departmentName = SanitizePathComponent(depr?.Dscrp ?? "Unknown");
             string monthStr = DateTime.Now.Month.ToString();
-            
-            // Use document type description instead of group description
-            
 
-            // Include StartWith in the physical path with docTypeName instead of groupName
+            // Build the full path starting from the partition root
             string attachmentsDir = Path.Combine(
                 storePathValue,
                 startWithValue,
                 yearStr,
                 departmentName,
                 monthStr,
-                fileForm.DocTypeDscrption  // Using document type instead of group description
+                fileForm.DocTypeDscrption
             );
 
             if (!Directory.Exists(attachmentsDir))
@@ -139,7 +127,7 @@ namespace Nastya_Archiving_project.Services.files
                 }
             }
 
-            // Keep the web path consistent with physical path
+            // Build the web path for database (use forward slashes)
             var webPath = Path.Combine(
                 storePathValue.Replace(Path.DirectorySeparatorChar, '/'),
                 startWithValue.Replace(Path.DirectorySeparatorChar, '/'),
