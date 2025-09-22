@@ -6,6 +6,6 @@ namespace Nastya_Archiving_project.Models.DTOs.ArchivingDocs.JoinedDocs
     {
         public string? parentReferenceId { get; set; }
         public string? childReferenceId { get; set; }
-        public int? BreafcaseNo { get; set; }
+        public string? BreafcaseNo { get; set; }
     }
 }

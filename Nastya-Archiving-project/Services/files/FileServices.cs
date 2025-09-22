@@ -320,41 +320,46 @@ namespace Nastya_Archiving_project.Services.files
         }
 
         // Merges two PDF files and returns the merged file as an encrypted and compressed byte array
-        public async Task<(byte[]? MergedFile, string? Error)> MergeTwoPdfFilesAsync(MergePdfViewForm requestDTO)
+        public async Task<(byte[]? MergedFile, string? Error)> MergePdfFilesAsync(string originalFilePath, List<IFormFile> files)
         {
-            if (string.IsNullOrWhiteSpace(requestDTO.OriginalFilePath) || requestDTO.File == null)
-                return (null, "Original file path and the file to merge must be provided.");
+            if (string.IsNullOrWhiteSpace(originalFilePath) || files == null || files.Count == 0)
+                return (null, "Original file path and at least one file to merge must be provided.");
 
-            // Validate file is PDF
-            if (!Path.GetExtension(requestDTO.File.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-                return (null, "The uploaded file must be a PDF document.");
+            // Validate all files are PDF
+            foreach (var file in files)
+            {
+                if (!Path.GetExtension(file.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+                    return (null, $"File '{file.FileName}' is not a PDF document.");
+            }
 
             // Check file size against license limits
             var licenseLimit = await GetLicenseStorageLimitMB();
             if (licenseLimit <= 0)
                 return (null, "Unable to determine storage limit from license.");
 
-            // Check the size of the uploaded file
-            double uploadedFileSizeMB = Math.Ceiling(requestDTO.File.Length / (1024.0 * 1024.0));
-            if (uploadedFileSizeMB > licenseLimit)
-                return (null, $"File size ({uploadedFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+            // Calculate total size of uploaded files
+            long totalUploadedSize = files.Sum(f => f.Length);
+            double totalUploadedSizeMB = Math.Ceiling(totalUploadedSize / (1024.0 * 1024.0));
+
+            if (totalUploadedSizeMB > licenseLimit)
+                return (null, $"Total file size ({totalUploadedSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
 
             // Create unique temp file paths with clear naming
             var tempId = Guid.NewGuid().ToString("N");
             string tempDir = Path.GetTempPath();
-            string uploadedFilePath = Path.Combine(tempDir, $"uploaded_{tempId}.pdf");
             string originalDecryptedPath = Path.Combine(tempDir, $"original_{tempId}.pdf");
             string mergedPdfPath = Path.Combine(tempDir, $"merged_{tempId}.pdf");
             string finalEncryptedPath = Path.Combine(tempDir, $"final_{tempId}.gz");
 
-            var tempFiles = new List<string> { uploadedFilePath, originalDecryptedPath, mergedPdfPath, finalEncryptedPath };
+            var tempFiles = new List<string> { originalDecryptedPath, mergedPdfPath, finalEncryptedPath };
+            var uploadedFilePaths = new List<string>();
 
             try
             {
                 // 1. Locate and validate the original file
-                string originalPath = ResolveFilePath(requestDTO.OriginalFilePath);
+                string originalPath = ResolveFilePath(originalFilePath);
                 if (originalPath == null)
-                    return (null, $"Original file not found at: {requestDTO.OriginalFilePath}");
+                    return (null, $"Original file not found at: {originalFilePath}");
 
                 // Check the size of the original file
                 if (File.Exists(originalPath))
@@ -362,17 +367,24 @@ namespace Nastya_Archiving_project.Services.files
                     var originalFileInfo = new FileInfo(originalPath);
                     double originalFileSizeMB = Math.Ceiling(originalFileInfo.Length / (1024.0 * 1024.0));
 
-                    // Estimate the final size (sum of both files with some overhead)
-                    double estimatedFinalSizeMB = originalFileSizeMB + uploadedFileSizeMB;
+                    // Estimate the final size (sum of all files with some overhead)
+                    double estimatedFinalSizeMB = originalFileSizeMB + totalUploadedSizeMB;
                     if (estimatedFinalSizeMB > licenseLimit)
                         return (null, $"Estimated size of merged file ({estimatedFinalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
                 }
 
                 bool isCompressed = originalPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
 
-                // 2. Save the uploaded file
-                using (var fileStream = new FileStream(uploadedFilePath, FileMode.Create))
-                    await requestDTO.File.CopyToAsync(fileStream);
+                // 2. Save all uploaded files to temp paths
+                foreach (var file in files)
+                {
+                    var uploadedFilePath = Path.Combine(tempDir, $"uploaded_{tempId}_{uploadedFilePaths.Count}.pdf");
+                    using (var fileStream = new FileStream(uploadedFilePath, FileMode.Create))
+                        await file.CopyToAsync(fileStream);
+
+                    uploadedFilePaths.Add(uploadedFilePath);
+                    tempFiles.Add(uploadedFilePath);
+                }
 
                 // 3. Process the original file (decrypt/decompress if needed)
                 if (!await ProcessOriginalPdfFileAsync(originalPath, originalDecryptedPath))
@@ -394,17 +406,20 @@ namespace Nastya_Archiving_project.Services.files
                         return (null, $"Error reading original PDF: {ex.Message}");
                     }
 
-                    // Add pages from uploaded file
-                    try
+                    // Add pages from each uploaded file
+                    foreach (var uploadedFilePath in uploadedFilePaths)
                     {
-                        using var uploadedDoc = PdfSharp.Pdf.IO.PdfReader.Open(
-                            uploadedFilePath, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
-                        for (int i = 0; i < uploadedDoc.PageCount; i++)
-                            mergedPdfDoc.AddPage(uploadedDoc.Pages[i]);
-                    }
-                    catch (Exception ex)
-                    {
-                        return (null, $"Error reading uploaded PDF: {ex.Message}");
+                        try
+                        {
+                            using var uploadedDoc = PdfSharp.Pdf.IO.PdfReader.Open(
+                                uploadedFilePath, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+                            for (int i = 0; i < uploadedDoc.PageCount; i++)
+                                mergedPdfDoc.AddPage(uploadedDoc.Pages[i]);
+                        }
+                        catch (Exception ex)
+                        {
+                            return (null, $"Error reading uploaded PDF: {ex.Message}");
+                        }
                     }
 
                     // Save the merged document
@@ -721,41 +736,56 @@ namespace Nastya_Archiving_project.Services.files
             }
         }
         //this method to merge docx files and return the merged file as bytes
-        public async Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxFilesAsync(List<IFormFile> files)
+        public async Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxWithOriginalAsync(
+    string originalFilePath,
+    List<IFormFile> files)
         {
-            if (files == null || files.Count < 2)
-                return (null, null, "At least two .docx files are required.");
+            if (string.IsNullOrWhiteSpace(originalFilePath) || !File.Exists(originalFilePath))
+                return (null, null, "Original file path is invalid or file doesn't exist.");
+
+            if (files == null || files.Count < 1)
+                return (null, null, "At least one additional file is required.");
 
             // Get license storage limit in MB
             var licenseLimit = await GetLicenseStorageLimitMB();
             if (licenseLimit <= 0)
                 return (null, null, "Unable to determine storage limit from license.");
 
+            // Check original file size and extension
+            var originalFileInfo = new FileInfo(originalFilePath);
+            if (originalFileInfo.Extension.ToLowerInvariant() != ".docx")
+                return (null, null, "Original file must be in .docx format.");
+
+            double originalFileSizeMB = Math.Ceiling(originalFileInfo.Length / (1024.0 * 1024.0));
+            if (originalFileSizeMB > licenseLimit)
+                return (null, null, $"Original file size ({originalFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+
             // Calculate total size of all files
-            long totalSize = files.Sum(f => f.Length);
-            double totalSizeMB = Math.Ceiling(totalSize / (1024.0 * 1024.0));
+            long uploadedFilesSize = files.Sum(f => f.Length);
+            double totalSizeMB = originalFileSizeMB + Math.Ceiling(uploadedFilesSize / (1024.0 * 1024.0));
 
             // Check if total size exceeds the license limit
             if (totalSizeMB > licenseLimit)
                 return (null, null, $"Total file size ({totalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
 
-            // Check individual files
+            // Check individual uploaded files
             foreach (var file in files)
             {
                 double fileSizeMB = Math.Ceiling(file.Length / (1024.0 * 1024.0));
                 if (fileSizeMB > licenseLimit)
                     return (null, null, $"File '{file.FileName}' size ({fileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+
+                if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".docx")
+                    return (null, null, "All files must be .docx format.");
             }
 
             var tempPaths = new List<string>();
+            string outputFile = null;
             try
             {
                 // Save uploaded files to temp
                 foreach (var file in files)
                 {
-                    if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".docx")
-                        return (null, null, "All files must be .docx format.");
-
                     var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.docx");
                     using (var stream = new FileStream(tempPath, FileMode.Create))
                     {
@@ -764,19 +794,22 @@ namespace Nastya_Archiving_project.Services.files
                     tempPaths.Add(tempPath);
                 }
 
-                // Use the directory of the first temp file as the origin path
-                var originDir = Path.GetDirectoryName(tempPaths[0])!;
-                var mergedFileName = $"merged_{Guid.NewGuid()}.docx";
-                var outputFile = Path.Combine(originDir, mergedFileName);
+                // Create output file
+                var originalFileName = Path.GetFileNameWithoutExtension(originalFilePath);
+                var mergedFileName = $"{originalFileName}_merged_{Guid.NewGuid()}.docx";
+                outputFile = Path.Combine(Path.GetTempPath(), mergedFileName);
 
-                // Merge using your existing logic
-                File.Copy(tempPaths[0], outputFile, true);
+                // Start with the original file
+                File.Copy(originalFilePath, outputFile, true);
+
+                // Open the merged document and append content from additional files
                 using (WordprocessingDocument mainDoc = WordprocessingDocument.Open(outputFile, true))
                 {
                     var mainBody = mainDoc.MainDocumentPart.Document.Body;
-                    for (int i = 1; i < tempPaths.Count; i++)
+
+                    foreach (var tempPath in tempPaths)
                     {
-                        using (WordprocessingDocument tempDoc = WordprocessingDocument.Open(tempPaths[i], true))
+                        using (WordprocessingDocument tempDoc = WordprocessingDocument.Open(tempPath, true))
                         {
                             foreach (var element in tempDoc.MainDocumentPart.Document.Body.Elements())
                             {
@@ -803,10 +836,12 @@ namespace Nastya_Archiving_project.Services.files
             }
             finally
             {
+                // Clean up temporary files
                 foreach (var path in tempPaths)
                     if (File.Exists(path)) File.Delete(path);
-                // Optionally, delete the merged file after reading
-                // if (File.Exists(outputFile)) File.Delete(outputFile);
+
+                if (outputFile != null && File.Exists(outputFile))
+                    File.Delete(outputFile);
             }
         }
         // Method to get a decrypted file by its path

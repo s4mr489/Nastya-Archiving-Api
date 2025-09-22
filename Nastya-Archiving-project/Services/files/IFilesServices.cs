@@ -35,11 +35,14 @@ namespace Nastya_Archiving_project.Services.files
         //taht implement to read the file from the temp folder for the user 
         Task<(Stream? fileStream, string? contentType, string? error)> GetFileAsync(string relativePath);
         // that use when we need to update the docs file and insert new pdf to the old pdf
-        Task<(byte[]? MergedFile, string? Error)> MergeTwoPdfFilesAsync(MergePdfViewForm requestDTO);
+        Task<(byte[]? MergedFile, string? Error)> MergePdfFilesAsync(string originalFilePath, List<IFormFile> files);
         //that use to get the file size
         long GetFileSize(IFormFile file);
         //this is used to merge docx files into one file
-        Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxFilesAsync(List<IFormFile> files);
+        Task<(byte[]? MergedFile, string? FileName, string? Error)> MergeDocxWithOriginalAsync(
+            string originalFilePath,
+            List<IFormFile> files);
+
         //this is used to remove all the temp folder files for the user
         Task<bool> RemoveAllTempFolderFilesAsync();
 

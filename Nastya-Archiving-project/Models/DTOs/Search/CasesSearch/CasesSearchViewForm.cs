@@ -2,7 +2,7 @@
 {
     public class CasesSearchViewForm
     {
-        public int? CaseNumber { get; set; }
+        public string? CaseNumber { get; set; }
         public DateTime? from { get; set; }
         public DateTime? to { get; set; }
 

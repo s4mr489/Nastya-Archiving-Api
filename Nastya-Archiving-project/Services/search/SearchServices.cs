@@ -1224,29 +1224,43 @@ namespace Nastya_Archiving_project.Services.search
         {
             var query = _context.JoinedDocs.AsQueryable();
 
-            if(req.CaseNumber.HasValue)
-                query = query.Where(q => q.BreafcaseNo ==  req.CaseNumber.Value);
+            if (string.IsNullOrEmpty(req.CaseNumber))
+                query = query.Where(q => q.BreafcaseNo == req.CaseNumber);
             if (req.from.HasValue)
                 query = query.Where(d => d.editDate.HasValue && d.editDate.Value >= req.from);
             if (req.to.HasValue)
                 query = query.Where(d => d.editDate.HasValue && d.editDate.Value <= req.to);
-
 
             var pagedList = await PagedList<T_JoinedDoc>.Create(
                 query.OrderBy(d => d.ParentRefrenceNO),
                 req.pageNumber,
                 req.pageSize);
 
+            // Get all referenced documents to fetch their image paths
+            var allRefNos = pagedList.Items
+                .SelectMany(d => new[] { d.ParentRefrenceNO, d.ChildRefrenceNo })
+                .Where(refNo => !string.IsNullOrEmpty(refNo))
+                .Distinct()
+                .ToList();
+
+            // Get document details including image paths
+            var docDetails = await _context.ArcivingDocs
+                .Where(d => allRefNos.Contains(d.RefrenceNo))
+                .Select(d => new { d.RefrenceNo, d.ImgUrl })
+                .ToDictionaryAsync(d => d.RefrenceNo, d => d.ImgUrl);
+
             var groupedResult = pagedList.Items
                .GroupBy(d => d.ParentRefrenceNO)
                .Select(g => new
                {
                    ParentRefrenceNO = g.Key,
+                   imgUrl = docDetails.TryGetValue(g.Key, out var parentImgUrl) ? parentImgUrl : null,
                    ChildDocuments = g.Select(j => new
                    {
                        j.ChildRefrenceNo,
                        j.BreafcaseNo,
-                       j.editDate
+                       j.editDate,
+                       imgUrl = docDetails.TryGetValue(j.ChildRefrenceNo, out var childImgUrl) ? childImgUrl : null
                    }).ToList()
                })
                .ToList();

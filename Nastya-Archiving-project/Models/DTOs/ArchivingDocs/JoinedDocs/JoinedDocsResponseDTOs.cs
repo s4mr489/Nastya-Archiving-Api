@@ -4,6 +4,6 @@
     {
         public string? RefrenceNo { get; set; }
         public string? ReferenceTo { get; set; }
-        public int? Breifexplanation { get; set; }
+        public string? Breifexplanation { get; set; }
     }
 }

@@ -1,6 +1,6 @@
 ﻿using Nastya_Archiving_project.Models.DTOs.Infrastruture.Derpatment;
 using Org.BouncyCastle.Bcpg.OpenPgp;
-
+    
 namespace Nastya_Archiving_project.Models.DTOs.UserPermission
 {
     public class UserPermissionAndInfosResponseDTOs

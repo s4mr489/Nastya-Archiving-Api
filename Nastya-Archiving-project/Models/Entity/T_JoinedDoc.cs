@@ -9,7 +9,7 @@ namespace Nastya_Archiving_project.Models.Entity
        public int Id { get; set; }
        public string? ParentRefrenceNO { get; set; }
        public string? ChildRefrenceNo { get; set; }
-       public int? BreafcaseNo { get; set; }
+       public string? BreafcaseNo { get; set; }
        public DateTime? editDate { get; set; }
     }
 }

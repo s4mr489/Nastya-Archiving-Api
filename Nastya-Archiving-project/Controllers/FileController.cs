@@ -89,43 +89,46 @@ namespace Nastya_Archiving_project.Controllers
             return Ok("File deleted.");
         }
 
-        [HttpPost("merge-pdf")]
-        public async Task<IActionResult> MergePdf([FromForm] MergePdfViewForm form)
+        [HttpPost("merge-docx")]
+        public async Task<IActionResult> MergeDocxFiles(string originalFilePath, [FromForm] List<IFormFile> files)
         {
-            var (mergedFile, error) = await _fileServices.MergeTwoPdfFilesAsync(form);
+            var (mergedFile, fileName, error) = await _fileServices.MergeDocxWithOriginalAsync(originalFilePath, files);
 
-            if (error != null)
+            if (!string.IsNullOrEmpty(error))
             {
-                // Return 415 Unsupported Media Type for file size errors
-                if (error.Contains("exceeds the license limit") || error.Contains("file size"))
-                {
-                    return StatusCode(415, error);
-                }
-
-                return BadRequest(error);
+                return BadRequest(new { Error = error });
             }
-
-            return File(mergedFile, "application/pdf");
-        }
-
-        [HttpPut("merge-word")]
-        public async Task<IActionResult> MergeDocx([FromForm] List<IFormFile> files)
-        {
-            var (mergedFile, fileName, error) = await _fileServices.MergeDocxFilesAsync(files);
 
             if (mergedFile == null)
             {
-                // Return 415 Unsupported Media Type for file size errors
-                if (error != null && (error.Contains("exceeds the license limit") || error.Contains("file size")))
-                {
-                    return StatusCode(415, error);
-                }
-
-                return BadRequest(error);
+                return BadRequest(new { Error = "Failed to merge DOCX files." });
             }
 
-            return File(mergedFile, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName ?? "merged.docx");
+            string contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            string downloadName = string.IsNullOrEmpty(fileName) ? "merged-document.docx" : fileName;
+
+            return File(mergedFile, contentType, downloadName);
         }
+
+        [HttpPost("merge-pdf")]
+        public async Task<IActionResult> MergePdfFiles(string originalFilePath, [FromForm] List<IFormFile> files)
+        {
+            var (mergedFile, error) = await _fileServices.MergePdfFilesAsync(originalFilePath, files);
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                return BadRequest(new { Error = error });
+            }
+
+            if (mergedFile == null)
+            {
+                return BadRequest(new { Error = "Failed to merge PDF files." });
+            }
+
+            return File(mergedFile, "application/pdf", "merged-document.pdf");
+        }
+
+
 
         [HttpGet("download")]
         public async Task<IActionResult> Download([FromQuery] string relativePath)

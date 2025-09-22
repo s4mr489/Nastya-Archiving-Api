@@ -504,7 +504,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             docs.ReferenceTo = null; // Unbind the document by setting ReferenceTo to null
 
             
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync();  
             var response = _mapper.Map<ArchivingDocsResponseDTOs>(docs);
             return (response, null);
         }
@@ -743,10 +743,21 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             var docs = await _context.ArcivingDocs.Where(d => d.ReferenceTo == parentSystemId).ToListAsync();
             if (docs == null || docs.Count == 0)
                 return new BaseResponseDTOs(null, 404, "No documents found linked to the specified parent.");
+            var parentDoc = await _context.ArcivingDocs.FirstOrDefaultAsync(d => d.RefrenceNo == parentSystemId);
+            var joinedDocs = await _context.JoinedDocs.Where(d => d.ParentRefrenceNO == parentSystemId).ToListAsync();  
+            if (joinedDocs != null && joinedDocs.Count > 0)
+            {
+                foreach(var join in joinedDocs)
+                {
+                    _context.JoinedDocs.Remove(join); // Remove each join entry
+                }
+            }
             foreach (var doc in docs)
             {
                 doc.ReferenceTo = null; // Unbind each document by setting ReferenceTo to null
             }
+            parentDoc.ReferenceTo = null; // Unbind the parent document as well
+
             await _context.SaveChangesAsync();
             return new BaseResponseDTOs(null, 200, "All linked documents have been unbound from the parent successfully.");
         }
