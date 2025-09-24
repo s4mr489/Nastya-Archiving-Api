@@ -587,7 +587,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             var joinedDocs = new T_JoinedDoc
             {
-                BreafcaseNo = req.BreafcaseNo,
+                BreafcaseNo = req.breafcaseNo,
                 ChildRefrenceNo = req?.childReferenceId,
                 ParentRefrenceNO = req.parentReferenceId,
                 editDate = DateTime.UtcNow,

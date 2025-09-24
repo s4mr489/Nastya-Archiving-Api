@@ -1221,59 +1221,62 @@ namespace Nastya_Archiving_project.Services.search
         }
 
         public async Task<BaseResponseDTOs> CasesSearch(CasesSearchViewForm req)
-        {
-            var query = _context.JoinedDocs.AsQueryable();
+{
+    var query = _context.JoinedDocs.AsQueryable();
 
-            if (string.IsNullOrEmpty(req.CaseNumber))
-                query = query.Where(q => q.BreafcaseNo == req.CaseNumber);
-            if (req.from.HasValue)
-                query = query.Where(d => d.editDate.HasValue && d.editDate.Value >= req.from);
-            if (req.to.HasValue)
-                query = query.Where(d => d.editDate.HasValue && d.editDate.Value <= req.to);
+    // Fixed the condition - only filter when CaseNumber is NOT empty
+    if (!string.IsNullOrEmpty(req.CaseNumber))
+        query = query.Where(q => q.BreafcaseNo == req.CaseNumber);
+    if (req.from.HasValue)
+        query = query.Where(d => d.editDate.HasValue && d.editDate.Value >= req.from);
+    if (req.to.HasValue)
+        query = query.Where(d => d.editDate.HasValue && d.editDate.Value <= req.to);
 
-            var pagedList = await PagedList<T_JoinedDoc>.Create(
-                query.OrderBy(d => d.ParentRefrenceNO),
-                req.pageNumber,
-                req.pageSize);
+    var pagedList = await PagedList<T_JoinedDoc>.Create(
+        query.OrderBy(d => d.ParentRefrenceNO),
+        req.pageNumber,
+        req.pageSize);
 
-            // Get all referenced documents to fetch their image paths
-            var allRefNos = pagedList.Items
-                .SelectMany(d => new[] { d.ParentRefrenceNO, d.ChildRefrenceNo })
-                .Where(refNo => !string.IsNullOrEmpty(refNo))
-                .Distinct()
-                .ToList();
+    // Get all referenced documents to fetch their image paths
+    var allRefNos = pagedList.Items
+        .SelectMany(d => new[] { d.ParentRefrenceNO, d.ChildRefrenceNo })
+        .Where(refNo => !string.IsNullOrEmpty(refNo))
+        .Distinct()
+        .ToList();
 
-            // Get document details including image paths
-            var docDetails = await _context.ArcivingDocs
-                .Where(d => allRefNos.Contains(d.RefrenceNo))
-                .Select(d => new { d.RefrenceNo, d.ImgUrl })
-                .ToDictionaryAsync(d => d.RefrenceNo, d => d.ImgUrl);
+    // Get document details including image paths
+    var docDetails = await _context.ArcivingDocs
+        .Where(d => allRefNos.Contains(d.RefrenceNo))
+        .Select(d => new { d.RefrenceNo, d.ImgUrl })
+        .ToDictionaryAsync(d => d.RefrenceNo, d => d.ImgUrl);
 
-            var groupedResult = pagedList.Items
-               .GroupBy(d => d.ParentRefrenceNO)
-               .Select(g => new
-               {
-                   ParentRefrenceNO = g.Key,
-                   imgUrl = docDetails.TryGetValue(g.Key, out var parentImgUrl) ? parentImgUrl : null,
-                   ChildDocuments = g.Select(j => new
-                   {
-                       j.ChildRefrenceNo,
-                       j.BreafcaseNo,
-                       j.editDate,
-                       imgUrl = docDetails.TryGetValue(j.ChildRefrenceNo, out var childImgUrl) ? childImgUrl : null
-                   }).ToList()
-               })
-               .ToList();
+    var groupedResult = pagedList.Items
+       .GroupBy(d => d.ParentRefrenceNO)
+       .Select(g => new
+       {
+           ParentRefrenceNO = g.Key,
+           imgUrl = docDetails.TryGetValue(g.Key, out var parentImgUrl) ? parentImgUrl : null,
+           // Include BreafcaseNo at the parent level - using the first item in the group
+           BreafcaseNo = g.FirstOrDefault()?.BreafcaseNo,
+           ChildDocuments = g.Select(j => new
+           {
+               j.ChildRefrenceNo,
+               j.BreafcaseNo,
+               j.editDate,
+               imgUrl = docDetails.TryGetValue(j.ChildRefrenceNo, out var childImgUrl) ? childImgUrl : null
+           }).ToList()
+       })
+       .ToList();
 
-            return new BaseResponseDTOs(new
-            {
-                Data = groupedResult,
-                TotalCount = pagedList.TotalCount,
-                TotalPages = pagedList.TotalPages,
-                PageNumber = pagedList.PageNumber,
-                PageSize = pagedList.PageSize
-            }, 200, null);
-        }
+    return new BaseResponseDTOs(new
+    {
+        Data = groupedResult,
+        TotalCount = pagedList.TotalCount,
+        TotalPages = pagedList.TotalPages,
+        PageNumber = pagedList.PageNumber,
+        PageSize = pagedList.PageSize
+    }, 200, null);
+}
 
     }
 }
