@@ -195,7 +195,7 @@ namespace Nastya_Archiving_project.Services.search
                     query = query.Where(d => d.DocType == req.docsType.Value);
                 }
                 if (!string.IsNullOrWhiteSpace(req.wordToSearch))
-                    query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
+                    query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
                 if (!string.IsNullOrWhiteSpace(req.boxFile))
                     query = query.Where(d => d.BoxfileNo != null && d.BoxfileNo.Contains(req.boxFile));
                 if (req.source.HasValue)
@@ -525,7 +525,7 @@ namespace Nastya_Archiving_project.Services.search
                 // ArcivingDoc does not have SupDocType, so skip this filter
 
                 if (!string.IsNullOrWhiteSpace(req.wordToSearch))
-                    query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
+                    query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
                 if (!string.IsNullOrWhiteSpace(req.boxFile))
                     query = query.Where(d => d.BoxfileNo != null && d.BoxfileNo.Contains(req.boxFile));
                 if (req.source.HasValue)
@@ -864,11 +864,11 @@ namespace Nastya_Archiving_project.Services.search
             }
 
             if (!string.IsNullOrWhiteSpace(req.wordToSearch))
-                query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
+                query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
 
             // Rest of the
             if (!string.IsNullOrWhiteSpace(req.wordToSearch))
-                query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(req.wordToSearch));
+                query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
 
             if (!string.IsNullOrWhiteSpace(req.boxFile))
                 query = query.Where(d => d.BoxfileNo != null && d.BoxfileNo.Contains(req.boxFile));

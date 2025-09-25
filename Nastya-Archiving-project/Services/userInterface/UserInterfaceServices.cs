@@ -68,7 +68,7 @@ namespace Nastya_Archiving_project.Services.userInterface
         {
             var result = await _context.Usersinterfaces
                .Where(ui => ui.outputTypeName != null && ui.Pageurl != null) // Changed from Outputtype to outputTypeName
-               .OrderBy(ui => ui.outputTypeName)
+               //.OrderBy(ui => ui.outputTypeName)
                .GroupBy(ui => ui.outputTypeName)
                .ToDictionaryAsync(
                    g => g.Key!,

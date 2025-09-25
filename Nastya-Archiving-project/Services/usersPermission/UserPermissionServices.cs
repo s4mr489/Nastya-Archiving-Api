@@ -24,9 +24,17 @@ namespace Nastya_Archiving_project.Services.usersPermission
         //that method used to get the user based on the accountUnitId and the DepartMintId And the BranchId
         public async Task<List<UsersSearchResponseDTOs>> GetUsersAsync(UsersSearchViewForm search)
         {
+            // Get the IDs of users with departments for filtering or later use
+            var usersWithDepartmentIds = await _context.UsersArchivingPointsPermissions
+                .Where(p => p.DepartId != null && p.DepartId > 0)
+                .Select(p => p.UserId ?? 0)
+                .Distinct()
+                .ToListAsync();
+
+            // Start building query
             var query = _context.Users.AsQueryable();
 
-            // Apply all non-encrypted filters
+            // Apply all database-filterable conditions first
             if (search.accountUnitId.HasValue)
                 query = query.Where(d => d.AccountUnitId == search.accountUnitId.Value);
             if (search.branchId.HasValue)
@@ -34,46 +42,78 @@ namespace Nastya_Archiving_project.Services.usersPermission
             if (search.departmentId.HasValue)
                 query = query.Where(d => d.DepariId == search.departmentId.Value);
 
-            // Skip the realname filter for now (we'll apply it after decryption)
-
-            // Get all users based on the other filters
-            var users = await query.OrderByDescending(d => d.Id).ToListAsync();
-
-            // Now decrypt and filter by realname if needed
-            if (!string.IsNullOrEmpty(search.userRealName))
+            // Apply hasDepart filter directly in the database query
+            if (search.hasDepart.HasValue)
             {
-                users = users.Where(u =>
-                    u.Realname != null &&
-                    _encryptionServices.DecryptString256Bit(u.Realname)
-                        .Contains(search.userRealName, StringComparison.OrdinalIgnoreCase)
-                ).ToList();
+                if (search.hasDepart.Value)
+                    query = query.Where(u => usersWithDepartmentIds.Contains(u.Id));
+                else
+                    query = query.Where(u => !usersWithDepartmentIds.Contains(u.Id));
             }
 
-            // Apply pagination after filtering
+            // Get total count for pagination info (if needed)
+            // int totalCount = await query.CountAsync();
+
+            // Apply ordering and pagination directly to database query
             int pageNumber = search.pageNumber != null && search.pageNumber > 0 ? search.pageNumber.Value : 1;
             int pageSize = search.pageSize != null && search.pageSize > 0 ? search.pageSize.Value : 20;
 
-            users = users
+            // Only select fields we need to minimize data transfer
+            var pagedUsers = await query
+                .OrderByDescending(d => d.Id)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .ToList();
+                .Select(u => new
+                {
+                    u.Id,
+                    u.Realname,
+                    u.Stoped,
+                    u.EditDate
+                })
+                .ToListAsync();
 
-            if (users == null || users.Count == 0)
+            if (pagedUsers.Count == 0)
             {
                 return new List<UsersSearchResponseDTOs>();
             }
 
-            var result = users.Select(u => new UsersSearchResponseDTOs
-            {
-                userId = u.Id,
-                realName = u.Realname != null ? _encryptionServices.DecryptString256Bit(u.Realname) : null,
-                Activation = u.Stoped,
-                JoinDate = u.EditDate.HasValue
-                    ? new DateTime(u.EditDate.Value.Year, u.EditDate.Value.Month, u.EditDate.Value.Day)
-                    : DateTime.MinValue,
+            // Create dictionary for faster lookup
+            var hasDepartmentLookup = usersWithDepartmentIds.ToDictionary(id => id, id => true);
 
-                // Map other properties as needed
-            }).ToList();
+            // Process only the specific page of results
+            var result = new List<UsersSearchResponseDTOs>(pagedUsers.Count);
+            foreach (var u in pagedUsers)
+            {
+                // Only decrypt what we need
+                string? decryptedName = null;
+                if (!string.IsNullOrEmpty(u.Realname))
+                {
+                    decryptedName = _encryptionServices.DecryptString256Bit(u.Realname);
+
+                    // Apply realname filter after decryption
+                    if (!string.IsNullOrEmpty(search.userRealName) &&
+                        !decryptedName.Contains(search.userRealName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(search.userRealName))
+                {
+                    // Skip if we're filtering by realName and this user doesn't have one
+                    continue;
+                }
+
+                result.Add(new UsersSearchResponseDTOs
+                {
+                    userId = u.Id,
+                    realName = decryptedName,
+                    Activation = u.Stoped,
+                    HasDepart = hasDepartmentLookup.ContainsKey(u.Id),
+                    JoinDate = u.EditDate.HasValue
+                        ? new DateTime(u.EditDate.Value.Year, u.EditDate.Value.Month, u.EditDate.Value.Day)
+                        : DateTime.MinValue,
+                });
+            }
 
             return result;
         }
