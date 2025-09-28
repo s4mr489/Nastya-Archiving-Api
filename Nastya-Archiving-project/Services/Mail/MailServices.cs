@@ -625,7 +625,7 @@ namespace Nastya_Archiving_project.Services.Mail
                     {
                         if (sender == null) continue;
 
-                        string decryptedName = TryDecryptName(sender);
+                        string decryptedName = sender;
                         if (!string.IsNullOrEmpty(decryptedName) &&
                             decryptedName.Contains(filter.Sender, StringComparison.OrdinalIgnoreCase))
                         {
@@ -722,7 +722,7 @@ namespace Nastya_Archiving_project.Services.Mail
                             mail.Id,
                             mail.RefrenceNo,
                             mail.From,
-                            SenderName = TryDecryptName(mail.From),
+                            SenderName = mail.From,
                             mail.To,
                             mail.Notes,
                             mail.SendDate,

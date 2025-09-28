@@ -194,6 +194,14 @@ namespace Nastya_Archiving_project.Services.search
                 {
                     query = query.Where(d => d.DocType == req.docsType.Value);
                 }
+                if (!string.IsNullOrWhiteSpace(req.searchIntelligence))
+                {
+                    var words = req.searchIntelligence.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var word in words)
+                    {
+                        query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(word));
+                    }
+                }
                 if (!string.IsNullOrWhiteSpace(req.wordToSearch))
                     query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
                 if (!string.IsNullOrWhiteSpace(req.boxFile))
@@ -536,6 +544,18 @@ namespace Nastya_Archiving_project.Services.search
                     query = query.Where(d => d.FileType.HasValue && d.FileType.Value == (int)req.fileType.Value);
                 if (req.departId.HasValue)
                     query = query.Where(d => d.DepartId.HasValue && d.DepartId.Value == req.departId.Value);
+                if(!string.IsNullOrWhiteSpace(req.searchIntelligence))
+                {
+                        var words = req.searchIntelligence.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var word in words)
+                        {
+                            query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(word));
+                        }
+                }
+                else if (!string.IsNullOrWhiteSpace(req.wordToSearch))
+                {
+                    query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
+                }
 
                 // Date filters for editDate and docsDate
                 if (req.editDate == true)

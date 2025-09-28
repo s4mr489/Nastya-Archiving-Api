@@ -465,7 +465,33 @@ namespace Nastya_Archiving_project.Services.files
                 byte[] mergedFileBytes = await File.ReadAllBytesAsync(finalEncryptedPath);
                 await File.WriteAllBytesAsync(originalPath, mergedFileBytes);
 
-                // 9. Return the merged file bytes for potential preview or download
+                // 9. Update the file size in the archiving document table
+                try
+                {
+                    // Normalize path for consistent comparison (use forward slashes for DB comparison)
+                    string normalizedPath = originalFilePath.Replace('\\', '/');
+
+                    // Find the archiving document by its image URL
+                    var archivingDoc = await _context.ArcivingDocs
+                        .FirstOrDefaultAsync(doc => doc.ImgUrl == normalizedPath);
+
+                    if (archivingDoc != null)
+                    {
+                        // Update file size (in bytes)
+                        archivingDoc.DocSize = mergedFileBytes.Length;
+
+                        // Save changes to database
+                        await _context.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log the error but don't fail the whole operation
+                    // The file was successfully merged, but we couldn't update the size in DB
+                    return (mergedFileBytes, $"File merged successfully but failed to update size in database: {ex.Message}");
+                }
+
+                // Return the merged file bytes for potential preview or download
                 return (mergedFileBytes, null);
             }
             catch (Exception ex)

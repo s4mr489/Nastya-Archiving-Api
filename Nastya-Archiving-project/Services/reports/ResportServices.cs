@@ -1289,12 +1289,26 @@ namespace Nastya_Archiving_project.Services.reports
                                         else if (expectedSize.HasValue)
                                         {
                                             long expectedSizeValue = Convert.ToInt64(expectedSize.Value);
-                                            double ratio = (double)actualSize.Value / expectedSizeValue;
 
-                                            if (ratio > 0.95 || ratio < 0.05)
+                                            // If sizes match exactly, the file is considered valid
+                                            if (actualSize.Value == expectedSizeValue)
                                             {
-                                                hasIssue = true;
-                                                statusMessage = $"Suspicious compression ratio: {ratio:P2}";
+                                                hasIssue = false;
+                                                statusMessage = "File size matches expected size";
+                                            }
+                                            else
+                                            {
+                                                // Calculate ratio to check if sizes are significantly different
+                                                double ratio = (double)actualSize.Value / expectedSizeValue;
+
+                                                // Only flag files with significantly different sizes
+                                                // Note: changed from (ratio > 0.95 || ratio < 0.05) to avoid marking
+                                                // files with similar sizes as damaged
+                                                if (ratio < 0.9 || ratio > 1.1)
+                                                {
+                                                    hasIssue = true;
+                                                    statusMessage = $"Size mismatch - Expected: {expectedSizeValue}, Actual: {actualSize.Value}, Ratio: {ratio:P2}";
+                                                }
                                             }
                                         }
                                     }
@@ -1332,7 +1346,7 @@ namespace Nastya_Archiving_project.Services.reports
                     {
                         DocumentId = doc.Id,
                         FilePath = filePath,
-                        FileName = fileName,  // Added file name property
+                        FileName = fileName,
                         ExpectedSize = expectedSize,
                         ActualSize = actualSize,
                         IsAffected = isAffected,

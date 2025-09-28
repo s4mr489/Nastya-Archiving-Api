@@ -24,6 +24,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Search.QuikSearch
         public string? boxFile { get; set; }
         public EFileType? fileType { get; set; }
         public bool exactMatch { get; set; } = false;
+        public string searchIntelligence { get; set; }
         public int pageNumber { get; set; } = 1;
         public int pageSize { get; set; } = 20;
     }
