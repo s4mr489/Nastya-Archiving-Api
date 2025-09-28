@@ -568,6 +568,189 @@ namespace Nastya_Archiving_project.Services.Mail
             }
         }
 
+      
+
+        /// <summary>
+        /// Gets filtered mails based on various criteria with real-time notification
+        /// </summary>
+        /// <param name="filter">Filter criteria for mails</param>
+        /// <returns>Response with filtered mail list</returns>
+        public async Task<BaseResponseDTOs> GetFilteredMails(MailFilterViewForm filter)
+        {
+            try
+            {
+                var (realName, error) = await _systemInfoServices.GetRealName();
+                if (!string.IsNullOrEmpty(error))
+                    return new BaseResponseDTOs(null, 404, "User identification not available");
+
+                // Build query with efficient filtering
+                var query = _context.TFileTransferrings
+                    .AsNoTracking()
+                    .Where(m => m.To == realName);
+
+                // Apply all filters as efficiently as possible
+                if (filter.FromDate.HasValue)
+                    query = query.Where(m => m.SendDate >= filter.FromDate.Value);
+
+                if (filter.ToDate.HasValue)
+                {
+                    // Add one day to include the entire end date
+                    var endDate = filter.ToDate.Value.AddDays(1).AddTicks(-1);
+                    query = query.Where(m => m.SendDate <= endDate);
+                }
+
+                if (!string.IsNullOrEmpty(filter.ReferenceNo))
+                    query = query.Where(m => m.RefrenceNo != null && m.RefrenceNo.Contains(filter.ReferenceNo));
+
+                if (!string.IsNullOrEmpty(filter.Content))
+                    query = query.Where(m => m.Notes != null && m.Notes.Contains(filter.Content));
+
+                if (filter.IsRead.HasValue)
+                    query = query.Where(m => m.Readed == (filter.IsRead.Value ? 1 : 0));
+
+                // Handle sender filtering - we need to be careful with encryption
+                List<string> matchingSenders = new();
+                if (!string.IsNullOrEmpty(filter.Sender))
+                {
+                    // Get all senders for the user's mails first
+                    var senders = await _context.TFileTransferrings
+                        .AsNoTracking()
+                        .Where(m => m.To == realName)
+                        .Select(m => m.From)
+                        .Distinct()
+                        .ToListAsync();
+
+                    // Check each sender by decrypting names
+                    foreach (var sender in senders)
+                    {
+                        if (sender == null) continue;
+
+                        string decryptedName = TryDecryptName(sender);
+                        if (!string.IsNullOrEmpty(decryptedName) &&
+                            decryptedName.Contains(filter.Sender, StringComparison.OrdinalIgnoreCase))
+                        {
+                            matchingSenders.Add(sender);
+                        }
+                    }
+
+                    // Apply the sender filter with the matching encrypted names
+                    if (matchingSenders.Any())
+                        query = query.Where(m => matchingSenders.Contains(m.From));
+                    else
+                        return new BaseResponseDTOs(new { Items = Array.Empty<object>(), Count = 0 },
+                            200, "No mails found with the specified sender");
+                }
+
+                // Get total count for pagination
+                int totalCount = await query.CountAsync();
+
+                // Apply pagination
+                int pageNumber = filter.PageNumber > 0 ? filter.PageNumber : 1;
+                int pageSize = filter.PageSize > 0 ? filter.PageSize : 20;
+
+                // Get paged mails with efficient projection
+                var mails = await query
+                    .OrderByDescending(m => m.SendDate)
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(m => new
+                    {
+                        m.Id,
+                        m.RefrenceNo,
+                        m.From,
+                        m.To,
+                        m.Notes,
+                        m.SendDate,
+                        m.Readed
+                    })
+                    .ToListAsync();
+
+                if (!mails.Any())
+                {
+                    return new BaseResponseDTOs(new
+                    {
+                        Items = Array.Empty<object>(),
+                        Count = 0,
+                        TotalCount = totalCount,
+                        PageNumber = pageNumber,
+                        PageSize = pageSize
+                    }, 200, "No mails found matching the filters");
+                }
+
+                // Process results using the existing document retrieval logic
+                var refNosSet = mails
+                    .Where(m => !string.IsNullOrEmpty(m.RefrenceNo))
+                    .Select(m => m.RefrenceNo)
+                    .Distinct()
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var documentsMap = await GetDocumentsWithSafetyAsync(refNosSet);
+                var docTypeDict = await GetDocumentTypesAsync(documentsMap);
+
+                // Build result with document information
+                var result = new List<object>(mails.Count);
+                foreach (var mail in mails)
+                {
+                    // Get document info if available
+                    object doc = null;
+                    if (!string.IsNullOrEmpty(mail.RefrenceNo) &&
+                        documentsMap.TryGetValue(mail.RefrenceNo, out var docObj))
+                    {
+                        var docDyn = (dynamic)docObj;
+                        string docTypeName = null;
+
+                        if (docTypeDict.TryGetValue((int)docDyn.DocType, out var typeName))
+                            docTypeName = typeName;
+
+                        doc = new
+                        {
+                            docDyn.Id,
+                            docDyn.RefrenceNo,
+                            docDyn.DocNo,
+                            docDyn.DocDate,
+                            docDyn.DocType,
+                            DocTypeName = docTypeName,
+                            docDyn.Subject,
+                            docDyn.ImgUrl
+                        };
+                    }
+
+                    result.Add(new
+                    {
+                        Mail = new
+                        {
+                            mail.Id,
+                            mail.RefrenceNo,
+                            mail.From,
+                            SenderName = TryDecryptName(mail.From),
+                            mail.To,
+                            mail.Notes,
+                            mail.SendDate,
+                            IsRead = mail.Readed == 1
+                        },
+                        Document = doc
+                    });
+                }
+
+                var response = new
+                {
+                    Items = result,
+                    Count = mails.Count,
+                    TotalCount = totalCount,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize),
+                    Timestamp = DateTime.UtcNow
+                };
+
+                return new BaseResponseDTOs(response, 200);
+            }
+            catch (Exception ex)
+            {
+                return new BaseResponseDTOs(null, 500, $"Error retrieving filtered mails: {ex.Message}");
+            }
+        }
+
         // Helper for safely decrypting names
         private string TryDecryptName(string encryptedName)
         {

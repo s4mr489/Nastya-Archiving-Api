@@ -93,6 +93,19 @@ namespace Nastya_Archiving_project.Controllers
         }
 
         /// <summary>
+        /// filters mails based on specified criteria for the current user
+        /// </summary>
+        /// <param name="filter"></param>
+        /// <returns></returns>
+        [HttpGet("filtered-mails")]
+        public async Task<IActionResult> GetFilteredMails([FromQuery] MailFilterViewForm filter)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+            var result = await _mailServices.GetFilteredMails(filter);
+            return GetActionResult(result);
+        }
+        /// <summary>
         /// Helper method to convert BaseResponseDTOs to appropriate IActionResult
         /// </summary>
         private IActionResult GetActionResult(BaseResponseDTOs response)

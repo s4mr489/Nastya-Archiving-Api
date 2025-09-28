@@ -41,5 +41,11 @@ namespace Nastya_Archiving_project.Services.Mail
         /// <returns>Response with total and unread mail counts</returns>
         Task<BaseResponseDTOs> GetMailCount();
 
+        /// <summary>
+        /// Gets filtered mails based on specified criteria for the current user
+        /// </summary>
+        /// <param name="filter">Filter criteria for retrieving mails</param>
+        /// <returns>Response with filtered mail list and associated documents</returns>
+        Task<BaseResponseDTOs> GetFilteredMails(MailFilterViewForm filter);
     }
 }
