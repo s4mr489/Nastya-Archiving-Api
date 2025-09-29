@@ -1666,7 +1666,7 @@ namespace Nastya_Archiving_project.Services.reports
                     : (null, null);
 
                 var (supDocTypeObj, _) = doc.SubDocType.HasValue && doc.SubDocType.Value > 0
-                    ? await _archivingSettingsServicers.GetDocsTypeById(doc.SubDocType.Value)
+                    ? await _archivingSettingsServicers.GetSupDocsTypeById(doc.SubDocType.Value)
                     : (null, null);
 
                 var (departObj, _) = doc.DepartId.HasValue && doc.DepartId.Value > 0
@@ -1677,19 +1677,22 @@ namespace Nastya_Archiving_project.Services.reports
                 {
                     doc.Id,
                     doc.RefrenceNo,
+                    doc.DocNo,
                     doc.DocType,
                     doc.Subject,
                     doc.DocSize,
-                    doc.FileType,
                     doc.Editor,
                     doc.DocDate,
                     doc.EditDate,
+                    doc.BoxfileNo,
+                    doc.Notes,
+                    doc.ReferenceTo,
                     doc.DepartId,
                     DepartmentName = departObj?.DepartmentName,
                     docSource = docSourceObj?.Dscrp,
                     docTarge = docTargeObj?.Dscrp,
                     docTpye = docTpyeObj?.docuName,
-                    supDocType = supDocTypeObj?.docuName,
+                    supDocType = supDocTypeObj?.supDocuName,
                 });
             }
             return enrichedDocs;
