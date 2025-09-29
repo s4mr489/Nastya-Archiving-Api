@@ -65,6 +65,12 @@ namespace Nastya_Archiving_project.Models.DTOs.Reports
         /// </summary>
         public string? reportTitle { get; set; } = "Report";
 
+        public int? supDocType { get; set; }
+        public string? notice { get; set; }
+        public string? docNo { get; set; }
+        public string? subject { get; set; }
+        public string? boxFileNo { get; set; }
+
         /// <summary>
         /// Page number for department-level pagination (which department to show)
         /// </summary>

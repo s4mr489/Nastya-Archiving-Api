@@ -1617,6 +1617,22 @@ namespace Nastya_Archiving_project.Services.reports
 
             if (req.departmentId != null && req.departmentId.Count > 0)
                 query = query.Where(x => req.departmentId.Contains(x.DepartId));
+                
+            // Handle the new properties
+            if (req.supDocType != null && req.supDocType > 0)
+                query = query.Where(x => x.SubDocType == req.supDocType);
+                
+            if (!string.IsNullOrWhiteSpace(req.notice))
+                query = query.Where(x => x.Notes != null && x.Notes.Contains(req.notice));
+                
+            if (!string.IsNullOrWhiteSpace(req.docNo))
+                query = query.Where(x => x.DocNo != null && x.DocNo.Contains(req.docNo));
+                
+            if (!string.IsNullOrWhiteSpace(req.subject))
+                query = query.Where(x => x.Subject != null && x.Subject.Contains(req.subject));
+                
+            if (!string.IsNullOrWhiteSpace(req.boxFileNo))
+                query = query.Where(x => x.BoxfileNo != null && x.BoxfileNo.Contains(req.boxFileNo));
 
             return query;
         }
