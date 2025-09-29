@@ -390,6 +390,126 @@ namespace Nastya_Archiving_project.Services.Limitation
                 );
             }
         }
+
+
+        public async Task<BaseResponseDTOs> GetSmartSearchStatus()
+        {
+            var smartSearch = await _context.PPackegs.FirstOrDefaultAsync();
+
+            return new BaseResponseDTOs(
+                new
+                {
+                    IsSmartSearchEnabled = smartSearch?.status == 1 ? "true" : "false",
+                },
+                200,
+                null
+            );
+        }
+        /// <summary>
+        /// Sets the smart search functionality to enabled (true)
+        /// </summary>
+        /// <returns>Response with status information</returns>
+        public async Task<BaseResponseDTOs> EnableSmartSearch()
+        {
+            try
+            {
+                var smartSearch = await _context.PPackegs.FirstOrDefaultAsync();
+
+                if (smartSearch == null)
+                {
+                    // If no record exists, create one with status = 1 (enabled)
+                    smartSearch = new Models.PPackeg
+                    {
+                        Dscrp = "Smart Search Feature",
+                        status = 1
+                    };
+
+                    _context.PPackegs.Add(smartSearch);
+                }
+                else
+                {
+                    // Update existing record to enabled
+                    smartSearch.status = 1;
+                    _context.PPackegs.Update(smartSearch);
+                }
+
+                await _context.SaveChangesAsync();
+
+                return new BaseResponseDTOs(
+                    new
+                    {
+                        IsSmartSearchEnabled = "true",
+                        Message = "Smart search has been successfully enabled"
+                    },
+                    200,
+                    null
+                );
+            }
+            catch (Exception ex)
+            {
+                return new BaseResponseDTOs(
+                    null,
+                    500,
+                    $"Error enabling smart search: {ex.Message}"
+                );
+            }
+        }
+
+        /// <summary>
+        /// Sets the smart search functionality to disabled (false)
+        /// </summary>
+        /// <returns>Response with status information</returns>
+        public async Task<BaseResponseDTOs> DisableSmartSearch()
+        {
+            try
+            {
+                var smartSearch = await _context.PPackegs.FirstOrDefaultAsync();
+
+                if (smartSearch == null)
+                {
+                    // If no record exists, create one with status = 0 (disabled)
+                    smartSearch = new Models.PPackeg
+                    {
+                        Dscrp = "Smart Search Feature",
+                        status = 0
+                    };
+
+                    _context.PPackegs.Add(smartSearch);
+                }
+                else
+                {
+                    // Update existing record to disabled
+                    smartSearch.status = 0;
+                    _context.PPackegs.Update(smartSearch);
+                }
+
+                await _context.SaveChangesAsync();
+
+                return new BaseResponseDTOs(
+                    new
+                    {
+                        IsSmartSearchEnabled = "false",
+                        Message = "Smart search has been successfully disabled"
+                    },
+                    200,
+                    null
+                );
+            }
+            catch (Exception ex)
+            {
+                return new BaseResponseDTOs(
+                    null,
+                    500,
+                    $"Error disabling smart search: {ex.Message}"
+                );
+            }
+        }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="key"></param>
+        /// <returns></returns>
         // Then add this helper method in the class
         private DateTime? GetDateFromDecryptedData(Dictionary<string, string> data, string key)
         {

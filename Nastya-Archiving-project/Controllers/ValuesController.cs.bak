@@ -1,0 +1,376 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Nastya_Archiving_project.Models.DTOs.TextExtraction;
+using Nastya_Archiving_project.Services.textExtraction;
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace ElectionsPillars.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class ValuesController : ControllerBase
+    {
+        private readonly ITextExtractionServices _textExtractionServices;
+        private readonly ILogger<ValuesController> _logger;
+
+        public ValuesController(ITextExtractionServices textExtractionServices, ILogger<ValuesController> logger)
+        {
+            _textExtractionServices = textExtractionServices;
+            _logger = logger;
+        }
+
+        [HttpPost("extract")]
+        public async Task<IActionResult> ExtractArabicText(IFormFile pdfFile)
+        {
+            if (pdfFile == null || pdfFile.Length == 0)
+                return BadRequest("No file uploaded.");
+
+            try
+            {
+                var result = await _textExtractionServices.ExtractTextFromPdfAsync(pdfFile);
+                return Ok(new { text = result.Text, rtl = result.IsRightToLeft });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting text from PDF");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("extract-python")]
+        public async Task<IActionResult> ExtractWithPython(IFormFile pdfFile)
+        {
+            if (pdfFile == null || pdfFile.Length == 0)
+                return BadRequest("No file uploaded.");
+
+            try
+            {
+                var result = await _textExtractionServices.ExtractTextWithPythonAsync(pdfFile);
+                
+                // Check for errors
+                if (!string.IsNullOrEmpty(result.Error))
+                {
+                    return StatusCode(500, new { 
+                        error = result.Error,
+                        pythonInfo = result.PythonInfo
+                    });
+                }
+
+                return Ok(new
+                {
+                    text = result.Text,
+                    rtl = result.IsRightToLeft,
+                    source = result.Source,
+                    textLength = result.TextLength,
+                    pythonInfo = result.PythonInfo
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in ExtractWithPython");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+        
+        [HttpGet("python-check")]
+        public IActionResult CheckPythonEnvironment()
+        {
+            try
+            {
+                var result = _textExtractionServices.CheckPythonEnvironment();
+                
+                return Ok(new {
+                    pythonPath = result.PythonPath,
+                    pythonVersion = result.PythonVersion,
+                    scriptPath = result.ScriptPath,
+                    scriptExists = result.ScriptExists,
+                    workingDirectory = result.WorkingDirectory,
+                    currentDirectory = result.CurrentDirectory,
+                    testedPaths = result.TestedPaths,
+                    packages = result.Packages,
+                    diagnosticTime = DateTime.Now.ToString("o")
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { 
+                    error = ex.Message,
+                    stackTrace = ex.StackTrace
+                });
+            }
+        }
+
+        [HttpGet("python-install-packages")]
+        public IActionResult InstallPythonPackages()
+        {
+            try
+            {
+                var result = _textExtractionServices.InstallPythonPackages();
+                
+                return Ok(new {
+                    message = "Installation attempted. Please check the results.",
+                    pythonPath = result.PythonPath,
+                    installResults = result.InstallResults,
+                    testResults = result.TestResults,
+                    environmentInfo = result.EnvironmentInfo,
+                    instructions = "If installation failed, please run the scripts/install_dependencies_direct.ps1 script with administrator privileges."
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new {
+                    error = ex.Message,
+                    message = "Failed to install packages. Please run scripts/install_dependencies_direct.ps1 script with administrator privileges."
+                });
+            }
+        }
+
+        [HttpPost("extract-document/{referenceNo}")]
+        public async Task<IActionResult> ExtractDocumentText(string referenceNo)
+        {
+            if (string.IsNullOrEmpty(referenceNo))
+                return BadRequest("Reference number is required.");
+
+            try
+            {
+                var result = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
+                
+                if (!result.Success)
+                {
+                    return NotFound(new { 
+                        referenceNo = referenceNo,
+                        error = result.ErrorMessage
+                    });
+                }
+
+                return Ok(new
+                {
+                    referenceNo = result.ReferenceNo,
+                    success = result.Success,
+                    textLength = result.TextLength,
+                    message = $"Successfully extracted and saved {result.TextLength} characters of text"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting text from document with reference {ReferenceNo}", referenceNo);
+                return StatusCode(500, new { 
+                    referenceNo = referenceNo,
+                    error = ex.Message
+                });
+            }
+        }
+
+        [HttpPost("process-documents")]
+        public async Task<IActionResult> ProcessDocumentsWithNoText()
+        {
+            try
+            {
+                // First check if dependencies are properly set up
+                bool hasRequiredDependencies = true;
+                string setupInstructions = "";
+                bool setupAttempted = false;
+                bool tessdataSetupSuccessful = false;
+                bool pythonPackagesInstalled = false;
+                
+                // Check if tessdata directory exists and try to set it up if missing
+                string tessdataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tessdata");
+                if (!Directory.Exists(tessdataPath) || !Directory.EnumerateFiles(tessdataPath).Any())
+                {
+                    _logger.LogInformation("Tessdata directory missing or empty at: {Path}, attempting setup", tessdataPath);
+                    setupAttempted = true;
+                    
+                    try
+                    {
+                        // Create tessdata directory if it doesn't exist
+                        if (!Directory.Exists(tessdataPath))
+                        {
+                            Directory.CreateDirectory(tessdataPath);
+                            _logger.LogInformation("Created tessdata directory at: {Path}", tessdataPath);
+                        }
+                        
+                        // Find the setup script
+                        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                        string scriptPath = Path.Combine(baseDir, "scripts", "setup_tessdata.ps1");
+                        
+                        if (System.IO.File.Exists(scriptPath))
+                        {
+                            _logger.LogInformation("Running tessdata setup script from: {Path}", scriptPath);
+                            
+                            // Run the PowerShell script
+                            var startInfo = new ProcessStartInfo
+                            {
+                                FileName = "powershell.exe",
+                                Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"",
+                                UseShellExecute = false,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                CreateNoWindow = true
+                            };
+                            
+                            using (var process = Process.Start(startInfo))
+                            {
+                                string output = process.StandardOutput.ReadToEnd();
+                                string error = process.StandardError.ReadToEnd();
+                                process.WaitForExit();
+                                
+                                if (process.ExitCode == 0)
+                                {
+                                    _logger.LogInformation("Tessdata setup completed successfully: {Output}", output);
+                                    tessdataSetupSuccessful = true;
+                                    // Don't set hasRequiredDependencies yet, as we need to check if files were created
+                                }
+                                else
+                                {
+                                    _logger.LogError("Error running tessdata setup: {Error}", error);
+                                    setupInstructions += "Failed to set up tessdata. Error: " + error + " ";
+                                    hasRequiredDependencies = false;
+                                }
+                            }
+                            
+                            // Verify that the files were created
+                            if (Directory.Exists(tessdataPath) && Directory.EnumerateFiles(tessdataPath).Any())
+                            {
+                                _logger.LogInformation("Tessdata directory now contains {Count} files", Directory.EnumerateFiles(tessdataPath).Count());
+                                tessdataSetupSuccessful = true;
+                            }
+                            else
+                            {
+                                hasRequiredDependencies = false;
+                                setupInstructions += "The tessdata directory is still missing required files after setup attempt. ";
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogError("Setup script not found at: {Path}", scriptPath);
+                            hasRequiredDependencies = false;
+                            setupInstructions += "The tessdata setup script could not be found at: " + scriptPath + ". ";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error setting up tessdata directory");
+                        hasRequiredDependencies = false;
+                        setupInstructions += $"Failed to set up tessdata: {ex.Message}. ";
+                    }
+                }
+                else
+                {
+                    tessdataSetupSuccessful = true;
+                }
+                
+                // Check Python environment and install packages if needed
+                try
+                {
+                    var pythonEnv = _textExtractionServices.CheckPythonEnvironment();
+                    bool pythonSetupNeeded = string.IsNullOrEmpty(pythonEnv.Error) == false || 
+                                          pythonEnv.Packages == null || 
+                                          !pythonEnv.Packages.ContainsKey("PyMuPDF") || 
+                                          !pythonEnv.Packages.ContainsKey("pdfminer.six");
+                    
+                    if (pythonSetupNeeded)
+                    {
+                        _logger.LogInformation("Python packages missing. Attempting to install required packages.");
+                        setupAttempted = true;
+                        
+                        try
+                        {
+                            var installResult = _textExtractionServices.InstallPythonPackages();
+                            
+                            if (string.IsNullOrEmpty(installResult.Error))
+                            {
+                                _logger.LogInformation("Python packages installed successfully");
+                                pythonPackagesInstalled = true;
+                                
+                                // Verify installation by checking environment again
+                                pythonEnv = _textExtractionServices.CheckPythonEnvironment();
+                                if (!string.IsNullOrEmpty(pythonEnv.Error) || 
+                                    pythonEnv.Packages == null || 
+                                    !pythonEnv.Packages.ContainsKey("PyMuPDF") || 
+                                    !pythonEnv.Packages.ContainsKey("pdfminer.six"))
+                                {
+                                    _logger.LogWarning("Python packages still missing after installation attempt");
+                                    hasRequiredDependencies = false;
+                                    setupInstructions += "Required Python packages still missing after installation attempt. Run the install_python_dependencies.ps1 script in the scripts directory. ";
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogError("Error installing Python packages: {Error}", installResult.Error);
+                                hasRequiredDependencies = false;
+                                setupInstructions += "Failed to install required Python packages: " + installResult.Error + ". Run the install_python_dependencies.ps1 script in the scripts directory. ";
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error installing Python packages");
+                            hasRequiredDependencies = false;
+                            setupInstructions += $"Error during Python package installation: {ex.Message}. ";
+                        }
+                    }
+                    else
+                    {
+                        pythonPackagesInstalled = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to check Python environment");
+                    hasRequiredDependencies = false;
+                    setupInstructions += "Failed to check Python environment. Ensure Python is installed and in the PATH. ";
+                }
+                
+                // Log warnings if dependencies are still missing
+                if (!hasRequiredDependencies)
+                {
+                    _logger.LogWarning("Missing dependencies for text extraction: {SetupInstructions}", setupInstructions);
+                }
+                
+                // Process documents
+                var result = await _textExtractionServices.ProcessDocumentsWithNoTextAsync();
+                
+                // Add setup information to the response
+                if (result.FailedDocuments > 0 && !hasRequiredDependencies)
+                {
+                    return Ok(new {
+                        totalDocumentsProcessed = result.TotalDocumentsProcessed,
+                        successfulDocuments = result.SuccessfulDocuments,
+                        failedDocuments = result.FailedDocuments,
+                        totalTextExtracted = result.TotalTextExtracted,
+                        processingTimeMs = result.ProcessingTimeMs,
+                        error = result.Error,
+                        setupRequired = true,
+                        setupInstructions = setupInstructions,
+                        setupAttempted = setupAttempted,
+                        tessdataSetupSuccessful = tessdataSetupSuccessful,
+                        pythonPackagesInstalled = pythonPackagesInstalled
+                    });
+                }
+                
+                return Ok(new {
+                    totalDocumentsProcessed = result.TotalDocumentsProcessed,
+                    successfulDocuments = result.SuccessfulDocuments,
+                    failedDocuments = result.FailedDocuments,
+                    totalTextExtracted = result.TotalTextExtracted,
+                    processingTimeMs = result.ProcessingTimeMs,
+                    error = result.Error,
+                    setupAttempted = setupAttempted,
+                    tessdataSetupSuccessful = tessdataSetupSuccessful,
+                    pythonPackagesInstalled = pythonPackagesInstalled
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in batch processing of documents");
+                return StatusCode(500, new { 
+                    error = ex.Message
+                });
+            }
+        }
+    }
+}

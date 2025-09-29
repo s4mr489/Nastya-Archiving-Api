@@ -44,5 +44,44 @@ namespace Nastya_Archiving_project.Controllers
                 return Ok(result);
             return StatusCode(result.StatusCode, result);
         }
+
+        /// <summary>
+        /// Gets the current status of the smart search feature
+        /// </summary>
+        /// <returns>Status information indicating if smart search is enabled</returns>
+        [HttpGet("smart-search/status")]
+        public async Task<IActionResult> GetSmartSearchStatus()
+        {
+            var result = await _limitationServices.GetSmartSearchStatus();
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// Enables the smart search feature
+        /// </summary>
+        /// <returns>Status information after enabling smart search</returns>
+        [HttpPost("smart-search/enable")]
+        public async Task<IActionResult> EnableSmartSearch()
+        {
+            var result = await _limitationServices.EnableSmartSearch();
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        /// <summary>
+        /// Disables the smart search feature
+        /// </summary>
+        /// <returns>Status information after disabling smart search</returns>
+        [HttpPost("smart-search/disable")]
+        public async Task<IActionResult> DisableSmartSearch()
+        {
+            var result = await _limitationServices.DisableSmartSearch();
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

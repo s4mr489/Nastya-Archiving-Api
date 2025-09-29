@@ -23,6 +23,7 @@ using Nastya_Archiving_project.Services.reports;
 using Nastya_Archiving_project.Services.search;
 using Nastya_Archiving_project.Services.statistically;
 using Nastya_Archiving_project.Services.SystemInfo;
+using Nastya_Archiving_project.Services.textExtraction;
 using Nastya_Archiving_project.Services.userInterface;
 using Nastya_Archiving_project.Services.usersPermission;
 using Nastya_Archiving_project.Swagger;
@@ -143,6 +144,7 @@ namespace Nastya_Archiving_project.Extinstion
             services.AddScoped<IHomeServices, HomeServices>();
             services.AddScoped<InfrastructureServices>();
             services.AddScoped<IPrinterServices, PrinterServices>();
+            services.AddScoped<ITextExtractionServices, TextExtractionServices>(); // Register the new text extraction service
             services.AddHttpContextAccessor();
             services.AddEndpointsApiExplorer();
             services.AddSignalR();

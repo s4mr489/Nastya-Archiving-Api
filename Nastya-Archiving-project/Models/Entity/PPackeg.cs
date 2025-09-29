@@ -8,4 +8,5 @@ public partial class PPackeg
     public int Id { get; set; }
 
     public string? Dscrp { get; set; }
+    public int? status { get; set; }
 }

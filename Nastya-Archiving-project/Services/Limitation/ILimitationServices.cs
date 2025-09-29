@@ -8,5 +8,8 @@ namespace Nastya_Archiving_project.Services.Limitation
     {
         Task<BaseResponseDTOs> CreateEncryptedTextFile(LicenseCreationDTO licenseParams);
         Task<BaseResponseDTOs> ReadEncryptedTextFile();
+        Task<BaseResponseDTOs> GetSmartSearchStatus();
+        Task<BaseResponseDTOs> EnableSmartSearch();
+        Task<BaseResponseDTOs> DisableSmartSearch();
     }
 }

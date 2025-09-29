@@ -454,7 +454,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             await LogUserAction(
                 model: "Archiving", 
                 tableName: "Arciving_Docs",
-                tableNameA: "جدول ارشقة الوثائق", 
+                tableNameA: "جدول ارشفة الوثائق", 
                 recordId: docs.RefrenceNo,
                 recordData: docData,
                 operationType: "Delete",
@@ -509,14 +509,18 @@ namespace Nastya_Archiving_project.Services.archivingDocs
             return (response, null);
         }
 
-        // that implementation used to Restore the docs from the archive
+        /// <summary>
+        /// Restores a document from the deleted documents archive back to the active documents collection
+        /// </summary>
+        /// <param name="Id">The ID of the deleted document to restore</param>
+        /// <returns>Status code: "200" for success, "404" if document not found</returns>
         public async Task<string> RestoreDeletedDocuments(int Id)
         {
             var docs = await _context.ArcivingDocsDeleteds.FirstOrDefaultAsync(d => d.Id == Id);
             if (docs == null)
                 return "404";
 
-            var resotredDocs = new ArcivingDoc
+            var restoredDocs = new ArcivingDoc
             {
                 AccountUnitId = docs.AccountUnitId,
                 BoxfileNo = docs.BoxfileNo,
@@ -531,7 +535,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 Fourth = docs.Fourth,
                 ImgUrl = docs.ImgUrl,
                 HaseBakuped = 0,
-                Ipaddress = docs.Ipaddress ,
+                Ipaddress = docs.Ipaddress,
                 DocSize = docs.DocSize,
                 TheMonth = docs.TheMonth,
                 TheWay = docs.TheWay,
@@ -541,33 +545,31 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 DocSource = docs.DocSource,
                 WordsTosearch = docs.WordsTosearch,
                 DocTitle = docs.DocTitle,
-                DocType = docs.DocType.HasValue ? docs.DocType.Value : default(int) ,// <-- FIXED LINE,
+                DocType = docs.DocType.HasValue ? docs.DocType.Value : default(int),
                 Notes = docs.Notes,
                 SubDocType = docs.SubDocType,
                 RefrenceNo = docs.RefrenceNo,
                 Subject = docs.Subject,
                 SystemId = docs.SystemId,
-
             };
 
-            _context.ArcivingDocs.Add(resotredDocs);
+            _context.ArcivingDocs.Add(restoredDocs);
             _context.ArcivingDocsDeleteds.Remove(docs);
             await _context.SaveChangesAsync();
             
             // Log the document restoration
-            string restoredDocData = FormatRecordData(resotredDocs);
+            string restoredDocData = FormatRecordData(restoredDocs);
             await LogUserAction(
                 model: "Archiving", 
                 tableName: "Arciving_Docs",
-                tableNameA: "جدول الوثائق المحذوفة", 
-                recordId: resotredDocs.RefrenceNo,
+                tableNameA: "جدول ارشفة الوثائق", 
+                recordId: restoredDocs.RefrenceNo,
                 recordData: restoredDocData,
-                operationType: "Rester",
-                accountUnitId: resotredDocs.AccountUnitId
+                operationType: "Restore",
+                accountUnitId: restoredDocs.AccountUnitId
             );
 
             return "200";// restore Docs Successfully
-
         }
 
         public async Task<BaseResponseDTOs> JoinDocsFromArchive(JoinedDocsViewForm req)

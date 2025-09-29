@@ -1,0 +1,195 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Nastya_Archiving_project.Models.DTOs.TextExtraction;
+using Nastya_Archiving_project.Services.textExtraction;
+using System;
+using System.Threading.Tasks;
+
+namespace ElectionsPillars.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class ValuesController : ControllerBase
+    {
+        private readonly ITextExtractionServices _textExtractionServices;
+        private readonly ILogger<ValuesController> _logger;
+
+        public ValuesController(ITextExtractionServices textExtractionServices, ILogger<ValuesController> logger)
+        {
+            _textExtractionServices = textExtractionServices;
+            _logger = logger;
+        }
+
+        [HttpPost("extract")]
+        public async Task<IActionResult> ExtractArabicText(IFormFile pdfFile)
+        {
+            if (pdfFile == null || pdfFile.Length == 0)
+                return BadRequest("No file uploaded.");
+
+            try
+            {
+                var result = await _textExtractionServices.ExtractTextFromPdfAsync(pdfFile);
+                return Ok(new { text = result.Text, rtl = result.IsRightToLeft });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting text from PDF");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("extract-python")]
+        public async Task<IActionResult> ExtractWithPython(IFormFile pdfFile)
+        {
+            if (pdfFile == null || pdfFile.Length == 0)
+                return BadRequest("No file uploaded.");
+
+            try
+            {
+                var result = await _textExtractionServices.ExtractTextWithPythonAsync(pdfFile);
+                
+                // Check for errors
+                if (!string.IsNullOrEmpty(result.Error))
+                {
+                    return StatusCode(500, new { 
+                        error = result.Error,
+                        pythonInfo = result.PythonInfo
+                    });
+                }
+
+                return Ok(new
+                {
+                    text = result.Text,
+                    rtl = result.IsRightToLeft,
+                    source = result.Source,
+                    textLength = result.TextLength,
+                    pythonInfo = result.PythonInfo
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in ExtractWithPython");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+        
+        [HttpGet("python-check")]
+        public IActionResult CheckPythonEnvironment()
+        {
+            try
+            {
+                var result = _textExtractionServices.CheckPythonEnvironment();
+                
+                return Ok(new {
+                    pythonPath = result.PythonPath,
+                    pythonVersion = result.PythonVersion,
+                    scriptPath = result.ScriptPath,
+                    scriptExists = result.ScriptExists,
+                    workingDirectory = result.WorkingDirectory,
+                    currentDirectory = result.CurrentDirectory,
+                    testedPaths = result.TestedPaths,
+                    packages = result.Packages,
+                    diagnosticTime = DateTime.Now.ToString("o")
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { 
+                    error = ex.Message,
+                    stackTrace = ex.StackTrace
+                });
+            }
+        }
+
+        [HttpGet("python-install-packages")]
+        public IActionResult InstallPythonPackages()
+        {
+            try
+            {
+                var result = _textExtractionServices.InstallPythonPackages();
+                
+                return Ok(new {
+                    message = "Installation attempted. Please check the results.",
+                    pythonPath = result.PythonPath,
+                    installResults = result.InstallResults,
+                    testResults = result.TestResults,
+                    environmentInfo = result.EnvironmentInfo,
+                    instructions = "If installation failed, please run the scripts/install_dependencies_direct.ps1 script with administrator privileges."
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new {
+                    error = ex.Message,
+                    message = "Failed to install packages. Please run scripts/install_dependencies_direct.ps1 script with administrator privileges."
+                });
+            }
+        }
+
+        [HttpPost("extract-document/{referenceNo}")]
+        public async Task<IActionResult> ExtractDocumentText(string referenceNo)
+        {
+            if (string.IsNullOrEmpty(referenceNo))
+                return BadRequest("Reference number is required.");
+
+            try
+            {
+                var result = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
+                
+                if (!result.Success)
+                {
+                    return NotFound(new { 
+                        referenceNo = referenceNo,
+                        error = result.ErrorMessage
+                    });
+                }
+
+                return Ok(new
+                {
+                    referenceNo = result.ReferenceNo,
+                    success = result.Success,
+                    textLength = result.TextLength,
+                    message = $"Successfully extracted and saved {result.TextLength} characters of text"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting text from document with reference {ReferenceNo}", referenceNo);
+                return StatusCode(500, new { 
+                    referenceNo = referenceNo,
+                    error = ex.Message
+                });
+            }
+        }
+
+        [HttpPost("process-documents")]
+        public async Task<IActionResult> ProcessDocumentsWithNoText([FromQuery] int batchSize = 10, [FromQuery] int maxDocuments = 0)
+        {
+            try
+            {
+                var result = await _textExtractionServices.ProcessDocumentsWithNoTextAsync(batchSize, maxDocuments);
+                
+                return Ok(new {
+                    startTime = result.StartTime,
+                    endTime = result.EndTime,
+                    processedCount = result.ProcessedCount,
+                    successCount = result.SuccessCount,
+                    totalDocumentsToProcess = result.TotalDocumentsToProcess,
+                    processedDocumentIds = result.ProcessedDocumentIds,
+                    failedDocuments = result.FailedDocuments,
+                    message = result.Message,
+                    error = result.Error,
+                    durationSeconds = (result.EndTime - result.StartTime).TotalSeconds
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in batch processing of documents");
+                return StatusCode(500, new { 
+                    error = ex.Message
+                });
+            }
+        }
+    }
+}

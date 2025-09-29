@@ -571,6 +571,7 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Dscrp).HasMaxLength(150);
+            entity.Property(e => e.status).HasDefaultValue(0);
         });
 
         modelBuilder.Entity<TDocumentsRelation>(entity =>
