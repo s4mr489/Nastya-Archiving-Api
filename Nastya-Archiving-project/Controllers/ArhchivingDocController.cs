@@ -178,5 +178,35 @@ namespace Nastya_Archiving_project.Controllers
             var result = await _archivingDocsSercvices.UnbindDoucAllDocsFromTheParent(parentSystemId);
             return StatusCode(result.StatusCode, result);
         }
+        
+        /// <summary>
+        /// Gets a document by its reference number with all related details
+        /// </summary>
+        /// <param name="referenceNo">The reference number of the document to retrieve</param>
+        /// <returns>Detailed document information including related data</returns>
+        [HttpGet("by-reference/{referenceNo}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> GetDocumentByReferenceNo(string referenceNo)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(referenceNo))
+                {
+                    return BadRequest(new { error = "Reference number cannot be empty." });
+                }
+
+                var result = await _archivingDocsSercvices.GetDocumentByReferenceNo(referenceNo);
+                
+                // Return appropriate status code based on the response
+                return StatusCode(result.StatusCode, result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"An unexpected error occurred: {ex.Message}" });
+            }
+        }
     }
 }

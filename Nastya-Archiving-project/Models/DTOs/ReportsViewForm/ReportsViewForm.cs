@@ -64,12 +64,31 @@ namespace Nastya_Archiving_project.Models.DTOs.Reports
         /// Custom title for the report
         /// </summary>
         public string? reportTitle { get; set; } = "Report";
-
+        /// <summary>
+        /// Sup Docement Type document type filter
+        /// </summary>
         public int? supDocType { get; set; }
+
+        /// <summary>
+        /// Gets or sets an optional notice message associated with the current instance.
+        /// </summary>
         public string? notice { get; set; }
+        /// <summary>
+        /// document number filter
+        /// </summary>
         public string? docNo { get; set; }
+        /// <summary>
+        /// the subject of the document
+        /// </summary>
         public string? subject { get; set; }
+        /// <summary>
+        /// the box file number
+        /// </summary>
         public string? boxFileNo { get; set; }
+        /// <summary>
+        /// the editor of the document
+        /// </summary>
+        public string? editor { get; set; }
 
         /// <summary>
         /// Page number for department-level pagination (which department to show)
@@ -86,5 +105,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Reports
         /// (which set of documents to show within the current department)
         /// </summary>
         public int docPage { get; set; } = 1;
+
+
     }
 }

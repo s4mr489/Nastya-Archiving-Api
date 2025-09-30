@@ -13,7 +13,7 @@ namespace Nastya_Archiving_project.Services.auth
         Task<string> ChangeUserPassword(ChangePasswordViewFrom pass);
         Task<string> RemoveUser(int Id);
         Task<(PagedList<UsersResponseDTOs>? users, string? error)> GetAllUsers(string realName,int pageNumber = 1, int pageSize = 10);
-        Task<(UsersResponseDTOs? user, string? error)> SearchUsers(string? realName ,string? userName);
+        Task<(UsersResponseDTOs? user, string? error)> SearchUsers(string? realName, int departId, string? userName);
         Task<(RegisterResponseDTOs? user, string? error)> EditUser(int id, RegisterViewForm form, bool IsAdmin);
         Task<BaseResponseDTOs> GetDepartForUsers(int userId);
         Task<BaseResponseDTOs> FirstUsers(LoginFormDTO req);

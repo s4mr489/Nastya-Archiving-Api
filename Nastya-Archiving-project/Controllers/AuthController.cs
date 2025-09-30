@@ -159,9 +159,9 @@ namespace Nastya_Archiving_project.Controllers
         }
 
         [HttpGet("search-users")]
-        public async Task<IActionResult> SearchUsers([FromQuery] string? realName, [FromQuery] string? userName)
+        public async Task<IActionResult> SearchUsers([FromQuery] string? realName, [FromQuery] int departId = 0, [FromQuery] string? userName = null)
         {
-            var (user, error) = await _authServices.SearchUsers(realName, userName);
+            var (user, error) = await _authServices.SearchUsers(realName, departId, userName);
             if (error != null)
                 return NotFound(new { error });
             return Ok(user);
@@ -177,6 +177,7 @@ namespace Nastya_Archiving_project.Controllers
 
             return Ok(response);
         }
+
         [HttpPatch("active-or-deactiv-user/{id}")]
         public async Task<IActionResult> ActiveOrDeActivUser(int id, [FromQuery] bool status)
         {

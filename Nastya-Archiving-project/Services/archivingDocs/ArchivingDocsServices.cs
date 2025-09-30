@@ -11,6 +11,7 @@ using Nastya_Archiving_project.Models.DTOs.ArchivingDocs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs.JoinedDocs;
 using Nastya_Archiving_project.Models.DTOs.ArchivingDocs.Linkdocuments;
 using Nastya_Archiving_project.Models.DTOs.file;
+using Nastya_Archiving_project.Models.DTOs.Reports;
 using Nastya_Archiving_project.Models.Entity;
 using Nastya_Archiving_project.Services.ArchivingSettings;
 using Nastya_Archiving_project.Services.files;
@@ -762,6 +763,119 @@ namespace Nastya_Archiving_project.Services.archivingDocs
 
             await _context.SaveChangesAsync();
             return new BaseResponseDTOs(null, 200, "All linked documents have been unbound from the parent successfully.");
+        }
+        
+        /// <summary>
+        /// Gets a document by its reference number with all related details
+        /// </summary>
+        /// <param name="referenceNo">The reference number of the document to retrieve</param>
+        /// <returns>A response with document details or an error message</returns>
+        public async Task<BaseResponseDTOs> GetDocumentByReferenceNo(string referenceNo)
+        {
+            try
+            {
+                // Validate input
+                if (string.IsNullOrWhiteSpace(referenceNo))
+                {
+                    return new BaseResponseDTOs(null, 400, "Reference number cannot be empty.");
+                }
+
+                // Find the document by reference number
+                var document = await _context.ArcivingDocs
+                    .AsNoTracking()
+                    .Select( d => d)
+                    .FirstOrDefaultAsync(d => d.RefrenceNo == referenceNo);
+
+                if (document == null)
+                {
+                    return new BaseResponseDTOs(null, 404, $"Document with reference number '{referenceNo}' not found.");
+                }
+
+                // Get related data
+                var (docTypeObj, _) = document.DocType > 0
+                    ? await _archivingSettingsServicers.GetDocsTypeById(document.DocType)
+                    : (null, null);
+
+                var (docTargetObj, _) = document.DocTarget.HasValue && document.DocTarget.Value > 0
+                    ? await _infrastructureServices.GetPOrganizationById(document.DocTarget.Value)
+                    : (null, null);
+
+                var (docSourceObj, _) = document.DocSource.HasValue && document.DocSource.Value > 0
+                    ? await _infrastructureServices.GetPOrganizationById(document.DocSource.Value)
+                    : (null, null);
+
+                var (supDocTypeObj, _) = document.SubDocType.HasValue && document.SubDocType.Value > 0
+                    ? await _archivingSettingsServicers.GetSupDocsTypeById(document.SubDocType.Value)
+                    : (null, null);
+
+                var (departmentObj, _) = document.DepartId.HasValue && document.DepartId.Value > 0
+                    ? await _infrastructureServices.GetDepartmentById(document.DepartId.Value)
+                    : (null, null);
+
+                // Check if this document is referenced by others or references others
+                var childDocuments = await _context.JoinedDocs
+                    .Where(j => j.ParentRefrenceNO == document.RefrenceNo)
+                    .Select(j => j.ChildRefrenceNo)
+                    .ToListAsync();
+
+                var parentReference = await _context.JoinedDocs
+                    .Where(j => j.ChildRefrenceNo == document.RefrenceNo)
+                    .Select(j => j.ParentRefrenceNO)
+                    .FirstOrDefaultAsync();
+
+                // Prepare the response object with enriched data
+                var enrichedDocument = new
+                {
+                    Document = new
+                    {
+                        document.Id,
+                        document.RefrenceNo,
+                        document.DocNo,
+                        document.DocType,
+                        document.Subject,
+                        document.DocSize,
+                        document.Editor,
+                        DocDate = document.DocDate,
+                        document.EditDate,
+                        document.BoxfileNo,
+                        document.Notes,
+                        document.ReferenceTo,
+                        document.ImgUrl,
+                        document.DepartId,
+                        DepartmentName = departmentObj?.DepartmentName,
+                        DocSourceName = docSourceObj?.Dscrp,
+                        DocTargetName = docTargetObj?.Dscrp,
+                        DocTypeName = docTypeObj?.docuName,
+                        SupDocTypeName = supDocTypeObj?.supDocuName,
+                    },
+                    References = new
+                    {
+                        ChildDocuments = childDocuments,
+                        ParentReference = parentReference,
+                        IsParent = !string.IsNullOrEmpty(document.ReferenceTo) && document.ReferenceTo == "True",
+                        IsChild = !string.IsNullOrEmpty(document.ReferenceTo) && document.ReferenceTo != "True" 
+                    }
+                };
+
+                // Format the response to match the GeneralReport structure
+                var response = new
+                {
+                    Data = enrichedDocument,
+                    TotalCount = 1,
+                    PageNumber = 1,
+                    PageSize = 1
+                };
+
+                return new BaseResponseDTOs(response, 200, null);
+            }
+            catch (Exception ex)
+            {
+                // Log the exception
+                Console.WriteLine($"Error retrieving document by reference number: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                
+                return new BaseResponseDTOs(null, 500, $"An error occurred while retrieving the document: {ex.Message}");
+            }
         }
     }
 }

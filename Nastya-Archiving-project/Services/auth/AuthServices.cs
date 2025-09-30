@@ -16,6 +16,7 @@ using Nastya_Archiving_project.Services.infrastructure;
 using Nastya_Archiving_project.Services.Limitation;
 using Nastya_Archiving_project.Services.SystemInfo;
 using Org.BouncyCastle.Tls.Crypto.Impl.BC;
+using System.Net.Quic;
 using System.Net.WebSockets;
 
 namespace Nastya_Archiving_project.Services.auth
@@ -473,50 +474,76 @@ namespace Nastya_Archiving_project.Services.auth
             return (result, null);
         }
 
-        public async Task<(UsersResponseDTOs? user, string? error)> SearchUsers(string? realName, string? userName)
+        public async Task<(UsersResponseDTOs? user, string? error)> SearchUsers(string? realName, int departId, string? userName)
         {
-            // Start with the Users DbSet as IQueryable
-            var query = _context.Users.AsQueryable();
-
-            // Apply filters using IQueryableExtensions.WhereFilter if you have a BaseFilter
-            // Otherwise, filter manually for realName and userName
-            if (!string.IsNullOrEmpty(realName))
+            try
             {
-                query = query.Where(u => u.Realname.Contains(_encryptionServices.EncryptString256Bit(realName)));
+                // Start with the Users DbSet
+                var query = _context.Users.AsQueryable();
+
+                // Apply department filter directly in the database query
+                if (departId > 0)
+                {
+                    query = query.Where(u => u.DepariId == departId);
+                }
+
+                // Get all matching users from the database
+                var users = await query.ToListAsync();
+
+                // For encrypted fields, we need to do filtering in memory after fetching the data
+                if (!string.IsNullOrEmpty(userName) || !string.IsNullOrEmpty(realName))
+                {
+                    // Encrypt search terms once for comparison
+                    string? encryptedUserName = !string.IsNullOrEmpty(userName) ? 
+                        _encryptionServices.EncryptString256Bit(userName) : null;
+                    
+                    // Filter in memory for encrypted fields
+                    users = users.Where(u => 
+                        // If userName specified, must match
+                        (string.IsNullOrEmpty(userName) || 
+                            (u.UserName != null && u.UserName.Equals(encryptedUserName, StringComparison.OrdinalIgnoreCase))) &&
+                        // If realName specified, must match when decrypted
+                        (string.IsNullOrEmpty(realName) || 
+                            (_encryptionServices.DecryptString256Bit(u.Realname ?? "").Contains(realName, StringComparison.OrdinalIgnoreCase)))
+                    ).ToList();
+                }
+
+                // Get the first matching user after all filters applied
+                var user = users.FirstOrDefault();
+                if (user == null)
+                    return (null, "No user found.");
+
+                // Get related data for the user
+                var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == user.BranchId);
+                var depart = await _context.GpDepartments.FirstOrDefaultAsync(a => a.Id == user.DepariId);
+                var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == user.GroupId);
+                var jobTitle = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == user.JobTitle);
+                var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.AccountUnitId);
+
+                // Create response DTO
+                var userDto = new UsersResponseDTOs()
+                {
+                    userName = _encryptionServices.DecryptString256Bit(user.UserName ?? ""),
+                    realName = _encryptionServices.DecryptString256Bit(user.Realname ?? ""),
+                    branch = branch?.Dscrp,
+                    depart = depart?.Dscrp,
+                    group = group != null ? _encryptionServices.DecryptString256Bit(group.Groupdscrp ?? "") : null,
+                    accountUnit = accountUnit?.Dscrp,
+                    jobTitl = jobTitle?.Dscrp,
+                    Id = user.Id,
+                    permission = _encryptionServices.DecryptString256Bit(user.Adminst ?? ""),
+                    address = user.Address,
+                    phoneNo = user.PhoneNo,
+                    email = user.Email
+                };
+                return (userDto, null);
             }
-            if (!string.IsNullOrEmpty(userName))
+            catch (Exception ex)
             {
-                query = query.Where(u => u.UserName.Contains(_encryptionServices.EncryptString256Bit(userName)));
+                // Log exception
+                Console.WriteLine($"Error in SearchUsers: {ex.Message}");
+                return (null, $"An error occurred while searching for users: {ex.Message}");
             }
-
-            // Get the first matching user
-            var user = await query.FirstOrDefaultAsync();
-            if (user == null)
-                return (null, "No user found.");
-
-
-            var branch = await _context.GpBranches.FirstOrDefaultAsync(b => b.Id == user.BranchId);
-            var depart = await _context.GpDepartments.FirstOrDefaultAsync(a => a.Id == user.DepariId);
-            var group = await _context.Usersgroups.FirstOrDefaultAsync(g => g.groupid == user.GroupId);
-            var jobTitle = await _context.PJobTitles.FirstOrDefaultAsync(j => j.Id == user.JobTitle);
-            var accountUnit = await _context.GpAccountingUnits.FirstOrDefaultAsync(a => a.Id == user.AccountUnitId);
-
-            var userDto = new UsersResponseDTOs()
-            {
-                userName = _encryptionServices.DecryptString256Bit(user.UserName),
-                realName = _encryptionServices.DecryptString256Bit(user.Realname),
-                branch = branch?.Dscrp,
-                depart = depart?.Dscrp,
-                group = _encryptionServices.DecryptString256Bit(group.Groupdscrp),
-                accountUnit = accountUnit?.Dscrp,
-                jobTitl = jobTitle?.Dscrp,
-                Id = user.Id,
-                permission = _encryptionServices.DecryptString256Bit(user.Adminst),
-                address = user.Address ,
-                phoneNo = user.PhoneNo ,
-                email = user.Email 
-            };
-            return (userDto, null);
         }
 
         public async Task<BaseResponseDTOs> GetDepartForUsers(int userId)

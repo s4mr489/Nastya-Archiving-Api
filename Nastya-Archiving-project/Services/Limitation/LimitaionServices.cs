@@ -68,22 +68,48 @@ namespace Nastya_Archiving_project.Services.Limitation
                     var existingLicenseResponse = await ReadEncryptedTextFile();
                     if (existingLicenseResponse.StatusCode == 200 && existingLicenseResponse.Data != null)
                     {
-                        dynamic responseData = existingLicenseResponse.Data;
-                        if (responseData.License != null)
+                        try
                         {
-                            // Store existing license key for signature validation
-                            existingLicenseKey = responseData.License.LicenseKey;
-
-                            // Get all decrypted values
-                            var rawData = ((IDictionary<string, object>)responseData).ContainsKey("Debug")
-                                ? (IDictionary<string, object>)responseData.Debug.RawDecryptedData
-                                : new Dictionary<string, object>();
-
-                            // Store existing values in dictionary for later use
-                            foreach (var kvp in rawData)
+                            // Extract license key from the response data if available
+                            dynamic responseData = existingLicenseResponse.Data;
+                            
+                            if (responseData.License != null)
                             {
-                                existingValues[kvp.Key] = kvp.Value?.ToString();
+                                // Store existing license key for signature validation
+                                existingLicenseKey = responseData.License.LicenseKey;
                             }
+
+                            // Try to get raw decrypted data in a safer way
+                            if (existingLicenseResponse.Data is IDictionary<string, object> responseDictionary &&
+                                responseDictionary.ContainsKey("Debug"))
+                            {
+                                var debugData = responseDictionary["Debug"] as IDictionary<string, object>;
+                                if (debugData != null && debugData.ContainsKey("RawDecryptedData"))
+                                {
+                                    // Process dictionary values - convert each entry to string
+                                    var rawDataObj = debugData["RawDecryptedData"];
+                                    if (rawDataObj is IDictionary<string, object> rawDataDict)
+                                    {
+                                        foreach (var kvp in rawDataDict)
+                                        {
+                                            existingValues[kvp.Key] = kvp.Value?.ToString();
+                                        }
+                                    }
+                                    else if (rawDataObj is IDictionary<string, string> rawDataStrDict)
+                                    {
+                                        // Direct copy if already string dictionary
+                                        foreach (var kvp in rawDataStrDict)
+                                        {
+                                            existingValues[kvp.Key] = kvp.Value;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Log the exception but continue with default values
+                            Console.WriteLine($"Error processing existing license data: {ex.Message}");
                         }
                     }
                 }
@@ -356,17 +382,17 @@ namespace Nastya_Archiving_project.Services.Limitation
                         FilePath = actualFilePath,
                         // Fix the variable name conflict in LicenseValidation.IsExpired
                         IsExpired = GetDateFromDecryptedData(decryptedData, "NASTYA-ARCHIVING-LICENSE.ExpirationDate") is DateTime expirationDateTime
-                    ? expirationDateTime < DateTime.Now
-                    : true
+                            ? expirationDateTime < DateTime.Now
+                            : true
                     }
                 };
 
-                // For debugging or administrative purposes, you might want to include the raw data
-                // but we hide it from normal responses
+                // Create a new Dictionary for debug info to avoid type conversion issues
                 var debugInfo = new Dictionary<string, object>
                 {
-                    { "RawDecryptedData", decryptedData },
-                    { "RawEncryptedData", licenseData }
+                    // Explicitly create a new Dictionary<string, object> from the string dictionary
+                    { "RawDecryptedData", decryptedData.ToDictionary(kvp => kvp.Key, kvp => (object)kvp.Value) },
+                    { "RawEncryptedData", licenseData.ToDictionary(kvp => kvp.Key, kvp => (object)kvp.Value) }
                 };
 
                 // Return the formatted license information
@@ -374,7 +400,6 @@ namespace Nastya_Archiving_project.Services.Limitation
                     new
                     {
                         License = licenseInfo,
-                        // Uncomment the line below if you want to include debug info in the response
                         Debug = debugInfo
                     },
                     200,

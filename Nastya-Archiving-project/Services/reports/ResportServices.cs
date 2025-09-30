@@ -1633,6 +1633,8 @@ namespace Nastya_Archiving_project.Services.reports
                 
             if (!string.IsNullOrWhiteSpace(req.boxFileNo))
                 query = query.Where(x => x.BoxfileNo != null && x.BoxfileNo.Contains(req.boxFileNo));
+            if(!string.IsNullOrWhiteSpace(req.editor))
+                query = query.Where(x => x.Editor != null && x.Editor.Contains(req.editor));
 
             return query;
         }
