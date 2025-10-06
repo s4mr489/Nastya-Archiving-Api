@@ -85,6 +85,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Reports
         /// the box file number
         /// </summary>
         public string? boxFileNo { get; set; }
+
         /// <summary>
         /// the editor of the document
         /// </summary>
@@ -105,7 +106,5 @@ namespace Nastya_Archiving_project.Models.DTOs.Reports
         /// (which set of documents to show within the current department)
         /// </summary>
         public int docPage { get; set; } = 1;
-
-
     }
 }

@@ -13,5 +13,13 @@ namespace Nastya_Archiving_project.Services.statistically
         Task<BaseResponseDTOs> GetDocumentBySupDocTpye(StatisticallyViewForm req);
         Task<BaseResponseDTOs> GetDocumentByOrgniztion(StatisticallyViewForm req);
         Task<BaseResponseDTOs> GetDocumentByDocTargetAsync(StatisticallyViewForm req);
+        
+        // New methods based on requirements
+        Task<BaseResponseDTOs> GetFileSizeByEditorAsync(StatisticallyViewForm req);
+        Task<BaseResponseDTOs> GetFileSizeByOrgnizationAsync(StatisticallyViewForm req);
+        Task<BaseResponseDTOs> GetFileSizeByDocTargetAsync(StatisticallyViewForm req);
+        Task<BaseResponseDTOs> GetFileSizeByDocTypeAsync(StatisticallyViewForm req);
+        Task<BaseResponseDTOs> GetFileSizeBySupDocTypeAsync(StatisticallyViewForm req);
+        Task<BaseResponseDTOs> CompareDocDateWithEditDateAsync(StatisticallyViewForm req);
     }
 }
