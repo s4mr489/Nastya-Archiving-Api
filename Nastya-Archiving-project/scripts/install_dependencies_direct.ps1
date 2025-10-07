@@ -1,124 +1,186 @@
-# This script installs Python dependencies directly to the environment used by the application
-# It finds the Python executable used by the application and installs packages there
+# Direct Python Installation and Setup for Nastya Archiving Project
+# This script will:
+# 1. Check for Python installations in common paths
+# 2. Install required Python packages
+# 3. Set up the necessary environment
 
-# Get the path to Python used by the application
-$pythonPath = ""
+Write-Host "Starting Python dependency installation for Nastya Archiving Project..." -ForegroundColor Cyan
 
-# First check if we can find it from the application's logs or environment
-$appDir = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-$logFile = Join-Path $appDir "logs\debug.log"
-
-if (Test-Path $logFile) {
-    Write-Host "Checking log file for Python path..."
-    $pythonMatches = Select-String -Path $logFile -Pattern "Selected Python executable: (.*)" -AllMatches
-    if ($pythonMatches -and $pythonMatches.Matches.Count -gt 0) {
-        $pythonPath = $pythonMatches.Matches[$pythonMatches.Matches.Count - 1].Groups[1].Value
-        Write-Host "Found Python path in logs: $pythonPath"
-    }
-}
-
-# If we couldn't find it, try to use the system Python
-if (-not $pythonPath -or -not (Test-Path $pythonPath)) {
-    Write-Host "Trying to find Python in PATH..."
-    try {
-        $pythonPath = (Get-Command python -ErrorAction SilentlyContinue).Source
-        if (-not $pythonPath) {
-            $pythonPath = (Get-Command python3 -ErrorAction SilentlyContinue).Source
-        }
-    }
-    catch {}
-}
-
-# If we still don't have it, ask the user
-if (-not $pythonPath -or -not (Test-Path $pythonPath)) {
-    Write-Host "Could not automatically detect Python path."
-    $pythonPath = Read-Host "Please enter the full path to python.exe"
-}
-
-# Check if the Python path exists
-if (-not (Test-Path $pythonPath)) {
-    Write-Host "Error: Python executable not found at: $pythonPath" -ForegroundColor Red
-    Write-Host "Please install Python and try again." -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "Using Python executable: $pythonPath" -ForegroundColor Green
-Write-Host "Getting Python version..."
-$pythonVersion = & $pythonPath --version
-
-if ($pythonVersion) {
-    Write-Host "Python version: $pythonVersion" -ForegroundColor Green
-} else {
-    Write-Host "Warning: Could not determine Python version." -ForegroundColor Yellow
-}
-
-# Get site-packages location
-Write-Host "Getting site-packages location..."
-$sitePackages = & $pythonPath -c "import site; print(site.getsitepackages()[0])"
-Write-Host "Site packages directory: $sitePackages" -ForegroundColor Green
-
-# Install required packages
-Write-Host "`nInstalling PyMuPDF package..." -ForegroundColor Cyan
-& $pythonPath -m pip install --upgrade PyMuPDF
-
-Write-Host "`nInstalling pdfminer.six package..." -ForegroundColor Cyan
-& $pythonPath -m pip install --upgrade pdfminer.six
-
-# Verify installations
-Write-Host "`nVerifying installations..." -ForegroundColor Cyan
-
-$pyMuPDFResult = & $pythonPath -c "try: import fitz; print(f'PyMuPDF {fitz.__version__} is installed'); print(f'Location: {fitz.__file__}') except ImportError as e: print('PyMuPDF is NOT installed: ' + str(e))" 2>&1
-$pdfminerResult = & $pythonPath -c "try: from pdfminer import __version__; print(f'pdfminer.six {__version__} is installed') except ImportError as e: print('pdfminer.six is NOT installed: ' + str(e))" 2>&1
-
-Write-Host $pyMuPDFResult
-Write-Host $pdfminerResult
-
-# Create a test script in the temp directory to verify the installation
-$testScriptPath = [System.IO.Path]::GetTempFileName() + ".py"
-@"
-import sys
-print("Python executable: " + sys.executable)
-print("Python version: " + sys.version)
-
-try:
-    import fitz
-    print("PyMuPDF version: " + fitz.__version__)
-except ImportError as e:
-    print("PyMuPDF import error: " + str(e))
-
-try:
-    from pdfminer.high_level import extract_text
-    from pdfminer import __version__
-    print("pdfminer.six version: " + __version__)
-except ImportError as e:
-    print("pdfminer.six import error: " + str(e))
-"@ | Set-Content -Path $testScriptPath
-
-Write-Host "`nRunning test script..." -ForegroundColor Cyan
-& $pythonPath $testScriptPath
-
-# Copy the Python script to the correct location
-Write-Host "`nCopying extract_arabic_pdf.py to the application directories..." -ForegroundColor Cyan
-
-# Source script path in the scripts directory
-$sourceScriptPath = Join-Path $appDir "Nastya-Archiving-project\extract_arabic_pdf.py"
-
-# Target paths - copy to multiple locations to ensure it's found
-$targetPaths = @(
-    (Join-Path $appDir "Nastya-Archiving-project\bin\Debug\net9.0\extract_arabic_pdf.py"),
-    (Join-Path $appDir "Nastya-Archiving-project\extract_arabic_pdf.py")
+# Define common Python installation paths to check
+$pythonPaths = @(
+    "python",
+    "python3",
+    "C:\Python39\python.exe",
+    "C:\Python310\python.exe",
+    "C:\Python311\python.exe",
+    "C:\Python312\python.exe",
+    "C:\Program Files\Python39\python.exe",
+    "C:\Program Files\Python310\python.exe",
+    "C:\Program Files\Python311\python.exe",
+    "C:\Program Files\Python312\python.exe",
+    "C:\Program Files (x86)\Python39\python.exe",
+    "C:\Program Files (x86)\Python310\python.exe",
+    "C:\Program Files (x86)\Python311\python.exe",
+    "C:\Program Files (x86)\Python312\python.exe"
 )
 
-foreach ($targetPath in $targetPaths) {
+$pythonFound = $false
+$pythonPath = $null
+$pythonVersion = $null
+
+# Check each path for a valid Python installation
+Write-Host "Checking for Python installations..." -ForegroundColor Yellow
+foreach ($path in $pythonPaths) {
     try {
-        Copy-Item -Path $sourceScriptPath -Destination $targetPath -Force
-        Write-Host "  Copied script to $targetPath" -ForegroundColor Green
-    } catch {
-        Write-Host "  Failed to copy to $targetPath: $_" -ForegroundColor Yellow
+        Write-Host "Trying $path..." -ForegroundColor Gray
+        $pythonVersionOutput = & $path --version 2>&1
+        
+        if ($LASTEXITCODE -eq 0 -and $pythonVersionOutput -match "Python") {
+            $pythonPath = $path
+            $pythonVersion = $pythonVersionOutput
+            $pythonFound = $true
+            Write-Host "Found Python: $pythonVersionOutput at $pythonPath" -ForegroundColor Green
+            break
+        }
+    }
+    catch {
+        # Continue checking other paths
     }
 }
 
-Write-Host "`nInstallation complete. Please restart your application and try the PDF extraction again." -ForegroundColor Green
+if (-not $pythonFound) {
+    Write-Host "Python not found in common locations!" -ForegroundColor Red
+    Write-Host "Would you like to download and install Python 3.11.7? (y/n)" -ForegroundColor Yellow
+    $installPython = Read-Host
+    
+    if ($installPython -eq "y") {
+        $pythonInstallerUrl = "https://www.python.org/ftp/python/3.11.7/python-3.11.7-amd64.exe"
+        $pythonInstallerPath = "$env:TEMP\python-installer.exe"
+        
+        Write-Host "Downloading Python 3.11.7..." -ForegroundColor Yellow
+        
+        try {
+            Invoke-WebRequest -Uri $pythonInstallerUrl -OutFile $pythonInstallerPath
+            Write-Host "Download complete. Installing Python..." -ForegroundColor Yellow
+            
+            # Install Python with PATH option enabled and pip installed
+            Start-Process -FilePath $pythonInstallerPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_pip=1" -Wait
+            
+            Write-Host "Python installation completed. Please restart this script to continue." -ForegroundColor Green
+            exit
+        }
+        catch {
+            Write-Host "Failed to download or install Python: $_" -ForegroundColor Red
+            Write-Host "Please download and install Python manually from: https://www.python.org/downloads/" -ForegroundColor Yellow
+            Write-Host "Make sure to check 'Add Python to PATH' during installation." -ForegroundColor Yellow
+            exit 1
+        }
+    }
+    else {
+        Write-Host "Please install Python manually from: https://www.python.org/downloads/" -ForegroundColor Yellow
+        Write-Host "Make sure to check 'Add Python to PATH' during installation." -ForegroundColor Yellow
+        exit 1
+    }
+}
 
-# Clean up
-Remove-Item $testScriptPath -Force -ErrorAction SilentlyContinue
+# Install required Python packages
+Write-Host "Installing required Python packages..." -ForegroundColor Yellow
+
+# Upgrade pip first
+Write-Host "Upgrading pip..." -ForegroundColor Gray
+try {
+    & $pythonPath -m pip install --upgrade pip
+    Write-Host "Pip upgraded successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "Error upgrading pip: $_" -ForegroundColor Red
+    Write-Host "Continuing with package installation..." -ForegroundColor Yellow
+}
+
+# Install PyMuPDF
+Write-Host "Installing PyMuPDF..." -ForegroundColor Gray
+try {
+    & $pythonPath -m pip install PyMuPDF
+    Write-Host "PyMuPDF installed successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "Error installing PyMuPDF: $_" -ForegroundColor Red
+}
+
+# Install pdfminer.six
+Write-Host "Installing pdfminer.six..." -ForegroundColor Gray
+try {
+    & $pythonPath -m pip install pdfminer.six
+    Write-Host "pdfminer.six installed successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "Error installing pdfminer.six: $_" -ForegroundColor Red
+}
+
+# Verify installations
+Write-Host "Verifying installations..." -ForegroundColor Yellow
+
+$packagesToVerify = @(
+    @{Name = "PyMuPDF"; ImportName = "fitz"},
+    @{Name = "pdfminer.six"; ImportName = "pdfminer"}
+)
+$allInstalled = $true
+
+foreach ($package in $packagesToVerify) {
+    $testCmd = "try: import $($package.ImportName); print('$($package.Name) is installed'); except ImportError: print('$($package.Name) is NOT installed')"
+    $result = & $pythonPath -c $testCmd
+    
+    if ($result -like "*is installed*") {
+        Write-Host "$($package.Name): Installed" -ForegroundColor Green
+    }
+    else {
+        Write-Host "$($package.Name): NOT installed" -ForegroundColor Red
+        $allInstalled = $false
+    }
+}
+
+# Update PATH environment variable if Python directory is not in PATH
+$pythonDir = Split-Path -Parent $pythonPath
+$currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
+if (-not $currentPath.Contains($pythonDir)) {
+    try {
+        Write-Host "Adding Python directory to system PATH..." -ForegroundColor Yellow
+        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$pythonDir", [EnvironmentVariableTarget]::Machine)
+        Write-Host "Python added to system PATH. You may need to restart your application or system." -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Failed to add Python to system PATH: $_" -ForegroundColor Red
+        Write-Host "Please add this directory to your PATH manually: $pythonDir" -ForegroundColor Yellow
+    }
+}
+
+# Final message
+if ($allInstalled) {
+    Write-Host "All required Python packages have been successfully installed!" -ForegroundColor Green
+    
+    # Create a simple environment file that the application can check
+    $envInfo = @{
+        PythonPath = $pythonPath
+        PythonVersion = $pythonVersion
+        PyMuPDFInstalled = $true
+        PdfminerInstalled = $true
+        InstallationDate = [DateTime]::Now.ToString("o")
+    } | ConvertTo-Json
+
+    $envFilePath = Join-Path -Path $PSScriptRoot -ChildPath "..\python_env_info.json"
+    $envInfo | Out-File -FilePath $envFilePath
+    Write-Host "Environment information saved to: $envFilePath" -ForegroundColor Cyan
+}
+else {
+    Write-Host "Some packages could not be installed. Please review the output and try again." -ForegroundColor Yellow
+    Write-Host "You may need to run this script as administrator." -ForegroundColor Yellow
+}
+
+# Create a bat version for easier execution
+$batScriptPath = Join-Path -Path $PSScriptRoot -ChildPath "install_dependencies_direct.bat"
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptContent = "@echo off`r`necho Running Python dependency installer...`r`npowershell.exe -ExecutionPolicy Bypass -File `"$scriptPath`"`r`npause"
+[System.IO.File]::WriteAllText($batScriptPath, $scriptContent)
+
+Write-Host "A .bat file has been created for easier execution: $batScriptPath" -ForegroundColor Cyan
+Write-Host "Setup complete!" -ForegroundColor Cyan

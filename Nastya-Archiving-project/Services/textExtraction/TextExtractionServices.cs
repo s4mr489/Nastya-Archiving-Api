@@ -631,24 +631,92 @@ namespace Nastya_Archiving_project.Services.textExtraction
             }
         }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Process Arabic text to ensure correct RTL display and formatting
+        /// </summary>
         public string ProcessArabicText(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return text;
 
-            // Handle bidirectional text (mixing of Arabic and Latin scripts)
-            text = ApplyBidiProcessing(text);
-
-            // Normalize Arabic characters (handle different forms of alef, ya, etc.)
-            text = NormalizeArabicText(text);
-
-            // Ensure correct line order for RTL text
-            text = CorrectLineOrder(text);
-
-            return text;
+            try
+            {
+                // Add RIGHT-TO-LEFT MARK to beginning of text for proper RTL rendering
+                const char RLM = '\u200F';
+                
+                if (!text.StartsWith(RLM.ToString()))
+                {
+                    text = RLM + text;
+                }
+                
+                // Process text by lines to ensure proper RTL formatting
+                var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    // Add RLM to beginning of each line if not present and line is not empty
+                    if (!lines[i].StartsWith(RLM.ToString()) && !string.IsNullOrWhiteSpace(lines[i]))
+                    {
+                        lines[i] = RLM + lines[i];
+                    }
+                    
+                    // Remove LEFT-TO-RIGHT MARK characters which may interfere with RTL
+                    lines[i] = lines[i].Replace("\u200E", "");
+                }
+                
+                // Join lines back together with proper line endings
+                text = string.Join(Environment.NewLine, lines);
+                
+                // Fix Arabic punctuation spacing
+                text = text.Replace(" :", ":");
+                text = text.Replace(" .", ".");
+                text = text.Replace(" ،", "،");
+                text = text.Replace(" ؟", "؟");
+                text = text.Replace(" !", "!");
+                
+                // Ensure spaces after punctuation
+                text = text.Replace(".", ". ");
+                text = text.Replace("،", "، ");
+                text = text.Replace(":", ": ");
+                text = text.Replace("؟", "؟ ");
+                text = text.Replace("!", "! ");
+                
+                // Remove extra whitespace
+                text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
+                while (text.Contains("  "))
+                {
+                    text = text.Replace("  ", " ");
+                }
+                
+                _logger.LogDebug("Arabic text processed successfully");
+                return text;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing Arabic text");
+                return text; // Return original if processing fails
+            }
         }
 
+        /// <summary>
+        /// Format Arabic numerals properly for RTL display
+        /// </summary>
+        private string FormatArabicNumerals(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+            
+            // Regex to find sequences of digits
+            var regex = new Regex(@"\d+");
+            
+            // Replace each match with properly formatted numbers for RTL context
+            return regex.Replace(text, match => 
+            {
+                // Add zero-width space after numbers to help with RTL formatting
+                return match.Value + "\u200B";
+            });
+        }
+        
         /// <inheritdoc/>
         public string ExtractTextWithPython(string pdfPath)
         {
@@ -843,25 +911,138 @@ namespace Nastya_Archiving_project.Services.textExtraction
 
             try
             {
-                // Find the Python executable used by the application
-                string pythonPath = FindBestPythonInstallation();
+                _logger.LogInformation("Starting Python package installation");
+                
+                // Look for Python in multiple locations
+                string[] possiblePythonPaths = {
+                    "python",
+                    "python3",
+                    @"C:\Python39\python.exe",
+                    @"C:\Python310\python.exe",
+                    @"C:\Python311\python.exe",
+                    @"C:\Python312\python.exe",
+                    @"C:\Program Files\Python39\python.exe",
+                    @"C:\Program Files\Python310\python.exe",
+                    @"C:\Program Files\Python311\python.exe",
+                    @"C:\Program Files\Python312\python.exe",
+                    @"C:\Program Files (x86)\Python39\python.exe",
+                    @"C:\Program Files (x86)\Python310\python.exe",
+                    @"C:\Program Files (x86)\Python311\python.exe",
+                    @"C:\Program Files (x86)\Python312\python.exe"
+                };
+                
+                string pythonPath = null;
+                string versionOutput = null;
+                bool pythonFound = false;
+                
+                foreach (var path in possiblePythonPaths)
+                {
+                    try
+                    {
+                        _logger.LogDebug("Checking Python path: {Path}", path);
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = path,
+                            Arguments = "--version",
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        
+                        using (var process = Process.Start(psi))
+                        {
+                            if (process != null)
+                            {
+                                versionOutput = process.StandardOutput.ReadToEnd().Trim() + process.StandardError.ReadToEnd().Trim();
+                                process.WaitForExit();
+                                
+                                if (process.ExitCode == 0 && versionOutput.Contains("Python"))
+                                {
+                                    pythonPath = path;
+                                    pythonFound = true;
+                                    _logger.LogInformation("Found Python installation: {Path}, Version: {Version}", path, versionOutput);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug("Python not found at {Path}: {Error}", path, ex.Message);
+                        // Continue checking other paths
+                    }
+                }
+                
+                if (!pythonFound)
+                {
+                    _logger.LogError("No Python installation found. Please install Python 3.8 or higher.");
+                    result.Error = "Python not found on the system. Please install Python 3.8 or higher.";
+                    result.PythonPath = "Not found";
+                    result.EnvironmentInfo = "Python not found. Please install Python 3.8 or higher.";
+                    
+                    // Add some troubleshooting information
+                    result.InstallResults = new Dictionary<string, string>
+                    {
+                        ["Error"] = "Python interpreter not found in PATH or common installation locations.",
+                        ["Solution"] = "Please install Python from https://www.python.org/downloads/ and ensure it is added to the system PATH."
+                    };
+                    
+                    return result;
+                }
+
+                // Found a working Python, proceed with installation
                 result.PythonPath = pythonPath;
                 
-                // Try to install the packages directly
+                // Install packages
+                _logger.LogInformation("Installing Python packages using: {PythonPath}", pythonPath);
                 result.InstallResults = InstallPythonPackages(pythonPath);
                 
-                // Test if the packages are now installed
+                // Test installation
                 result.TestResults = TestPythonPackages(pythonPath);
                 
-                // Add detailed environment information
+                // Get environment info
                 result.EnvironmentInfo = GetPythonEnvironmentInfo(pythonPath);
+                
+                // Check if any errors occurred
+                bool hasErrors = 
+                    result.InstallResults.Any(r => r.Value.Contains("Error")) || 
+                    result.TestResults.Any(r => !r.Value.Contains("installed"));
+                
+                if (hasErrors)
+                {
+                    _logger.LogWarning("Errors occurred during Python package installation");
+                    result.Error = "Some Python packages could not be installed. See details in InstallResults and TestResults.";
+                }
                 
                 return result;
             }
             catch (Exception ex)
             {
-                result.Error = ex.Message;
                 _logger.LogError(ex, "Error installing Python packages");
+                result.Error = ex.Message;
+                
+                // Provide more helpful information about the error
+                result.InstallResults = new Dictionary<string, string>
+                {
+                    ["Exception"] = ex.ToString(),
+                    ["Message"] = ex.Message,
+                    ["WorkingDirectory"] = Directory.GetCurrentDirectory(),
+                    ["ApplicationPath"] = AppDomain.CurrentDomain.BaseDirectory
+                };
+                
+                // Add information about the environment
+                try
+                {
+                    result.InstallResults.Add("PATH", Environment.GetEnvironmentVariable("PATH"));
+                    result.InstallResults.Add("PYTHONHOME", Environment.GetEnvironmentVariable("PYTHONHOME") ?? "Not set");
+                    result.InstallResults.Add("PYTHONPATH", Environment.GetEnvironmentVariable("PYTHONPATH") ?? "Not set");
+                }
+                catch
+                {
+                    // Ignore errors when getting environment variables
+                }
+                
                 return result;
             }
         }
@@ -1179,10 +1360,44 @@ namespace Nastya_Archiving_project.Services.textExtraction
             }
         }
 
+        /// <summary>
+        /// Convert a PDF to a list of images for OCR processing with fallback mechanisms
+        /// </summary>
+        /// <param name="pdfPath">Path to the PDF file</param>
+        /// <returns>List of bitmap images from the PDF</returns>
         private List<Bitmap> ConvertPdfToImages(string pdfPath)
         {
             var images = new List<Bitmap>();
 
+            try
+            {
+                // Try using ImageMagick first (which uses Ghostscript)
+                return ConvertPdfToImagesWithImageMagick(pdfPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ImageMagick conversion failed, trying alternative method");
+                
+                try
+                {
+                    // Fallback to direct PDF rendering if ImageMagick fails
+                    return ConvertPdfToImagesWithPdfium(pdfPath);
+                }
+                catch (Exception fallbackEx)
+                {
+                    _logger.LogError(fallbackEx, "All PDF to image conversion methods failed");
+                    throw new Exception($"Failed to convert PDF to images: {ex.Message}. Fallback also failed: {fallbackEx.Message}", ex);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Convert PDF to images using ImageMagick
+        /// </summary>
+        private List<Bitmap> ConvertPdfToImagesWithImageMagick(string pdfPath)
+        {
+            var images = new List<Bitmap>();
+            
             try
             {
                 // Set up ImageMagick to read the PDF file
@@ -1200,20 +1415,28 @@ namespace Nastya_Archiving_project.Services.textExtraction
                     // Convert each PDF page to an image
                     foreach (var magickImage in collection)
                     {
-                        // Enhance the image for better OCR results with Arabic text
-                        EnhanceImageForArabicOcr(magickImage);
+                        try
+                        {
+                            // Enhance the image for better OCR results with Arabic text
+                            EnhanceImageForArabicOcr(magickImage);
 
-                        // Convert to bitmap for Tesseract
-                        using var memoryStream = new MemoryStream();
-                        magickImage.Format = MagickFormat.Png;
-                        magickImage.Write(memoryStream);
-                        memoryStream.Position = 0;
+                            // Convert to bitmap for Tesseract
+                            using var memoryStream = new MemoryStream();
+                            magickImage.Format = MagickFormat.Png;
+                            magickImage.Write(memoryStream);
+                            memoryStream.Position = 0;
 
-                        var bitmap = new Bitmap(memoryStream);
-                        images.Add(bitmap);
+                            var bitmap = new Bitmap(memoryStream);
+                            images.Add(bitmap);
+                        }
+                        catch (Exception pageEx)
+                        {
+                            _logger.LogWarning(pageEx, "Failed to process page with ImageMagick");
+                        }
                     }
                 }
 
+                _logger.LogInformation("Successfully converted PDF to {0} images using ImageMagick", images.Count);
                 return images;
             }
             catch (Exception ex)
@@ -1223,8 +1446,94 @@ namespace Nastya_Archiving_project.Services.textExtraction
                 {
                     image?.Dispose();
                 }
+                
+                if (ex.Message.Contains("gswin") || ex.Message.Contains("FailedToExecuteCommand"))
+                {
+                    _logger.LogError(ex, "ImageMagick failed to use Ghostscript. Make sure Ghostscript is installed and in the PATH.");
+                }
 
-                throw new Exception($"Failed to convert PDF to images: {ex.Message}", ex);
+                throw;
+            }
+        }
+        
+        /// <summary>
+        /// Convert PDF to images using PDFium (via PdfPig) as a fallback method
+        /// </summary>
+        private List<Bitmap> ConvertPdfToImagesWithPdfium(string pdfPath)
+        {
+            var images = new List<Bitmap>();
+            
+            try
+            {
+                _logger.LogInformation("Attempting to convert PDF with PdfPig fallback method");
+                
+                // Open the PDF document
+                using var document = PdfDocument.Open(pdfPath);
+                
+                int pageIndex = 0;
+                foreach (var page in document.GetPages())
+                {
+                    pageIndex++;
+                    
+                    try
+                    {
+                        // For simplicity, we'll create a blank bitmap and render text on it
+                        // This is not as good as true rendering but can work as a fallback
+                        int width = (int)(page.Width * 4); // Scale up for better resolution
+                        int height = (int)(page.Height * 4);
+                        
+                        // Create a new bitmap with white background
+                        using var bitmap = new Bitmap(Math.Max(width, 100), Math.Max(height, 100));
+                        using var g = Graphics.FromImage(bitmap);
+                        
+                        // Set up the graphics object for high quality
+                        g.Clear(Color.White);
+                        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                        
+                        // Use a standard font for Arabic text
+                        using var font = new Font("Arial", 10);
+                        using var brush = new SolidBrush(Color.Black);
+                        
+                        // Draw each text element from the PDF
+                        foreach (var textElement in page.Letters)
+                        {
+                            // Skip elements with empty text
+                            if (string.IsNullOrEmpty(textElement.Value))
+                                continue;
+                                
+                            // Convert PDF coordinates to bitmap coordinates
+                            float x = (float)textElement.GlyphRectangle.Left * 4;
+                            float y = height - (float)textElement.GlyphRectangle.Bottom * 4; // PDF coordinates are bottom-up
+                            
+                            g.DrawString(textElement.Value, font, brush, x, y);
+                        }
+                        
+                        // Save a copy of the bitmap to add to our list
+                        var bitmapCopy = new Bitmap(bitmap);
+                        images.Add(bitmapCopy);
+                        
+                        _logger.LogDebug("Created image for page {0} using PdfPig fallback method", pageIndex);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to render page {0} with PdfPig fallback method", pageIndex);
+                    }
+                }
+                
+                _logger.LogInformation("Successfully converted PDF to {0} images using PdfPig fallback method", images.Count);
+                return images;
+            }
+            catch (Exception ex)
+            {
+                // If there's an error, dispose any created images
+                foreach (var image in images)
+                {
+                    image?.Dispose();
+                }
+                
+                _logger.LogError(ex, "PdfPig fallback method failed");
+                throw new Exception("Fallback PDF conversion failed: " + ex.Message, ex);
             }
         }
 
@@ -1254,75 +1563,6 @@ namespace Nastya_Archiving_project.Services.textExtraction
                 _logger.LogWarning(ex, "Image enhancement failed");
             }
         }
-
-        // Apply bidirectional text processing for mixed Arabic and Latin text
-        private string ApplyBidiProcessing(string text)
-        {
-            // Add RLO (Right-to-Left Override) character at the beginning of each line
-            var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (ContainsArabicCharacters(lines[i]))
-                {
-                    // Unicode RLM character (U+200F) for RTL marker
-                    lines[i] = "\u200F" + lines[i];
-                }
-            }
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        // Check if a string contains Arabic characters
-        private bool ContainsArabicCharacters(string text)
-        {
-            return Regex.IsMatch(text, @"\p{IsArabic}");
-        }
-
-        // Normalize Arabic text (fix common OCR issues with Arabic text)
-        private string NormalizeArabicText(string text)
-        {
-            // Replace variations of alef with standard alef
-            text = text.Replace('أ', 'ا')
-                       .Replace('إ', 'ا')
-                       .Replace('آ', 'ا');
-
-            // Replace variations of ya with standard ya
-            text = text.Replace('ى', 'ي');
-
-            // Handle other common OCR issues
-            text = text.Replace("  ", " "); // Remove double spaces
-
-            return text;
-        }
-
-        // Correct line order for right-to-left languages
-        private string CorrectLineOrder(string text)
-        {
-            var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (ContainsArabicCharacters(lines[i]))
-                {
-                    // Reverse punctuation order issues that sometimes occur in RTL text
-                    lines[i] = FixPunctuationOrder(lines[i]);
-
-                    // Add any additional line-level RTL corrections here
-                }
-            }
-
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        // Fix common punctuation order issues in RTL text
-        private string FixPunctuationOrder(string line)
-        {
-            // Fix common punctuation issues (e.g., "(text" should be "text)")
-            line = Regex.Replace(line, @"\((\p{IsArabic}+)", "$1)");
-            line = Regex.Replace(line, @"(\p{IsArabic}+)\)", "($1");
-
-            return line;
-        }
-
         #endregion
     }
 }
