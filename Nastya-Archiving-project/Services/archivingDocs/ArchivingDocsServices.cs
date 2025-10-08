@@ -881,7 +881,7 @@ namespace Nastya_Archiving_project.Services.archivingDocs
         public async Task<string> GetAzberNo(string referneceNo)
         {
             if (string.IsNullOrEmpty(referneceNo))
-                return "404"; // Invalid reference number
+                return "400"; // Invalid reference number
 
             var docs = await _context.JoinedDocs.FirstOrDefaultAsync(d => d.ParentRefrenceNO == referneceNo || d.ChildRefrenceNo == referneceNo);
             if (docs == null)

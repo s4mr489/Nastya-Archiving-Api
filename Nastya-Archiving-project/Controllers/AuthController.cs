@@ -184,5 +184,7 @@ namespace Nastya_Archiving_project.Controllers
             var result = await _authServices.ActiveOrDeActivUser(id, status);
             return StatusCode(result.StatusCode, result);
         }
+
+
     }
 }

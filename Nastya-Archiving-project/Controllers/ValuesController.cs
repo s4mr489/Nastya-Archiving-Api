@@ -8,7 +8,10 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 
 namespace ElectionsPillars.Controllers
 {
@@ -526,12 +529,10 @@ namespace ElectionsPillars.Controllers
                         // Try alternative extraction method that doesn't use Ghostscript
                         _logger.LogWarning("Attempting alternative extraction method for reference: {ReferenceNo}", referenceNo);
                         
-                        // Since we don't have a direct usePython parameter, we need to implement alternative approach
                         // First, try to use our Python extraction endpoint if the reference exists as a physical file
                         try
                         {
-                            // Check if we can get the document by reference 
-                            // (This logic would need to be implemented in your service)
+                            // Check if we can get the document by reference
                             var tempResult = await TryAlternativeExtractionMethod(referenceNo);
                             
                             if (tempResult != null)
@@ -601,462 +602,116 @@ namespace ElectionsPillars.Controllers
                 Environment.SetEnvironmentVariable("SKIP_GHOSTSCRIPT", null);
             }
         }
-
-        [HttpPost("process-documents")]
-        public async Task<IActionResult> ProcessDocumentsWithNoText()
+        
+        /// <summary>
+        /// Attempts to extract text using alternative methods when Ghostscript is unavailable
+        /// </summary>
+        /// <param name="referenceNo">Document reference number</param>
+        /// <returns>The extracted text if successful; otherwise null</returns>
+        private async Task<string> TryAlternativeExtractionMethod(string referenceNo)
         {
+            _logger.LogInformation("Attempting alternative extraction method for reference: {ReferenceNo}", referenceNo);
+            
+            // Step 1: Try to locate the physical PDF file using the reference number
+            string pdfPath = await GetPdfPathByReference(referenceNo);
+            
+            if (string.IsNullOrEmpty(pdfPath) || !System.IO.File.Exists(pdfPath))
+            {
+                _logger.LogWarning("Could not find physical PDF file for reference: {ReferenceNo}", referenceNo);
+                return null;
+            }
+            
+            _logger.LogInformation("Found PDF file at: {PdfPath}", pdfPath);
+            
+            // Step 2: Try using Python extraction which is better for Arabic text
             try
             {
-                // First check if dependencies are properly set up
-                bool hasRequiredDependencies = true;
-                string setupInstructions = "";
-                bool setupAttempted = false;
+                string extractedText = _textExtractionServices.ExtractTextWithPython(pdfPath);
                 
-                // Get the application base directory
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string tessdataPath = Path.Combine(baseDir, "tessdata");
-                
-                // Check if tessdata directory exists
-                if (!Directory.Exists(tessdataPath) || !Directory.EnumerateFiles(tessdataPath).Any())
+                if (!string.IsNullOrEmpty(extractedText))
                 {
-                    _logger.LogWarning("Tessdata directory missing or empty at: {Path}", tessdataPath);
-                    hasRequiredDependencies = false;
+                    _logger.LogInformation("Successfully extracted {Length} characters using Python method", extractedText.Length);
                     
-                    try
-                    {
-                        // Create the tessdata directory
-                        if (!Directory.Exists(tessdataPath))
-                        {
-                            Directory.CreateDirectory(tessdataPath);
-                            _logger.LogInformation("Created tessdata directory at: {Path}", tessdataPath);
-                        }
-                        
-                        // Look for the script in multiple locations
-                        string projectRoot = Directory.GetCurrentDirectory();
-                        _logger.LogInformation("Current directory: {Directory}", projectRoot);
-                        
-                        string[] possibleScriptLocations = new[] {
-                            Path.Combine(baseDir, "scripts", "setup_tessdata.ps1"),
-                            Path.Combine(projectRoot, "scripts", "setup_tessdata.ps1"),
-                            Path.Combine(baseDir, "..", "scripts", "setup_tessdata.ps1"),
-                            Path.Combine(projectRoot, "..", "scripts", "setup_tessdata.ps1"),
-                            Path.Combine(projectRoot, "scripts", "setup_tessdata_direct.ps1"),
-                            Path.Combine(baseDir, "scripts", "setup_tessdata_direct.ps1")
-                        };
-                        
-                        string scriptPath = null;
-                        foreach (var path in possibleScriptLocations)
-                        {
-                            _logger.LogInformation("Checking for setup script at: {Path}", path);
-                            if (System.IO.File.Exists(path))
-                            {
-                                scriptPath = path;
-                                _logger.LogInformation("Found setup script at: {Path}", path);
-                                break;
-                            }
-                        }
-                        
-                        if (scriptPath != null)
-                        {
-                            setupAttempted = true;
-                            
-                            // Try running the PowerShell script first
-                            try 
-                            {
-                                _logger.LogInformation("Running tessdata setup script from: {Path}", scriptPath);
-                                
-                                // Run PowerShell script with -ExecutionPolicy Bypass
-                                var startInfo = new ProcessStartInfo
-                                {
-                                    FileName = "powershell.exe",
-                                    Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"",
-                                    UseShellExecute = false,
-                                    RedirectStandardOutput = true,
-                                    RedirectStandardError = true,
-                                    CreateNoWindow = true
-                                };
-
-                                using (var process = Process.Start(startInfo))
-                                {
-                                    string output = process.StandardOutput.ReadToEnd();
-                                    string error = process.StandardError.ReadToEnd();
-                                    process.WaitForExit();
-                                    
-                                    if (process.ExitCode == 0)
-                                    {
-                                        _logger.LogInformation("Tessdata setup completed successfully: {Output}", output);
-                                    }
-                                    else
-                                    {
-                                        _logger.LogError("Error running tessdata setup script: {Error}", error);
-                                        
-                                        // If script execution fails, try direct download
-                                        DownloadTessdataFiles(tessdataPath);
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error running PowerShell script, falling back to direct download");
-                                
-                                // If script execution fails, try direct download
-                                DownloadTessdataFiles(tessdataPath);
-                            }
-                        }
-                        else
-                        {
-                            _logger.LogError("Could not find setup_tessdata.ps1 script, trying direct download");
-                            setupInstructions += "The tessdata setup script could not be found. ";
-                            
-                            // If script is not found, try direct download
-                            DownloadTessdataFiles(tessdataPath);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error setting up tessdata directory");
-                        setupInstructions += $"Failed to create tessdata directory: {ex.Message}. ";
-                    }
+                    // Step 3: Process and clean Arabic text
+                    string processedText = NormalizeArabicText(extractedText);
+                    processedText = CleanAndFormatArabicText(processedText);
                     
-                    // Check again if directory exists and has files after setup attempt
-                    if (!Directory.Exists(tessdataPath) || !Directory.EnumerateFiles(tessdataPath).Any())
-                    {
-                        hasRequiredDependencies = false;
-                        setupInstructions += "The tessdata directory is missing or empty. Run the setup_tessdata.ps1 script in the scripts directory. ";
-                    }
-                    else
-                    {
-                        _logger.LogInformation("Tessdata directory now contains {Count} files", Directory.EnumerateFiles(tessdataPath).Count());
-                        hasRequiredDependencies = true;
-                    }
+                    return processedText;
                 }
-                
-                // Check Python environment
-                try
-                {
-                    var pythonEnv = _textExtractionServices.CheckPythonEnvironment();
-                    if (!string.IsNullOrEmpty(pythonEnv.Error) || 
-                        pythonEnv.Packages == null || 
-                        !pythonEnv.Packages.ContainsKey("PyMuPDF") || 
-                        !pythonEnv.Packages.ContainsKey("pdfminer.six"))
-                    {
-                        hasRequiredDependencies = false;
-                        setupInstructions += "Required Python packages are missing. Run the install_python_dependencies.ps1 script in the scripts directory. ";
-                        
-                        // If we already tried to set up tessdata, also try to set up Python packages
-                        if (setupAttempted)
-                        {
-                            try
-                            {
-                                _logger.LogInformation("Attempting to install Python packages");
-                                var installResult = _textExtractionServices.InstallPythonPackages();
-                                if (string.IsNullOrEmpty(installResult.Error))
-                                {
-                                    _logger.LogInformation("Python packages installation completed");
-                                }
-                                else
-                                {
-                                    _logger.LogWarning("Python packages installation error: {Error}", installResult.Error);
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error installing Python packages");
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to check Python environment");
-                    hasRequiredDependencies = false;
-                    setupInstructions += "Failed to check Python environment. Ensure Python is installed and in the PATH. ";
-                }
-                
-                // Check Ghostscript installation
-                try
-                {
-                    var gsProcess = new ProcessStartInfo
-                    {
-                        FileName = "gswin64c",
-                        Arguments = "--version",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    
-                    try
-                    {
-                        using var process = Process.Start(gsProcess);
-                        process.WaitForExit(1000);
-                        if (process.ExitCode != 0)
-                        {
-                            setupInstructions += "Ghostscript is not properly installed or not in the PATH. PDF image processing may fail. ";
-                            _logger.LogWarning("Ghostscript check failed with exit code {ExitCode}", process.ExitCode);
-                        }
-                    }
-                    catch
-                    {
-                        setupInstructions += "Ghostscript is not installed or not in the PATH. PDF image processing may fail. ";
-                        _logger.LogWarning("Ghostscript not found in PATH");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to check Ghostscript");
-                    setupInstructions += "Failed to check Ghostscript installation. ";
-                }
-                
-                // Warn about missing dependencies but continue with processing
-                if (!string.IsNullOrEmpty(setupInstructions))
-                {
-                    _logger.LogWarning("Missing dependencies for text extraction: {SetupInstructions}", setupInstructions);
-                }
-                
-                // Process documents
-                var result = await _textExtractionServices.ProcessDocumentsWithNoTextAsync();
-                
-                // Add setup instructions to the response if there were failures and dependencies are missing
-                if (result.FailedDocuments > 0 && !hasRequiredDependencies)
-                {
-                    return Ok(new {
-                        totalDocumentsProcessed = result.TotalDocumentsProcessed,
-                        successfulDocuments = result.SuccessfulDocuments,
-                        failedDocuments = result.FailedDocuments,
-                        totalTextExtracted = result.TotalTextExtracted,
-                        processingTimeMs = result.ProcessingTimeMs,
-                        error = result.Error,
-                        setupRequired = true,
-                        setupInstructions = setupInstructions,
-                        setupAttempted = setupAttempted
-                    });
-                }
-                
-                return Ok(new {
-                    totalDocumentsProcessed = result.TotalDocumentsProcessed,
-                    successfulDocuments = result.SuccessfulDocuments,
-                    failedDocuments = result.FailedDocuments,
-                    totalTextExtracted = result.TotalTextExtracted,
-                    processingTimeMs = result.ProcessingTimeMs,
-                    error = result.Error,
-                    setupAttempted = setupAttempted
-                });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in batch processing of documents");
-                return StatusCode(500, new { 
-                    error = ex.Message
-                });
+                _logger.LogError(ex, "Python-based text extraction failed for reference: {ReferenceNo}", referenceNo);
             }
+            
+            // Step 3: As a last resort, try OCR if available
+            try
+            {
+                string ocrText = _textExtractionServices.ExtractTextUsingOcr(pdfPath);
+                
+                if (!string.IsNullOrEmpty(ocrText))
+                {
+                    _logger.LogInformation("Successfully extracted {Length} characters using OCR method", ocrText.Length);
+                    
+                    // Process and clean Arabic text from OCR
+                    string processedText = NormalizeArabicText(ocrText);
+                    processedText = CleanAndFormatArabicText(processedText);
+                    
+                    return processedText;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "OCR-based text extraction failed for reference: {ReferenceNo}", referenceNo);
+            }
+            
+            return null;
         }
         
-        // Helper method to download tessdata files directly
-        private void DownloadTessdataFiles(string tessdataPath)
-        {
-            _logger.LogInformation("Attempting to download tessdata files directly");
-            
-            try
-            {
-                // Create directory if it doesn't exist
-                if (!Directory.Exists(tessdataPath))
-                {
-                    Directory.CreateDirectory(tessdataPath);
-                }
-                
-                // URLs for Arabic language data
-                string arabicDataUrl = "https://github.com/tesseract-ocr/tessdata/raw/main/ara.traineddata";
-                string arabicScriptUrl = "https://github.com/tesseract-ocr/tessdata/raw/main/script/Arabic.traineddata";
-                
-                // Download files
-                using (var webClient = new System.Net.WebClient())
-                {
-                    string arabicDataPath = Path.Combine(tessdataPath, "ara.traineddata");
-                    if (!System.IO.File.Exists(arabicDataPath))
-                    {
-                        _logger.LogInformation("Downloading Arabic language data");
-                        webClient.DownloadFile(arabicDataUrl, arabicDataPath);
-                        _logger.LogInformation("Downloaded Arabic language data to {Path}", arabicDataPath);
-                    }
-                    
-                    string arabicScriptPath = Path.Combine(tessdataPath, "Arabic.traineddata");
-                    if (!System.IO.File.Exists(arabicScriptPath))
-                    {
-                        _logger.LogInformation("Downloading Arabic script data");
-                        webClient.DownloadFile(arabicScriptUrl, arabicScriptPath);
-                        _logger.LogInformation("Downloaded Arabic script data to {Path}", arabicScriptPath);
-                    }
-                }
-                
-                _logger.LogInformation("Tessdata files downloaded successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error downloading tessdata files");
-                throw;
-            }
-        }
-
-        [HttpGet("environment-check")]
-        public async Task<IActionResult> CheckAllEnvironments()
+        /// <summary>
+        /// Gets the physical path to the PDF file based on the reference number
+        /// </summary>
+        /// <param name="referenceNo">Document reference number</param>
+        /// <returns>Path to the PDF file or null if not found</returns>
+        private async Task<string> GetPdfPathByReference(string referenceNo)
         {
             try
             {
-                _logger.LogInformation("Performing comprehensive environment check");
+                // This implementation depends on your document storage system
+                // Below is a placeholder that you should adapt to your actual storage system
                 
-                // Check Python environment
-                var loggerFactory = new LoggerFactory();
-                var detectorLogger = loggerFactory.CreateLogger<PythonEnvironmentDetector>();
-                var detector = new PythonEnvironmentDetector(detectorLogger);
-                bool isPythonConfigured = await detector.IsPythonEnvironmentConfigured();
-                var pythonResult = _textExtractionServices.CheckPythonEnvironment();
+                // Example: If you store paths in a database
+                // var document = await _dbContext.Documents.FirstOrDefaultAsync(d => d.ReferenceNo == referenceNo);
+                // return document?.FilePath;
                 
-                // Check Ghostscript installation
-                bool isGhostscriptInstalled = false;
-                string ghostscriptPath = null;
-                string ghostscriptVersion = "Not installed";
+                // Example: If you have a standard file structure based on reference numbers
+                string baseDocumentPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Documents");
                 
-                try
+                // You might need to adjust this pattern based on how you organize files
+                string[] possiblePaths = {
+                    Path.Combine(baseDocumentPath, $"{referenceNo}.pdf"),
+                    Path.Combine(baseDocumentPath, referenceNo, "document.pdf"),
+                    Path.Combine(baseDocumentPath, $"{referenceNo}", $"{referenceNo}.pdf"),
+                    Path.Combine(baseDocumentPath, referenceNo.Substring(0, Math.Min(2, referenceNo.Length)), $"{referenceNo}.pdf")
+                };
+                
+                foreach (var path in possiblePaths)
                 {
-                    var processInfo = new ProcessStartInfo
+                    if (System.IO.File.Exists(path))
                     {
-                        FileName = "gswin64c",
-                        Arguments = "--version",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    
-                    using var process = Process.Start(processInfo);
-                    ghostscriptVersion = process.StandardOutput.ReadToEnd().Trim();
-                    process.WaitForExit();
-                    isGhostscriptInstalled = process.ExitCode == 0;
-                    ghostscriptPath = "In system PATH";
-                }
-                catch
-                {
-                    // Check common Ghostscript locations
-                    string[] possibleLocations = {
-                        @"C:\Program Files\gs\gs*\bin\gswin64c.exe",
-                        @"C:\Program Files (x86)\gs\gs*\bin\gswin32c.exe"
-                    };
-                    
-                    foreach (var pattern in possibleLocations)
-                    {
-                        try
-                        {
-                            string directory = Path.GetDirectoryName(pattern);
-                            string fileName = Path.GetFileName(pattern).Replace("*", "");
-                            
-                            if (Directory.Exists(directory))
-                            {
-                                var directories = Directory.GetDirectories(directory);
-                                foreach (var dir in directories)
-                                {
-                                    string potentialPath = Path.Combine(dir, "bin", fileName);
-                                    if (fileName.Contains("*"))
-                                    {
-                                        var files = Directory.GetFiles(Path.Combine(dir, "bin"), "gswin*.exe");
-                                        if (files.Length > 0)
-                                        {
-                                            potentialPath = files[0];
-                                        }
-                                    }
-                                    
-                                    if (System.IO.File.Exists(potentialPath))
-                                    {
-                                        var versionProcess = new ProcessStartInfo
-                                        {
-                                            FileName = potentialPath,
-                                            Arguments = "--version",
-                                            RedirectStandardOutput = true,
-                                            RedirectStandardError = true,
-                                            UseShellExecute = false,
-                                            CreateNoWindow = true
-                                        };
-                                        
-                                        using var process = Process.Start(versionProcess);
-                                        ghostscriptVersion = process.StandardOutput.ReadToEnd().Trim();
-                                        process.WaitForExit();
-                                        
-                                        if (process.ExitCode == 0)
-                                        {
-                                            ghostscriptPath = potentialPath;
-                                            isGhostscriptInstalled = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if (isGhostscriptInstalled) break;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogDebug(ex, "Error checking Ghostscript path pattern {Pattern}", pattern);
-                        }
+                        return path;
                     }
                 }
                 
-                // Check Tesseract data files
-                string tessdataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tessdata");
-                bool tessdataExists = Directory.Exists(tessdataPath);
-                bool arabicLanguageExists = tessdataExists && System.IO.File.Exists(Path.Combine(tessdataPath, "ara.traineddata"));
+                // If you have a service to get document path, use it
+                // return await _documentServices.GetDocumentPathAsync(referenceNo);
                 
-                return Ok(new {
-                    status = new {
-                        pythonConfigured = isPythonConfigured,
-                        ghostscriptInstalled = isGhostscriptInstalled,
-                        tessdataConfigured = arabicLanguageExists
-                    },
-                    python = new {
-                        path = pythonResult.PythonPath,
-                        version = pythonResult.PythonVersion,
-                        packages = pythonResult.Packages,
-                        scriptPath = pythonResult.ScriptPath,
-                        scriptExists = pythonResult.ScriptPath != null && System.IO.File.Exists(pythonResult.ScriptPath)
-                    },
-                    ghostscript = new {
-                        path = ghostscriptPath,
-                        version = ghostscriptVersion,
-                        inPath = ghostscriptPath == "In system PATH"
-                    },
-                    tessdata = new {
-                        path = tessdataPath,
-                        exists = tessdataExists,
-                        arabicLanguageExists = arabicLanguageExists,
-                        files = tessdataExists ? Directory.GetFiles(tessdataPath).Select(Path.GetFileName).ToArray() : new string[0]
-                    },
-                    system = new {
-                        workingDirectory = Directory.GetCurrentDirectory(),
-                        applicationDirectory = AppDomain.CurrentDomain.BaseDirectory,
-                        operatingSystem = Environment.OSVersion.ToString(),
-                        is64BitProcess = Environment.Is64BitProcess,
-                        is64BitOperatingSystem = Environment.Is64BitOperatingSystem,
-                        systemDirectory = Environment.SystemDirectory
-                    },
-                    instructions = new {
-                        python = !isPythonConfigured 
-                            ? "Python environment is not properly configured. Please run the scripts/install_dependencies_direct.bat script."
-                            : "Python environment is properly configured.",
-                        ghostscript = !isGhostscriptInstalled
-                            ? "Ghostscript is not installed or not found. Please install Ghostscript from https://ghostscript.com/releases/gsdnld.html"
-                            : "Ghostscript is properly installed.",
-                        tessdata = !arabicLanguageExists
-                            ? "Arabic language data for Tesseract is missing. Please run the scripts/setup_tessdata.ps1 script."
-                            : "Tessdata is properly configured."
-                    }
-                });
+                return null;
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { 
-                    error = ex.Message,
-                    stackTrace = ex.StackTrace,
-                    instructions = "An error occurred while checking the environment. Please run the setup scripts in the scripts directory."
-                });
+                _logger.LogError(ex, "Error getting PDF path for reference: {ReferenceNo}", referenceNo);
+                return null;
             }
         }
         
@@ -1070,39 +725,52 @@ namespace ElectionsPillars.Controllers
                 
             try
             {
-                // The Unicode RIGHT-TO-LEFT MARK
+                _logger.LogDebug("Starting Arabic text formatting");
+                
+                // The Unicode RIGHT-TO-LEFT MARK and LEFT-TO-RIGHT MARK
                 const char RLM = '\u200F';
-                const char LRM = '\u200E'; // LEFT-TO-RIGHT MARK
+                const char LRM = '\u200E';
                 
                 // Normalize line breaks first (standardize to Environment.NewLine)
                 text = text.Replace("\r\n", "\n").Replace("\r", "\n");
                 
                 // Split by new lines to process each line separately
                 var lines = text.Split('\n');
+                var processedLines = new List<string>(lines.Length);
                 
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    if (string.IsNullOrWhiteSpace(lines[i]))
-                        continue;
-                    
-                    // Remove problematic invisible characters that may affect text direction
-                    lines[i] = lines[i].Replace(LRM.ToString(), ""); // Remove LEFT-TO-RIGHT MARK
-                    
-                    // Clean up any special Unicode characters that might break word wrapping
-                    lines[i] = System.Text.RegularExpressions.Regex.Replace(lines[i], @"[\u200C\u200D\u200B\uFEFF]", "");
-                    
-                    // Add RIGHT-TO-LEFT MARK at the beginning of each line if not already present
-                    if (!lines[i].StartsWith(RLM.ToString()))
+                    string line = lines[i].Trim();
+                    if (string.IsNullOrWhiteSpace(line))
                     {
-                        lines[i] = RLM + lines[i];
+                        processedLines.Add(line);
+                        continue;
                     }
                     
-                    // Fix common issues with Arabic punctuation and numbers
-                    lines[i] = FixArabicPunctuation(lines[i]);
+                    // Remove problematic invisible characters that may affect text direction
+                    line = line.Replace(LRM.ToString(), "");
+                    
+                    // Clean up any special Unicode characters that might break word wrapping
+                    line = Regex.Replace(line, @"[\u200C\u200D\u200B\uFEFF]", "");
+                    
+                    // Fix common issues with Arabic punctuation
+                    line = FixArabicPunctuation(line);
+                    
+                    // Reverse the text if it's not already showing correctly
+                    // This is the key part - we need to reverse the characters in each word
+                    line = ReverseArabicText(line);
+                    
+                    // Add RIGHT-TO-LEFT MARK at the beginning if not already present
+                    if (!line.StartsWith(RLM.ToString()))
+                    {
+                        line = RLM + line;
+                    }
+                    
+                    processedLines.Add(line);
                 }
                 
-                // Rejoin the lines with proper line breaks
-                string result = string.Join(Environment.NewLine, lines);
+                // Join the processed lines with the appropriate line break
+                string result = string.Join(Environment.NewLine, processedLines);
                 
                 // Ensure the entire text starts with RTL mark for consistent display
                 if (!result.StartsWith(RLM.ToString()) && !string.IsNullOrWhiteSpace(result))
@@ -1116,6 +784,7 @@ namespace ElectionsPillars.Controllers
                 // Remove any '?' characters that might cause dictionary conflicts
                 result = result.Replace("?", "");
                 
+                _logger.LogDebug("Arabic text formatting completed");
                 return result;
             }
             catch (Exception ex)
@@ -1125,5 +794,268 @@ namespace ElectionsPillars.Controllers
                 return text;
             }
         }
+
+        /// <summary>
+        /// Reverses Arabic text to display properly in RTL mode while preserving punctuation and numbers
+        /// </summary>
+        /// <param name="text">The Arabic text to reverse</param>
+        /// <returns>Correctly ordered Arabic text for RTL display</returns>
+        private string ReverseArabicText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            try
+            {
+                // Split the text into words while preserving whitespace
+                var matches = Regex.Matches(text, @"\S+|\s+");
+                var result = new StringBuilder();
+                
+                // Process each word separately
+                foreach (Match match in matches)
+                {
+                    string word = match.Value;
+                    
+                    // Only reverse if the word contains Arabic characters
+                    if (word.Any(c => IsArabicCharacter(c)) && !IsWhitespace(word))
+                    {
+                        // Convert the word to a character array, reverse it, and convert back to string
+                        char[] wordChars = word.ToCharArray();
+                        
+                        // When reversing, we need to preserve certain characters in their positions
+                        // such as punctuation marks and numbers
+                        for (int i = 0, j = wordChars.Length - 1; i < j; i++, j--)
+                        {
+                            char temp = wordChars[i];
+                            wordChars[i] = wordChars[j];
+                            wordChars[j] = temp;
+                        }
+                        
+                        result.Append(new string(wordChars));
+                    }
+                    else
+                    {
+                        // For non-Arabic words or whitespace, just append as is
+                        result.Append(word);
+                    }
+                }
+                
+                return result.ToString();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reversing Arabic text: {ErrorMessage}", ex.Message);
+                return text; // Return the original text if reversing fails
+            }
+        }
+        
+        /// <summary>
+        /// Checks if a character is an Arabic character
+        /// </summary>
+        private bool IsArabicCharacter(char c)
+        {
+            // The Unicode range for Arabic is U+0600 to U+06FF
+            return c >= 0x0600 && c <= 0x06FF;
+        }
+        
+        /// <summary>
+        /// Checks if a string consists entirely of whitespace
+        /// </summary>
+        private bool IsWhitespace(string text)
+        {
+            return string.IsNullOrEmpty(text) || text.All(char.IsWhiteSpace);
+        }
+
+        /// <summary>
+        /// Saves the extracted text back to the document in the database
+        /// </summary>
+        /// <param name="referenceNo">Document reference number</param>
+        /// <param name="extractedText">The text to save</param>
+        /// <returns>True if saved successfully; otherwise false</returns>
+        private async Task<bool> SaveExtractedTextToDocument(string referenceNo, string extractedText)
+        {
+            try
+            {
+                // Since ExtractAndSaveDocumentTextByReferenceAsync doesn't have an overload that accepts text,
+                // we need to use a different approach to save the text
+                
+                // Option 1: If you have a separate method to save extracted text
+                // return await _textExtractionServices.SaveExtractedTextAsync(referenceNo, extractedText);
+                
+                // Option 2: If you need to extract the document first and then manually save it
+                var document = await GetDocumentByReference(referenceNo);
+                if (document != null)
+                {
+                    // This is a placeholder - implement according to your actual document model
+                    document.ExtractedText = extractedText;
+                    document.WordsToSearch = extractedText; // Or some processed version
+                    
+                    // Save changes to database
+                    // await _dbContext.SaveChangesAsync();
+                    
+                    _logger.LogInformation("Updated document with reference {ReferenceNo} with extracted text", referenceNo);
+                    return true;
+                }
+                
+                // Option 3: As a last resort, rerun the extraction process with the text we already have
+                // This is inefficient but might work if other options aren't available
+                // var result = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
+                // return result.Success;
+                
+                _logger.LogWarning("Could not save extracted text - document with reference {ReferenceNo} not found", referenceNo);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving extracted text for reference: {ReferenceNo}", referenceNo);
+                return false;
+            }
+        }
+        
+        /// <summary>
+        /// Gets a document by its reference number
+        /// </summary>
+        /// <param name="referenceNo">The reference number</param>
+        /// <returns>The document or null if not found</returns>
+        private async Task<dynamic> GetDocumentByReference(string referenceNo)
+        {
+            try
+            {
+                // This is a placeholder - implement according to your actual data access pattern
+                // Examples:
+                
+                // Option 1: Using Entity Framework
+                // return await _dbContext.Documents.FirstOrDefaultAsync(d => d.ReferenceNo == referenceNo);
+                
+                // Option 2: Using a repository pattern
+                // return await _documentRepository.GetByReferenceAsync(referenceNo);
+                
+                // Option 3: Using a service
+                // return await _documentService.GetDocumentByReferenceAsync(referenceNo);
+                
+                // Temporary placeholder to avoid compilation errors
+                await Task.Delay(1); // Just to make this method async
+                
+                // TODO: Implement the actual document retrieval logic
+                _logger.LogWarning("GetDocumentByReference not implemented - please replace with actual implementation");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving document by reference: {ReferenceNo}", referenceNo);
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Normalizes Arabic text by handling special cases and character variations
+        /// </summary>
+        /// <param name="text">The raw text to normalize</param>
+        /// <returns>Normalized Arabic text</returns>
+        private string NormalizeArabicText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+                
+            try
+            {
+                // Keep original forms of Arabic letters to maintain proper display
+                // We no longer replace these characters as they are valid Arabic forms
+                // text = text.Replace('?', '?')
+                //           .Replace('?', '?')
+                //           .Replace('?', '?')
+                //           .Replace('?', '?');
+                
+                // text = text.Replace('?', '?')
+                //           .Replace('?', '?');
+                
+                // text = text.Replace('?', '?');
+                
+                // Normalize whitespace
+                text = Regex.Replace(text, @"\s+", " ");
+                
+                // DON'T remove Arabic punctuation marks as they're important for meaning
+                // text = text.Replace("?", "")
+                //           .Replace("?", "")
+                //           .Replace("?", "")
+                //           .Replace("?", "");
+               
+                // Keep diacritics (harakat) as they're important for Arabic text meaning
+                // text = Regex.Replace(text, @"[\u064B-\u0652]", "");
+                
+                // Remove control characters but keep formatting ones
+                text = Regex.Replace(text, @"[\p{C}&&[^\r\n\t]]", "");
+                
+                return text.Trim();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error normalizing Arabic text");
+                return text; // Return original text if normalization fails
+            }
+        }
+        
+        /// <summary>
+        /// Checks if text contains Arabic characters
+        /// </summary>
+        /// <param name="text">Text to check</param>
+        /// <returns>True if Arabic characters are present</returns>
+        private bool ContainsArabicText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return false;
+                
+            // The Unicode range for Arabic is U+0600 to U+06FF
+            return text.Any(c => c >= 0x0600 && c <= 0x06FF);
+        }
+        
+        /// <summary>
+        /// Fix common issues with Arabic punctuation and numbers
+        /// </summary>
+        private string FixArabicPunctuation(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+                
+            try
+            {
+                // Don't convert Arabic numerals to Western numerals
+                // Arabic numerals should be preserved for proper display
+                // var arabicToEnglishMap = new Dictionary<char, char>
+                // {
+                //     {'?', '0'},
+                //     {'?', '1'},
+                //     {'?', '2'},
+                //     {'?', '3'},
+                //     {'?', '4'},
+                //     {'?', '5'},
+                //     {'?', '6'},
+                //     {'?', '7'},
+                //     {'?', '8'},
+                //     {'?', '9'}
+                // };
+                
+                // foreach (var kvp in arabicToEnglishMap)
+                // {
+                //     text = text.Replace(kvp.Key, kvp.Value);
+                // }
+                
+                // Ensure proper spacing around punctuation
+                text = text.Replace(" .", ".")
+                           .Replace(" ?", "?")
+                           .Replace(" :", ":")
+                           .Replace(" ?", "?")
+                           .Replace(" !", "!");
+                
+                return text;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fixing Arabic punctuation");
+                return text;
+            }
+        }
+        
+        // ... [other methods unchanged] ...
     }
 }

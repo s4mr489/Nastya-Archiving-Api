@@ -48,5 +48,6 @@ namespace Nastya_Archiving_project.Services.archivingDocs
         Task<BaseResponseDTOs> JoinDocsFromArchive(JoinedDocsViewForm req);
         Task<BaseResponseDTOs> UnbindDoucAllDocsFromTheParent(string parentSystemId);
         Task<(LinkdocumentsResponseDTOs? docs, string? error)> Linkdocuments(LinkdocumentsViewForm req, int Id);
+        Task<string> GetAzberNo(string referneceNo);
     }
 }

@@ -208,5 +208,15 @@ namespace Nastya_Archiving_project.Controllers
                 return StatusCode(500, new { error = $"An unexpected error occurred: {ex.Message}" });
             }
         }
+
+
+        [HttpGet("get-azber-numbers")]
+        public async Task<IActionResult> GetAzberNumbers(string refernceNo)
+        {
+            var result = await _archivingDocsSercvices.GetAzberNo(refernceNo);
+            if(result == "404")
+                return BadRequest("not found azber");
+            return Ok(result);
+        }
     }
 }
