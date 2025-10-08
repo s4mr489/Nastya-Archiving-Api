@@ -23,15 +23,33 @@
     <Compile Remove="Models\DTOs\ReportsViewForm\GeneralReportReponseDTOs.cs" />
   </ItemGroup>
 
-	<ItemGroup>
-		<Content Include="Report\*.rdlc">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</Content>
-	</ItemGroup>
-	
- 
-
+  <!-- Include RDLC reports -->
+  <ItemGroup>
+    <Content Include="Report\*.rdlc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
   
+  <!-- Include Python scripts in the root directory -->
+  <ItemGroup>
+    <Content Include="*.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Include tessdata directory and its contents -->
+  <ItemGroup>
+    <Content Include="tessdata\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Include scripts directory and its contents -->
+  <ItemGroup>
+    <Content Include="scripts\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="Models\DTOs\ReportsViewForm\GeneralReportReponseDTOs.cs" />

@@ -1,225 +1,237 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+"""
+Enhanced PDF text extraction script optimized for Arabic text and RTL languages
+"""
 
 import sys
 import os
 import re
-import io
-from typing import List, Dict, Any
-import argparse
-import traceback
+import json
+from datetime import datetime
 
-# Set stdout to use UTF-8 encoding
-sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
-
-def print_debug(msg):
-    """Print debug message to stderr (won't affect output captured by C#)"""
-    sys.stderr.write(f"DEBUG: {msg}\n")
-    sys.stderr.flush()
-
-# Print environment diagnostic info
-print_debug(f"Python version: {sys.version}")
-print_debug(f"Python executable: {sys.executable}")
-print_debug(f"Current directory: {os.getcwd()}")
-print_debug(f"System PATH: {os.environ.get('PATH')}")
-
-# Try to get site-packages directory
-try:
-    import site
-    print_debug(f"Site packages: {site.getsitepackages()}")
-except ImportError:
-    print_debug("Failed to import site module")
-
-# Check if we can get pip list
-try:
-    import subprocess
-    result = subprocess.run([sys.executable, "-m", "pip", "list"], 
-                           capture_output=True, text=True)
-    print_debug(f"Pip list result: {result.stdout}")
-except Exception as e:
-    print_debug(f"Failed to run pip list: {e}")
-
-# Check for PyMuPDF
+# Try to import required libraries
 try:
     import fitz  # PyMuPDF
-    PYMUPDF_AVAILABLE = True
-    print_debug(f"PyMuPDF is available, version: {fitz.__version__}")
 except ImportError:
-    PYMUPDF_AVAILABLE = False
-    print_debug("PyMuPDF is NOT available")
+    fitz = None
 
-# Check pdfminer specifically
 try:
-    print_debug("Trying to import pdfminer...")
-    from pdfminer import high_level
-    from pdfminer import __version__ as pdfminer_version
-    PDFMINER_AVAILABLE = True
-    print_debug(f"pdfminer is available, version: {pdfminer_version}")
+    from pdfminer.high_level import extract_text as pdfminer_extract_text
+    from pdfminer.layout import LAParams
 except ImportError:
-    PDFMINER_AVAILABLE = False
-    print_debug("pdfminer is NOT available")
-    try:
-        # Try direct module detection
-        import importlib.util
-        print_debug("Checking if pdfminer module exists...")
-        pdfminer_spec = importlib.util.find_spec("pdfminer")
-        print_debug(f"pdfminer spec: {pdfminer_spec}")
-        if pdfminer_spec:
-            print_debug(f"pdfminer module found at: {pdfminer_spec.origin}")
-        else:
-            print_debug("pdfminer module not found")
-    except Exception as e:
-        print_debug(f"Error checking for pdfminer: {e}")
+    pdfminer_extract_text = None
 
-def extract_with_pymupdf(pdf_path: str) -> str:
-    """Extract text from PDF using PyMuPDF (better for Arabic)"""
-    if not PYMUPDF_AVAILABLE:
-        error_msg = "PyMuPDF is not installed. Install with: pip install PyMuPDF"
-        print_debug(error_msg)
-        return error_msg
+# Arabic character set for detection
+ARABIC_CHAR_SET = set([chr(c) for c in range(0x0600, 0x06FF)] +  # Arabic
+                      [chr(c) for c in range(0x0750, 0x077F)] +  # Arabic Supplement
+                      [chr(c) for c in range(0x08A0, 0x08FF)] +  # Arabic Extended-A
+                      [chr(c) for c in range(0xFB50, 0xFDFF)] +  # Arabic Presentation Forms-A
+                      [chr(c) for c in range(0xFE70, 0xFEFF)])   # Arabic Presentation Forms-B
+
+# RTL mark character
+RTL_MARK = '\u200F'
+
+def is_arabic_text(text, threshold=0.1):
+    """Determine if text is likely Arabic based on character frequency"""
+    if not text:
+        return False
+        
+    # Count Arabic characters
+    arabic_count = sum(1 for c in text if c in ARABIC_CHAR_SET)
     
-    text = ""
+    # Calculate percentage of Arabic characters
+    ratio = arabic_count / len(text)
+    
+    return ratio >= threshold
+
+def extract_with_pymupdf(file_path):
+    """Extract text using PyMuPDF (Faster and better with Arabic)"""
     try:
-        print_debug(f"Opening PDF with PyMuPDF: {pdf_path}")
-        doc = fitz.open(pdf_path)
-        print_debug(f"PDF opened successfully, pages: {len(doc)}")
+        doc = fitz.open(file_path)
+        text = ""
         
         for page_num in range(len(doc)):
-            page = doc[page_num]
-            # Get text with specific parameters to improve Arabic extraction
-            page_text = page.get_text("text", sort=True, flags=fitz.TEXT_PRESERVE_LIGATURES | 
-                                 fitz.TEXT_PRESERVE_WHITESPACE | 
-                                 fitz.TEXT_DEHYPHENATE)
-            text += page_text
-            text += "\n\n"
-            print_debug(f"Page {page_num+1} processed, extracted {len(page_text)} chars")
-        
+            page = doc.load_page(page_num)
+            # Use "text" mode to preserve proper text flow
+            page_text = page.get_text("text", sort=True)
+            text += page_text + "\n\n"
+            
         doc.close()
+        return text.strip()
     except Exception as e:
-        error_text = f"Error extracting text with PyMuPDF: {str(e)}\n{traceback.format_exc()}"
-        print_debug(error_text)
-        text = error_text
-    
-    return text
+        return f"PyMuPDF extraction error: {str(e)}"
 
-def extract_with_pdfminer(pdf_path: str) -> str:
-    """Extract text from PDF using pdfminer (backup method)"""
-    if not PDFMINER_AVAILABLE:
-        error_msg = "pdfminer.six is not installed. Install with: pip install pdfminer.six"
-        print_debug(error_msg)
-        return error_msg
-    
+def extract_with_pdfminer(file_path):
+    """Extract text using pdfminer.six (Better with complex layouts)"""
     try:
-        print_debug(f"Extracting text with pdfminer: {pdf_path}")
-        text = high_level.extract_text(pdf_path)
-        print_debug(f"pdfminer extracted {len(text)} chars")
-        return text
+        # Use Arabic-friendly parameters
+        laparams = LAParams(
+            char_margin=1.0,
+            line_margin=0.5,
+            boxes_flow=0.5,
+            detect_vertical=True,
+            all_texts=True
+        )
+        
+        return pdfminer_extract_text(file_path, laparams=laparams)
     except Exception as e:
-        error_text = f"Error extracting text with pdfminer: {str(e)}\n{traceback.format_exc()}"
-        print_debug(error_text)
-        return error_text
+        return f"PDFMiner extraction error: {str(e)}"
 
-def process_arabic_text(text: str) -> str:
-    """Process Arabic text to improve readability and fix common issues"""
+def format_rtl_text(text):
+    """Apply RTL formatting to text with proper wrapping"""
     if not text:
-        return "No text was extracted from the document."
-    
-    # Remove excessive whitespace
-    text = re.sub(r'\s+', ' ', text)
-    
-    # Fix common Arabic character substitution issues
-    replacements = {
-        '•': '',  # Remove bullet points that confuse Arabic text
-        '�': '',  # Remove unknown characters
-    }
-    
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    
-    # Split into lines and add RTL mark to lines with Arabic
+        return text
+        
+    # Add RTL mark to beginning of each line
     lines = text.split('\n')
-    processed_lines = []
+    formatted_lines = []
     
     for line in lines:
-        line = line.strip()
-        if not line:
-            processed_lines.append('')
-            continue
+        if line and not line.startswith(RTL_MARK):
+            formatted_line = RTL_MARK + line
+        else:
+            formatted_line = line
             
-        # If line contains Arabic characters, add RTL mark
-        if re.search(r'[\u0600-\u06FF]', line):
-            line = '\u200F' + line  # RTL mark
+        # Remove any LEFT-TO-RIGHT MARK characters
+        formatted_line = formatted_line.replace('\u200E', '')
         
-        processed_lines.append(line)
+        formatted_lines.append(formatted_line)
     
-    return '\n'.join(processed_lines)
+    return '\n'.join(formatted_lines)
+
+def fix_arabic_punctuation(text):
+    """Fix common issues with Arabic punctuation and spacing"""
+    if not text:
+        return text
+        
+    # Fix punctuation spacing
+    text = text.replace(" :", ":")
+    text = text.replace(" .", ".")
+    text = text.replace(" ،", "،")
+    text = text.replace(" ؟", "؟")
+    
+    # Ensure spaces after punctuation
+    text = text.replace(".", ". ")
+    text = text.replace("،", "، ")
+    text = text.replace(":", ": ")
+    text = text.replace("؟", "؟ ")
+    
+    # Clean up double spaces
+    while "  " in text:
+        text = text.replace("  ", " ")
+        
+    return text
+
+def extract_text_from_pdf(file_path, prefer_method=None):
+    """Extract text from PDF file with RTL support"""
+    start_time = datetime.now()
+    method_used = "unknown"
+    text = ""
+    error = None
+    
+    try:
+        # Define extraction order based on preference
+        methods = []
+        
+        if prefer_method == "pymupdf" and fitz:
+            methods = [("pymupdf", extract_with_pymupdf), 
+                      ("pdfminer", extract_with_pdfminer)]
+        elif prefer_method == "pdfminer" and pdfminer_extract_text:
+            methods = [("pdfminer", extract_with_pdfminer), 
+                      ("pymupdf", extract_with_pymupdf)]
+        elif fitz:
+            methods = [("pymupdf", extract_with_pymupdf), 
+                      ("pdfminer", extract_with_pdfminer)]
+        elif pdfminer_extract_text:
+            methods = [("pdfminer", extract_with_pdfminer)]
+        
+        # Try methods in order
+        for method_name, extract_func in methods:
+            if method_name == "pymupdf" and not fitz:
+                continue
+            if method_name == "pdfminer" and not pdfminer_extract_text:
+                continue
+                
+            text = extract_func(file_path)
+            
+            # If we got text and it doesn't look like an error message
+            if text and not text.startswith(("PyMuPDF extraction error", "PDFMiner extraction error")):
+                method_used = method_name
+                break
+            
+            # If it's an error message
+            if text.startswith(("PyMuPDF extraction error", "PDFMiner extraction error")):
+                error = text
+                text = ""
+        
+        # If no text was extracted
+        if not text and not error:
+            error = "Failed to extract text with any available method"
+        
+        # Determine if text is RTL (Arabic)
+        is_rtl = is_arabic_text(text)
+        
+        # Apply RTL formatting if needed
+        if is_rtl:
+            # Add RTL mark at beginning of text
+            if not text.startswith(RTL_MARK):
+                text = RTL_MARK + text
+                
+            # Format text for RTL display
+            text = format_rtl_text(text)
+            
+            # Fix Arabic punctuation
+            text = fix_arabic_punctuation(text)
+        
+        # Clean up text
+        text = re.sub(r'\s+', ' ', text).strip()  # Normalize whitespace
+        text = text.replace('\0', '')             # Remove null bytes
+        
+        processing_time = (datetime.now() - start_time).total_seconds()
+        
+        # Prepare response
+        result = {
+            "text": text,
+            "isRightToLeft": is_rtl,
+            "extractionMethod": method_used,
+            "processingTimeMs": int(processing_time * 1000),
+            "error": error
+        }
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "text": "",
+            "isRightToLeft": False,
+            "extractionMethod": "failed",
+            "processingTimeMs": 0,
+            "error": str(e)
+        }
 
 def main():
-    try:
-        # Handle encoding setup
-        # Force UTF-8 output
-        if hasattr(sys.stdout, 'buffer'):
-            # Binary output support
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='backslashreplace')
-        
-        # Parse command line arguments
-        parser = argparse.ArgumentParser(description='Extract Arabic text from PDF')
-        parser.add_argument('pdf_path', help='Path to PDF file')
-        parser.add_argument('--method', choices=['pymupdf', 'pdfminer', 'both'], 
-                          default='both', help='Extraction method to use')
-        
-        args = parser.parse_args()
-        
-        print_debug(f"Script started with arguments: {args}")
-        
-        if not os.path.isfile(args.pdf_path):
-            error_msg = f"Error: File not found: {args.pdf_path}"
-            print_debug(error_msg)
-            print(error_msg, file=sys.stderr)
-            sys.exit(1)
-        
-        extracted_text = ""
-        
-        # Try PyMuPDF first (better for Arabic)
-        if args.method in ['pymupdf', 'both']:
-            extracted_text = extract_with_pymupdf(args.pdf_path)
-            
-        # If PyMuPDF failed or returned little text, try pdfminer as backup
-        if (not extracted_text or len(extracted_text.strip()) < 100) and args.method in ['pdfminer', 'both']:
-            extracted_text = extract_with_pdfminer(args.pdf_path)
-        
-        # If both methods failed, return a diagnostic message
-        if not extracted_text or len(extracted_text.strip()) < 20:
-            print_debug("Both extraction methods produced little or no text")
-            # Check if file is really a PDF
-            with open(args.pdf_path, 'rb') as f:
-                header = f.read(4)
-                if header != b'%PDF':
-                    extracted_text = f"File does not appear to be a valid PDF. First bytes: {header}"
-                else:
-                    extracted_text = "Failed to extract meaningful text from this PDF. It might be an image-only PDF or have content protection."
-        
-        # Process the extracted text for better Arabic readability
-        processed_text = process_arabic_text(extracted_text)
-        print_debug(f"Final processed text length: {len(processed_text)}")
-        
-        # Write output to a temporary file to avoid encoding issues with print()
-        try:
-            # First try using UTF-8 print
-            print(processed_text, flush=True)
-        except UnicodeEncodeError:
-            # If that fails, try a more robust approach - write to a file
-            print_debug("Direct print failed, using file output method")
-            temp_output = os.path.join(os.path.dirname(args.pdf_path), "extracted_text.txt")
-            with open(temp_output, 'w', encoding='utf-8') as f:
-                f.write(processed_text)
-            print(f"TEXT_SAVED_TO:{temp_output}")
-            
-    except Exception as e:
-        error_text = f"Error in main function: {str(e)}\n{traceback.format_exc()}"
-        print_debug(error_text)
-        print(error_text, file=sys.stderr)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Extract text from PDF file with RTL support')
+    parser.add_argument('file', help='PDF file path')
+    parser.add_argument('--method', choices=['pymupdf', 'pdfminer'], help='Preferred extraction method')
+    parser.add_argument('--output', help='Output file path (default: stdout)')
+    
+    args = parser.parse_args()
+    
+    if not os.path.isfile(args.file):
+        print(json.dumps({"error": f"File not found: {args.file}"}))
         sys.exit(1)
+    
+    result = extract_text_from_pdf(args.file, args.method)
+    
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as f:
+            f.write(result["text"])
+    else:
+        print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nastya_Archiving_project.Models.DTOs.TextExtraction;
 using Nastya_Archiving_project.Services.textExtraction;
 using System;
@@ -32,13 +33,123 @@ namespace ElectionsPillars.Controllers
 
             try
             {
+                _logger.LogInformation("Starting PDF extraction for file: {FileName}, Size: {FileSize}", 
+                    pdfFile.FileName, pdfFile.Length);
+                
+                // Start timing the extraction process
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                
+                // Extract text from PDF
                 var result = await _textExtractionServices.ExtractTextFromPdfAsync(pdfFile);
-                return Ok(new { text = result.Text, rtl = result.IsRightToLeft });
+                
+                // Log initial extraction result
+                _logger.LogDebug("Raw extraction completed in {ElapsedMs}ms. Text length: {TextLength}, RTL: {IsRtl}", 
+                    stopwatch.ElapsedMilliseconds, result.Text?.Length ?? 0, result.IsRightToLeft);
+                
+                // Format the Arabic text properly
+                string formattedText = result.Text;
+                string detectedLanguage = "unknown";
+                
+                try
+                {
+                    // Double-check if the text is Arabic, regardless of what the service reported
+                    bool isArabic = result.IsRightToLeft || ContainsArabicText(formattedText);
+                    
+                    // Apply Arabic text processing if needed
+                    if (isArabic)
+                    {
+                        detectedLanguage = "arabic";
+                        stopwatch.Restart();
+                        
+                        // Normalize Arabic text (handle special cases and character variations)
+                        formattedText = NormalizeArabicText(formattedText);
+                        
+                        // Apply enhanced Arabic text formatting 
+                        formattedText = CleanAndFormatArabicText(formattedText);
+                        
+                        _logger.LogDebug("Arabic text formatting completed in {ElapsedMs}ms. Formatted length: {FormattedLength}", 
+                            stopwatch.ElapsedMilliseconds, formattedText?.Length ?? 0);
+                    }
+                }
+                catch (ArgumentException ex) when (ex.Message.Contains("same key"))
+                {
+                    _logger.LogError(ex, "Dictionary key conflict while processing text. Key: {Key}", 
+                        ex.Message.Contains("Key:") ? ex.Message.Substring(ex.Message.IndexOf("Key:")) : "unknown");
+                    
+                    // Return the original text without formatting to avoid the error
+                    formattedText = result.Text;
+                    detectedLanguage = result.IsRightToLeft ? "arabic (unformatted)" : "unknown";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during text formatting");
+                    // Return the original text without formatting
+                    formattedText = result.Text;
+                    detectedLanguage = "unknown (formatting error)";
+                }
+                
+                stopwatch.Stop();
+                
+                // Return comprehensive result with timing information
+                return Ok(new { 
+                    text = formattedText, 
+                    rtl = result.IsRightToLeft,
+                    originalLength = result.Text?.Length ?? 0,
+                    formattedLength = formattedText?.Length ?? 0,
+                    source = result.Source,
+                    detectedLanguage = detectedLanguage,
+                    processingTimeMs = stopwatch.ElapsedMilliseconds,
+                    fileName = pdfFile.FileName,
+                    fileSize = pdfFile.Length
+                });
+            }
+            catch (ArgumentException ex) when (ex.Message.Contains("same key"))
+            {
+                _logger.LogError(ex, "Dictionary key error with file: {FileName}. Error: {Error}", 
+                    pdfFile.FileName, ex.Message);
+                
+                return StatusCode(500, new { 
+                    error = "Text extraction error - duplicate dictionary key",
+                    message = ex.Message,
+                    fileName = pdfFile.FileName,
+                    fileSize = pdfFile.Length,
+                    solution = "Please try again with a different PDF file or contact support."
+                });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error extracting text from PDF");
-                return StatusCode(500, new { error = ex.Message });
+                _logger.LogError(ex, "Error extracting text from PDF: {FileName}", pdfFile.FileName);
+                
+                // Check for Ghostscript-specific errors
+                if (ex.Message.Contains("gswin") || ex.Message.Contains("Ghostscript") || 
+                    ex.Message.Contains("FailedToExecuteCommand"))
+                {
+                    return StatusCode(500, new { 
+                        error = "PDF processing failed. The server may be missing Ghostscript.",
+                        message = "Ghostscript is required for PDF processing. Please see the installation guide.",
+                        details = ex.Message,
+                        solution = "Please install Ghostscript and ensure it's in the system PATH."
+                    });
+                }
+                
+                // Check for file format errors
+                if (ex.Message.Contains("not a PDF") || ex.Message.Contains("invalid PDF"))
+                {
+                    return BadRequest(new {
+                        error = "Invalid PDF file format",
+                        message = "The uploaded file appears not to be a valid PDF document.",
+                        details = ex.Message,
+                        fileName = pdfFile.FileName
+                    });
+                }
+                
+                // General error handling
+                return StatusCode(500, new { 
+                    error = "Text extraction failed",
+                    message = ex.Message,
+                    fileName = pdfFile.FileName,
+                    fileSize = pdfFile.Length
+                });
             }
         }
 
@@ -50,38 +161,136 @@ namespace ElectionsPillars.Controllers
 
             try
             {
+                _logger.LogInformation("Starting PDF extraction with Python for file: {FileName}, Size: {FileSize}", 
+                    pdfFile.FileName, pdfFile.Length);
+                
+                // Start timing the extraction process
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                
+                // Extract text using Python
                 var result = await _textExtractionServices.ExtractTextWithPythonAsync(pdfFile);
                 
                 // Check for errors
                 if (!string.IsNullOrEmpty(result.Error))
                 {
+                    _logger.LogError("Python extraction error: {Error}", result.Error);
                     return StatusCode(500, new { 
                         error = result.Error,
-                        pythonInfo = result.PythonInfo
+                        pythonInfo = result.PythonInfo,
+                        fileName = pdfFile.FileName,
+                        fileSize = pdfFile.Length
                     });
                 }
+                
+                _logger.LogDebug("Python extraction completed in {ElapsedMs}ms. Text length: {TextLength}, RTL: {IsRtl}", 
+                    stopwatch.ElapsedMilliseconds, result.Text?.Length ?? 0, result.IsRightToLeft);
+                
+                // Apply the same Arabic text formatting for consistency
+                string formattedText = result.Text;
+                string detectedLanguage = "unknown";
+                
+                try
+                {
+                    // Double-check if the text is Arabic, regardless of what the service reported
+                    bool isArabic = result.IsRightToLeft || ContainsArabicText(formattedText);
+                    
+                    if (isArabic)
+                    {
+                        detectedLanguage = "arabic";
+                        stopwatch.Restart();
+                        
+                        // Normalize Arabic text (handle special cases and character variations)
+                        formattedText = NormalizeArabicText(formattedText);
+                        
+                        // Use the same enhanced formatting method
+                        formattedText = CleanAndFormatArabicText(formattedText);
+                        
+                        _logger.LogDebug("Arabic text formatting completed in {ElapsedMs}ms. Formatted length: {FormattedLength}", 
+                            stopwatch.ElapsedMilliseconds, formattedText?.Length ?? 0);
+                    }
+                }
+                catch (ArgumentException ex) when (ex.Message.Contains("same key"))
+                {
+                    _logger.LogError(ex, "Dictionary key conflict while processing text. Key: {Key}", 
+                        ex.Message.Contains("Key:") ? ex.Message.Substring(ex.Message.IndexOf("Key:")) : "unknown");
+                    
+                    // Return the original text without formatting to avoid the error
+                    formattedText = result.Text;
+                    detectedLanguage = result.IsRightToLeft ? "arabic (unformatted)" : "unknown";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during text formatting");
+                    // Return the original text without formatting
+                    formattedText = result.Text;
+                    detectedLanguage = "unknown (formatting error)";
+                }
+                
+                stopwatch.Stop();
 
                 return Ok(new
                 {
-                    text = result.Text,
+                    text = formattedText,
                     rtl = result.IsRightToLeft,
                     source = result.Source,
                     textLength = result.TextLength,
-                    pythonInfo = result.PythonInfo
+                    pythonInfo = result.PythonInfo,
+                    originalLength = result.Text?.Length ?? 0,
+                    formattedLength = formattedText?.Length ?? 0,
+                    detectedLanguage = detectedLanguage,
+                    processingTimeMs = stopwatch.ElapsedMilliseconds,
+                    fileName = pdfFile.FileName,
+                    fileSize = pdfFile.Length
+                });
+            }
+            catch (ArgumentException ex) when (ex.Message.Contains("same key"))
+            {
+                _logger.LogError(ex, "Dictionary key error with file: {FileName}. Error: {Error}", 
+                    pdfFile.FileName, ex.Message);
+                
+                return StatusCode(500, new { 
+                    error = "Text extraction error - duplicate dictionary key",
+                    message = ex.Message,
+                    fileName = pdfFile.FileName,
+                    fileSize = pdfFile.Length,
+                    solution = "Please try again with a different PDF file or contact support."
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in ExtractWithPython");
-                return StatusCode(500, new { error = ex.Message });
+                _logger.LogError(ex, "Error in ExtractWithPython: {FileName}", pdfFile.FileName);
+                
+                // Check for Python-specific errors
+                if (ex.Message.Contains("Python") || ex.Message.Contains("python"))
+                {
+                    return StatusCode(500, new { 
+                        error = "Python environment error",
+                        message = "The Python environment is not properly configured for PDF extraction.",
+                        details = ex.Message,
+                        fileName = pdfFile.FileName,
+                        solution = "Please check the Python installation and required packages."
+                    });
+                }
+                
+                return StatusCode(500, new { 
+                    error = "Text extraction failed",
+                    message = ex.Message,
+                    fileName = pdfFile.FileName,
+                    fileSize = pdfFile.Length
+                });
             }
         }
         
         [HttpGet("python-check")]
-        public IActionResult CheckPythonEnvironment()
+        public async Task<IActionResult> CheckPythonEnvironment()
         {
             try
             {
+                var loggerFactory = new LoggerFactory();
+                var detectorLogger = loggerFactory.CreateLogger<PythonEnvironmentDetector>();
+                var detector = new PythonEnvironmentDetector(detectorLogger);
+                bool isConfigured = await detector.IsPythonEnvironmentConfigured();
+                
                 var result = _textExtractionServices.CheckPythonEnvironment();
                 
                 return Ok(new {
@@ -93,12 +302,106 @@ namespace ElectionsPillars.Controllers
                     currentDirectory = result.CurrentDirectory,
                     testedPaths = result.TestedPaths,
                     packages = result.Packages,
-                    diagnosticTime = DateTime.Now.ToString("o")
+                    isConfigured = isConfigured,
+                    diagnosticTime = DateTime.Now.ToString("o"),
+                    instructions = !isConfigured 
+                        ? "Python environment is not properly configured. Please run the scripts/install_dependencies_direct.bat script with administrator privileges."
+                        : "Python environment is properly configured."
                 });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { 
+                    error = ex.Message,
+                    stackTrace = ex.StackTrace,
+                    instructions = "An error occurred while checking the Python environment. Please run the scripts/install_dependencies_direct.bat script with administrator privileges."
+                });
+            }
+        }
+
+        [HttpGet("ghostscript-check")]
+        public IActionResult CheckGhostscriptInstallation()
+        {
+            try
+            {
+                string ghostscriptPath = null;
+                string ghostscriptVersion = "Not installed";
+                bool isInPath = false;
+                
+                // Check if Ghostscript is in PATH
+                var processInfo = new ProcessStartInfo
+                {
+                    FileName = "gswin64c",
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                try
+                {
+                    using var process = Process.Start(processInfo);
+                    ghostscriptVersion = process.StandardOutput.ReadToEnd().Trim();
+                    process.WaitForExit();
+                    isInPath = process.ExitCode == 0;
+                    ghostscriptPath = "In system PATH";
+                }
+                catch
+                {
+                    // Ghostscript not in PATH, try common installation locations
+                    _logger.LogWarning("Ghostscript not found in PATH, checking common installation locations");
+                    
+                    string[] possibleLocations = {
+                        @"C:\Program Files\gs\gs*\bin\gswin64c.exe",
+                        @"C:\Program Files (x86)\gs\gs*\bin\gswin32c.exe"
+                    };
+                    
+                    foreach (var location in possibleLocations)
+                    {
+                        try
+                        {
+                            var files = Directory.GetFiles(Path.GetDirectoryName(location), Path.GetFileName(location), SearchOption.AllDirectories);
+                            if (files.Length > 0)
+                            {
+                                ghostscriptPath = files[0];
+                                var versionProcess = new ProcessStartInfo
+                                {
+                                    FileName = ghostscriptPath,
+                                    Arguments = "--version",
+                                    RedirectStandardOutput = true,
+                                    RedirectStandardError = true,
+                                    UseShellExecute = false,
+                                    CreateNoWindow = true
+                                };
+                                
+                                using var process = Process.Start(versionProcess);
+                                ghostscriptVersion = process.StandardOutput.ReadToEnd().Trim();
+                                process.WaitForExit();
+                                break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Error checking Ghostscript path {Path}", location);
+                        }
+                    }
+                }
+                
+                return Ok(new {
+                    isInstalled = !string.IsNullOrEmpty(ghostscriptPath),
+                    isInPath = isInPath,
+                    path = ghostscriptPath,
+                    version = ghostscriptVersion,
+                    message = string.IsNullOrEmpty(ghostscriptPath) 
+                        ? "Ghostscript is not installed or not found. PDF processing may not work properly."
+                        : $"Ghostscript found: {ghostscriptVersion}",
+                    systemPath = Environment.GetEnvironmentVariable("PATH")
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new {
                     error = ex.Message,
                     stackTrace = ex.StackTrace
                 });
@@ -110,22 +413,91 @@ namespace ElectionsPillars.Controllers
         {
             try
             {
+                _logger.LogInformation("Attempting to install Python packages");
                 var result = _textExtractionServices.InstallPythonPackages();
                 
-                return Ok(new {
-                    message = "Installation attempted. Please check the results.",
-                    pythonPath = result.PythonPath,
-                    installResults = result.InstallResults,
-                    testResults = result.TestResults,
-                    environmentInfo = result.EnvironmentInfo,
-                    instructions = "If installation failed, please run the scripts/install_dependencies_direct.ps1 script with administrator privileges."
-                });
+                // If Python was not found, return a more specific error
+                if (!string.IsNullOrEmpty(result.Error) && 
+                    (result.Error.Contains("Python not found") || 
+                     result.PythonPath == "Not found" || 
+                     result.Error.Contains("cannot find the file specified")))
+                {
+                    _logger.LogError("Python installation not found: {Error}", result.Error);
+                    
+                    return StatusCode(500, new {
+                        error = "Python not found on the system",
+                        message = "Python installation is required for PDF text extraction",
+                        pythonPath = result.PythonPath,
+                        installResults = result.InstallResults,
+                        testResults = result.TestResults,
+                        environmentInfo = result.EnvironmentInfo,
+                        systemRequirements = new {
+                            pythonVersion = "Python 3.8 or higher is required",
+                            downloadUrl = "https://www.python.org/downloads/",
+                            installationInstructions = "During installation, make sure to check 'Add Python to PATH'",
+                            postInstallation = "After installing Python, restart your application/server"
+                        },
+                        manualInstallation = "To manually install the required Python packages, run the following commands in Command Prompt or PowerShell:",
+                        manualCommands = new[] {
+                            "pip install PyMuPDF",
+                            "pip install pdfminer.six"
+                        }
+                    });
+                }
+                
+                // Check if installation was successful
+                bool installSuccess = result.TestResults != null && 
+                                     result.TestResults.ContainsKey("PyMuPDF") && 
+                                     result.TestResults["PyMuPDF"].Contains("installed") &&
+                                     result.TestResults.ContainsKey("pdfminer.six") && 
+                                     result.TestResults["pdfminer.six"].Contains("installed");
+                
+                if (installSuccess)
+                {
+                    _logger.LogInformation("Python packages successfully installed");
+                    return Ok(new {
+                        success = true,
+                        message = "Python packages successfully installed",
+                        pythonPath = result.PythonPath,
+                        installResults = result.InstallResults,
+                        testResults = result.TestResults,
+                        environmentInfo = result.EnvironmentInfo
+                    });
+                }
+                else
+                {
+                    _logger.LogWarning("Some Python packages could not be installed");
+                    return Ok(new {
+                        success = false,
+                        message = "Some Python packages could not be installed. Please check the results.",
+                        pythonPath = result.PythonPath,
+                        installResults = result.InstallResults,
+                        testResults = result.TestResults,
+                        environmentInfo = result.EnvironmentInfo,
+                        instructions = "If installation failed, please try the following:",
+                        automaticInstallation = "Run the scripts/install_dependencies_direct.ps1 script with administrator privileges",
+                        manualInstallation = "To manually install the required Python packages, run the following commands:",
+                        manualCommands = new[] {
+                            $"{result.PythonPath} -m pip install --upgrade pip",
+                            $"{result.PythonPath} -m pip install PyMuPDF",
+                            $"{result.PythonPath} -m pip install pdfminer.six"
+                        }
+                    });
+                }
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error installing Python packages");
                 return StatusCode(500, new {
                     error = ex.Message,
-                    message = "Failed to install packages. Please run scripts/install_dependencies_direct.ps1 script with administrator privileges."
+                    message = "Failed to install packages.",
+                    details = ex.ToString(),
+                    instructions = "Please try one of the following solutions:",
+                    solutions = new[] {
+                        "Verify Python 3.8+ is installed and in the system PATH",
+                        "Run scripts/install_dependencies_direct.ps1 script with administrator privileges",
+                        "Manually install the packages using: pip install PyMuPDF pdfminer.six"
+                    }
                 });
             }
         }
@@ -401,8 +773,43 @@ namespace ElectionsPillars.Controllers
                     setupInstructions += "Failed to check Python environment. Ensure Python is installed and in the PATH. ";
                 }
                 
+                // Check Ghostscript installation
+                try
+                {
+                    var gsProcess = new ProcessStartInfo
+                    {
+                        FileName = "gswin64c",
+                        Arguments = "--version",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    
+                    try
+                    {
+                        using var process = Process.Start(gsProcess);
+                        process.WaitForExit(1000);
+                        if (process.ExitCode != 0)
+                        {
+                            setupInstructions += "Ghostscript is not properly installed or not in the PATH. PDF image processing may fail. ";
+                            _logger.LogWarning("Ghostscript check failed with exit code {ExitCode}", process.ExitCode);
+                        }
+                    }
+                    catch
+                    {
+                        setupInstructions += "Ghostscript is not installed or not in the PATH. PDF image processing may fail. ";
+                        _logger.LogWarning("Ghostscript not found in PATH");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to check Ghostscript");
+                    setupInstructions += "Failed to check Ghostscript installation. ";
+                }
+                
                 // Warn about missing dependencies but continue with processing
-                if (!hasRequiredDependencies)
+                if (!string.IsNullOrEmpty(setupInstructions))
                 {
                     _logger.LogWarning("Missing dependencies for text extraction: {SetupInstructions}", setupInstructions);
                 }
@@ -491,162 +898,231 @@ namespace ElectionsPillars.Controllers
             }
         }
 
-        [HttpGet("extraction-methods")]
-        public IActionResult GetAvailableExtractionMethods()
+        [HttpGet("environment-check")]
+        public async Task<IActionResult> CheckAllEnvironments()
         {
             try
             {
-                bool isPythonAvailable = false;
-                string pythonVersion = "Not available";
+                _logger.LogInformation("Performing comprehensive environment check");
+                
+                // Check Python environment
+                var loggerFactory = new LoggerFactory();
+                var detectorLogger = loggerFactory.CreateLogger<PythonEnvironmentDetector>();
+                var detector = new PythonEnvironmentDetector(detectorLogger);
+                bool isPythonConfigured = await detector.IsPythonEnvironmentConfigured();
+                var pythonResult = _textExtractionServices.CheckPythonEnvironment();
+                
+                // Check Ghostscript installation
+                bool isGhostscriptInstalled = false;
+                string ghostscriptPath = null;
+                string ghostscriptVersion = "Not installed";
                 
                 try
                 {
-                    var pythonInfo = _textExtractionServices.CheckPythonEnvironment();
-                    isPythonAvailable = !string.IsNullOrEmpty(pythonInfo.PythonPath) && 
-                                       pythonInfo.Packages != null && 
-                                       pythonInfo.Packages.ContainsKey("PyMuPDF");
-                    pythonVersion = pythonInfo.PythonVersion;
+                    var processInfo = new ProcessStartInfo
+                    {
+                        FileName = "gswin64c",
+                        Arguments = "--version",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    
+                    using var process = Process.Start(processInfo);
+                    ghostscriptVersion = process.StandardOutput.ReadToEnd().Trim();
+                    process.WaitForExit();
+                    isGhostscriptInstalled = process.ExitCode == 0;
+                    ghostscriptPath = "In system PATH";
                 }
-                catch (Exception ex)
+                catch
                 {
-                    _logger.LogWarning(ex, "Failed to check Python environment");
+                    // Check common Ghostscript locations
+                    string[] possibleLocations = {
+                        @"C:\Program Files\gs\gs*\bin\gswin64c.exe",
+                        @"C:\Program Files (x86)\gs\gs*\bin\gswin32c.exe"
+                    };
+                    
+                    foreach (var pattern in possibleLocations)
+                    {
+                        try
+                        {
+                            string directory = Path.GetDirectoryName(pattern);
+                            string fileName = Path.GetFileName(pattern).Replace("*", "");
+                            
+                            if (Directory.Exists(directory))
+                            {
+                                var directories = Directory.GetDirectories(directory);
+                                foreach (var dir in directories)
+                                {
+                                    string potentialPath = Path.Combine(dir, "bin", fileName);
+                                    if (fileName.Contains("*"))
+                                    {
+                                        var files = Directory.GetFiles(Path.Combine(dir, "bin"), "gswin*.exe");
+                                        if (files.Length > 0)
+                                        {
+                                            potentialPath = files[0];
+                                        }
+                                    }
+                                    
+                                    if (System.IO.File.Exists(potentialPath))
+                                    {
+                                        var versionProcess = new ProcessStartInfo
+                                        {
+                                            FileName = potentialPath,
+                                            Arguments = "--version",
+                                            RedirectStandardOutput = true,
+                                            RedirectStandardError = true,
+                                            UseShellExecute = false,
+                                            CreateNoWindow = true
+                                        };
+                                        
+                                        using var process = Process.Start(versionProcess);
+                                        ghostscriptVersion = process.StandardOutput.ReadToEnd().Trim();
+                                        process.WaitForExit();
+                                        
+                                        if (process.ExitCode == 0)
+                                        {
+                                            ghostscriptPath = potentialPath;
+                                            isGhostscriptInstalled = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (isGhostscriptInstalled) break;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "Error checking Ghostscript path pattern {Pattern}", pattern);
+                        }
+                    }
                 }
                 
-                return Ok(new
-                {
-                    availableMethods = new
-                    {
-                        directTextExtraction = true,  // Always available as a basic option
-                        pythonExtraction = isPythonAvailable,
-                        pythonVersion = pythonVersion,
-                        packages = isPythonAvailable ? _textExtractionServices.CheckPythonEnvironment().Packages : null
+                // Check Tesseract data files
+                string tessdataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tessdata");
+                bool tessdataExists = Directory.Exists(tessdataPath);
+                bool arabicLanguageExists = tessdataExists && System.IO.File.Exists(Path.Combine(tessdataPath, "ara.traineddata"));
+                
+                return Ok(new {
+                    status = new {
+                        pythonConfigured = isPythonConfigured,
+                        ghostscriptInstalled = isGhostscriptInstalled,
+                        tessdataConfigured = arabicLanguageExists
                     },
-                    recommendation = !isPythonAvailable 
-                        ? "Install PyMuPDF and pdfminer.six Python packages for improved PDF text extraction without Ghostscript" 
-                        : "Python-based extraction is available and can be used as an alternative to Ghostscript"
+                    python = new {
+                        path = pythonResult.PythonPath,
+                        version = pythonResult.PythonVersion,
+                        packages = pythonResult.Packages,
+                        scriptPath = pythonResult.ScriptPath,
+                        scriptExists = pythonResult.ScriptPath != null && System.IO.File.Exists(pythonResult.ScriptPath)
+                    },
+                    ghostscript = new {
+                        path = ghostscriptPath,
+                        version = ghostscriptVersion,
+                        inPath = ghostscriptPath == "In system PATH"
+                    },
+                    tessdata = new {
+                        path = tessdataPath,
+                        exists = tessdataExists,
+                        arabicLanguageExists = arabicLanguageExists,
+                        files = tessdataExists ? Directory.GetFiles(tessdataPath).Select(Path.GetFileName).ToArray() : new string[0]
+                    },
+                    system = new {
+                        workingDirectory = Directory.GetCurrentDirectory(),
+                        applicationDirectory = AppDomain.CurrentDomain.BaseDirectory,
+                        operatingSystem = Environment.OSVersion.ToString(),
+                        is64BitProcess = Environment.Is64BitProcess,
+                        is64BitOperatingSystem = Environment.Is64BitOperatingSystem,
+                        systemDirectory = Environment.SystemDirectory
+                    },
+                    instructions = new {
+                        python = !isPythonConfigured 
+                            ? "Python environment is not properly configured. Please run the scripts/install_dependencies_direct.bat script."
+                            : "Python environment is properly configured.",
+                        ghostscript = !isGhostscriptInstalled
+                            ? "Ghostscript is not installed or not found. Please install Ghostscript from https://ghostscript.com/releases/gsdnld.html"
+                            : "Ghostscript is properly installed.",
+                        tessdata = !arabicLanguageExists
+                            ? "Arabic language data for Tesseract is missing. Please run the scripts/setup_tessdata.ps1 script."
+                            : "Tessdata is properly configured."
+                    }
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking available extraction methods");
-                return StatusCode(500, new { error = ex.Message });
+                return StatusCode(500, new { 
+                    error = ex.Message,
+                    stackTrace = ex.StackTrace,
+                    instructions = "An error occurred while checking the environment. Please run the setup scripts in the scripts directory."
+                });
             }
         }
         
-        // Helper method to try alternative extraction without Ghostscript
-        private async Task<string> TryAlternativeExtractionMethod(string referenceNo)
+        /// <summary>
+        /// Cleans and formats Arabic text for proper RTL display
+        /// </summary>
+        private string CleanAndFormatArabicText(string text)
         {
-            // This is a placeholder method that would need to be implemented based on your system
-            // It should attempt to extract text using alternative methods like:
-            // 1. Direct text extraction from the PDF if it's text-based
-            // 2. Using Python libraries if available
-            
-            // Example implementation (would need to be adapted to your system):
+            if (string.IsNullOrEmpty(text))
+                return text;
+                
             try
             {
-                // This assumes you have a way to get the file path from the reference number
-                string pdfPath = await GetDocumentPathByReference(referenceNo);
+                // The Unicode RIGHT-TO-LEFT MARK
+                const char RLM = '\u200F';
+                const char LRM = '\u200E'; // LEFT-TO-RIGHT MARK
                 
-                if (string.IsNullOrEmpty(pdfPath) || !System.IO.File.Exists(pdfPath))
+                // Normalize line breaks first (standardize to Environment.NewLine)
+                text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+                
+                // Split by new lines to process each line separately
+                var lines = text.Split('\n');
+                
+                for (int i = 0; i < lines.Length; i++)
                 {
-                    _logger.LogWarning("Could not find PDF file for reference: {ReferenceNo}", referenceNo);
-                    return null;
+                    if (string.IsNullOrWhiteSpace(lines[i]))
+                        continue;
+                    
+                    // Remove problematic invisible characters that may affect text direction
+                    lines[i] = lines[i].Replace(LRM.ToString(), ""); // Remove LEFT-TO-RIGHT MARK
+                    
+                    // Clean up any special Unicode characters that might break word wrapping
+                    lines[i] = System.Text.RegularExpressions.Regex.Replace(lines[i], @"[\u200C\u200D\u200B\uFEFF]", "");
+                    
+                    // Add RIGHT-TO-LEFT MARK at the beginning of each line if not already present
+                    if (!lines[i].StartsWith(RLM.ToString()))
+                    {
+                        lines[i] = RLM + lines[i];
+                    }
+                    
+                    // Fix common issues with Arabic punctuation and numbers
+                    lines[i] = FixArabicPunctuation(lines[i]);
                 }
                 
-                // Try direct text extraction first
-                string extractedText = _textExtractionServices.ExtractTextFromTextPdf(pdfPath);
+                // Rejoin the lines with proper line breaks
+                string result = string.Join(Environment.NewLine, lines);
                 
-                if (!string.IsNullOrWhiteSpace(extractedText))
+                // Ensure the entire text starts with RTL mark for consistent display
+                if (!result.StartsWith(RLM.ToString()) && !string.IsNullOrWhiteSpace(result))
                 {
-                    _logger.LogInformation("Successfully extracted text directly from PDF for reference: {ReferenceNo}", referenceNo);
-                    
-                    // Save this text back to the document
-                    await SaveExtractedText(referenceNo, extractedText);
-                    
-                    return extractedText;
+                    result = RLM + result;
                 }
                 
-                // If direct extraction failed or returned empty text, try Python
-                string pythonExtractedText = _textExtractionServices.ExtractTextWithPython(pdfPath);
+                // Clean up any double RTL marks that might have been added
+                result = result.Replace(RLM.ToString() + RLM.ToString(), RLM.ToString());
                 
-                if (!string.IsNullOrWhiteSpace(pythonExtractedText))
-                {
-                    _logger.LogInformation("Successfully extracted text using Python for reference: {ReferenceNo}", referenceNo);
-                    
-                    // Save this text back to the document
-                    await SaveExtractedText(referenceNo, pythonExtractedText);
-                    
-                    return pythonExtractedText;
-                }
+                // Remove any '?' characters that might cause dictionary conflicts
+                result = result.Replace("?", "");
                 
-                _logger.LogWarning("All alternative extraction methods failed for reference: {ReferenceNo}", referenceNo);
-                return null;
+                return result;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in alternative extraction method for reference: {ReferenceNo}", referenceNo);
-                return null;
-            }
-        }
-
-        private async Task<string> GetDocumentPathByReference(string referenceNo)
-        {
-            // This is a placeholder method that should be implemented to return the file path
-            // for a document based on its reference number
-            // The implementation depends on how your documents are stored
-            
-            // Example implementation (simplified):
-            try
-            {
-                // This logic would depend on how your system stores documents
-                // and how to locate them by reference number
-                
-                // For example, you might have a database that stores document paths
-                // Or you might have a convention for file naming/location based on reference
-                
-                // Placeholder implementation
-                string documentsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Documents");
-                string potentialPath = Path.Combine(documentsDirectory, $"{referenceNo}.pdf");
-                
-                if (System.IO.File.Exists(potentialPath))
-                {
-                    return potentialPath;
-                }
-                
-                _logger.LogWarning("Could not locate document file for reference: {ReferenceNo}", referenceNo);
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting document path for reference: {ReferenceNo}", referenceNo);
-                return null;
-            }
-        }
-
-        private async Task SaveExtractedText(string referenceNo, string extractedText)
-        {
-            // This is a placeholder method that should be implemented to save
-            // the extracted text back to wherever your system stores it
-            
-            // The implementation depends on your data model and storage mechanism
-            
-            // Example implementation (would need to be adapted to your system):
-            try
-            {
-                // In a real implementation, you would:
-                // 1. Locate the document record in your database
-                // 2. Update its text field
-                // 3. Save the changes
-                
-                _logger.LogInformation("Saving {TextLength} characters of extracted text for reference: {ReferenceNo}", 
-                    extractedText?.Length ?? 0, referenceNo);
-                
-                // Since we don't have direct access to your data layer,
-                // this is just a placeholder that logs the action
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error saving extracted text for reference: {ReferenceNo}", referenceNo);
+                _logger.LogError(ex, "Error in CleanAndFormatArabicText: {ErrorMessage}", ex.Message);
+                // If there's an error, return the original text to avoid crashing
+                return text;
             }
         }
     }
