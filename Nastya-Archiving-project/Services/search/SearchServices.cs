@@ -96,7 +96,10 @@ namespace Nastya_Archiving_project.Services.search
                 }
                 if (!string.IsNullOrWhiteSpace(req.subject))
                 {
-                    query = query.Where(d => d.Subject != null && d.Subject.Contains(req.subject));
+                    if(req.exactMatch)
+                        query = query.Where(d => d.Subject != null && d.Subject == req.subject);
+                    else
+                        query = query.Where(d => d.Subject != null && d.Subject.Contains(req.subject));
                 }
                 if(!string.IsNullOrEmpty(req.editor))
                     query = query.Where(d => d.Editor != null && d.Editor.Contains(req.editor));
@@ -462,13 +465,13 @@ namespace Nastya_Archiving_project.Services.search
                     query = query.Where(d => d.FileType.HasValue && d.FileType.Value == (int)req.fileType.Value);
                 if (req.departId.HasValue)
                     query = query.Where(d => d.DepartId.HasValue && d.DepartId.Value == req.departId.Value);
-                if(!string.IsNullOrWhiteSpace(req.searchIntelligence))
+                if (!string.IsNullOrWhiteSpace(req.searchIntelligence))
                 {
-                        var words = req.searchIntelligence.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                        foreach (var word in words)
-                        {
-                            query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(word));
-                        }
+                    var words = req.searchIntelligence.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var word in words)
+                    {
+                        query = query.Where(d => d.WordsTosearch != null && d.WordsTosearch.Contains(word));
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(req.wordToSearch))
                 {
@@ -495,42 +498,51 @@ namespace Nastya_Archiving_project.Services.search
                 int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
                 int pageSize = req.pageSize > 0 ? req.pageSize : 20;
 
-                var pagedQuery = query
-                    .OrderByDescending(d => d.Id)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize);
+                // Get the filtered documents with join information in a single query
+                var pagedResults = await (
+                    from doc in query
+                    orderby doc.Id descending
+                    let hasJoinedDocs = _context.JoinedDocs.Any(j => j.ParentRefrenceNO == doc.RefrenceNo)
+                    select new { Document = doc, HasJoinedDocs = hasJoinedDocs }
+                )
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
 
-                // Get all doc types for mapping id to name
-                var pagedDocs = await pagedQuery.ToListAsync();
-                var docTypeIds = pagedDocs.Select(d => d.DocType).Distinct().ToList();
+                // If no documents found, return early
+                if (pagedResults.Count == 0)
+                    return (null, "No documents found matching the criteria.");
+
+                // Get document types for names
+                var docTypeIds = pagedResults.Select(r => r.Document.DocType).Distinct().ToList();
                 var docTypes = await _context.ArcivDocDscrps
                     .Where(dt => docTypeIds.Contains(dt.Id))
                     .ToListAsync();
                 var docTypeNames = docTypes.ToDictionary(x => x.Id, x => x.Dscrp);
 
                 // Get reference information from JoinedDocs table
-                var refNos = pagedDocs.Select(d => d.RefrenceNo).ToList();
+                var refNos = pagedResults.Select(r => r.Document.RefrenceNo).ToList();
                 var joinedDocs = await _context.JoinedDocs
                     .Where(j => refNos.Contains(j.ChildRefrenceNo))
                     .ToDictionaryAsync(j => j.ChildRefrenceNo, j => j.ParentRefrenceNO);
 
-                var result = pagedDocs.Select(d => new DetialisSearchResponseDTOs
+                var result = pagedResults.Select(r => new DetialisSearchResponseDTOs
                 {
-                    Id = d.Id,
-                    file = d.ImgUrl,
-                    docsNumber = d.DocNo,
-                    docsDate = d.DocDate.HasValue ? d.DocDate.Value : null,
-                    editDate = d.EditDate.HasValue ? d.EditDate.Value : null,
-                    subject = d.Subject,
-                    source = d.DocSource != null ? d.DocSource.ToString() : null,
-                    ReferenceTo = joinedDocs.TryGetValue(d.RefrenceNo, out var parentRef) ? parentRef : d.ReferenceTo,
-                    fileType = d.FileType != null ? d.FileType.ToString() : null,
-                    supdocType = d.SubDocType,
-                    BoxOn = d.BoxfileNo != null ? d.BoxfileNo : null,
-                    Notice = d.Notes != null ? d.Notes : null,
-                    systemId = d.RefrenceNo != null ? d.RefrenceNo : null,
-                    docsTitle = docTypeNames.ContainsKey(d.DocType) ? docTypeNames[d.DocType] : null, // Add docType name
-
+                    Id = r.Document.Id,
+                    file = r.Document.ImgUrl,
+                    docsNumber = r.Document.DocNo,
+                    docsDate = r.Document.DocDate.HasValue ? r.Document.DocDate.Value : null,
+                    editDate = r.Document.EditDate.HasValue ? r.Document.EditDate.Value : null,
+                    subject = r.Document.Subject,
+                    source = r.Document.DocSource != null ? r.Document.DocSource.ToString() : null,
+                    ReferenceTo = joinedDocs.TryGetValue(r.Document.RefrenceNo, out var parentRef) ? parentRef : r.Document.ReferenceTo,
+                    fileType = r.Document.FileType != null ? r.Document.FileType.ToString() : null,
+                    supdocType = r.Document.SubDocType,
+                    BoxOn = r.Document.BoxfileNo != null ? r.Document.BoxfileNo : null,
+                    Notice = r.Document.Notes != null ? r.Document.Notes : null,
+                    systemId = r.Document.RefrenceNo != null ? r.Document.RefrenceNo : null,
+                    docsTitle = docTypeNames.ContainsKey(r.Document.DocType) ? docTypeNames[r.Document.DocType] : null,
+                    HasJoinedDocs = r.HasJoinedDocs
                 }).ToList();
 
                 if (result == null || result.Count == 0)
@@ -1164,10 +1176,9 @@ namespace Nastya_Archiving_project.Services.search
 
             // Fixed the condition - only filter when CaseNumber is NOT empty
             if (!string.IsNullOrEmpty(req.CaseNumber))
-                query = query.Where(q => q.BreafcaseNo == req.CaseNumber);
+                query = query.Where(q => q.BreafcaseNo != null && q.BreafcaseNo.Contains(req.CaseNumber));
 
-
-            if(!string.IsNullOrEmpty(req.ReferenceNumber))
+            if (!string.IsNullOrEmpty(req.ReferenceNumber))
                 query = query.Where(q => q.ParentRefrenceNO == req.ReferenceNumber || q.ChildRefrenceNo == req.ReferenceNumber);
             if (req.from.HasValue)
                 query = query.Where(d => d.editDate.HasValue && d.editDate.Value >= req.from);

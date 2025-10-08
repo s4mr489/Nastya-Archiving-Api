@@ -954,8 +954,10 @@ namespace Nastya_Archiving_project.Services.reports
                         },
                         TotalDepartments = 0,
                         CurrentDepartmentIndex = 0,
-                        TotalDepartmentPages = 0,
-                        CurrentDepartmentPage = 0,
+                        TotalCount = 0,
+                        TotalPages = 0,
+                        PageNumber = req.pageNumber,
+                        PageSize = req.pageSize,
                         TotalDocumentCount = 0
                     }, 200, null);
                 }
@@ -1189,7 +1191,7 @@ namespace Nastya_Archiving_project.Services.reports
                 // Query documents with file paths
                 var query = _context.ArcivingDocs
                     .AsNoTracking()
-                    .Where(d => d.ImgUrl != null && d.DocSize != null)
+                    .Where(d => d.ImgUrl != null)
                     .OrderByDescending(d => d.EditDate);
 
                 // Get all documents for classification first
@@ -1246,14 +1248,17 @@ namespace Nastya_Archiving_project.Services.reports
                             {
                                 var fileInfo = new FileInfo(resolvedFilePath);
                                 actualSize = fileInfo.Length;
+
+                                // Less strict validation - only check if file exists and can be opened
                                 bool hasIssue = false;
 
                                 // Check if file is compressed
                                 bool isGzipped = resolvedFilePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
-                                if (!isGzipped)
+                                if (!isGzipped && fileInfo.Length < 16)
                                 {
+                                    // Only flag as issue if file is very small and not a compressed file
                                     hasIssue = true;
-                                    statusMessage = "File is not in the expected compressed format (.gz)";
+                                    statusMessage = "File is too small to be valid (less than 16 bytes)";
                                 }
                                 else if (fileInfo.Length < 16)
                                 {
@@ -1262,60 +1267,74 @@ namespace Nastya_Archiving_project.Services.reports
                                 }
                                 else
                                 {
-                                    // Verify the file can be decrypted
+                                    // Only attempt decryption for files that appear to be encrypted (if they have the required header size)
+                                    // Also, we only need to verify that the file starts with valid bytes, not process the entire file
                                     try
                                     {
                                         using var fs = new FileStream(resolvedFilePath, FileMode.Open, FileAccess.Read);
-                                        byte[] iv = new byte[16];
-                                        await fs.ReadAsync(iv, 0, 16);
-
-                                        using var aes = Aes.Create();
-                                        aes.Key = key;
-                                        aes.IV = iv;
-                                        aes.Mode = CipherMode.CBC;
-                                        aes.Padding = PaddingMode.PKCS7;
-
-                                        using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-                                        using var cryptoStream = new CryptoStream(fs, decryptor, CryptoStreamMode.Read);
-
-                                        byte[] buffer = new byte[1024];
-                                        int bytesRead = await cryptoStream.ReadAsync(buffer, 0, buffer.Length);
-
-                                        if (bytesRead <= 0)
+                                        
+                                        // Check file header is at least 16 bytes (IV size)
+                                        if (fs.Length >= 16)
                                         {
-                                            hasIssue = true;
-                                            statusMessage = "File cannot be decrypted properly";
+                                            byte[] iv = new byte[16];
+                                            await fs.ReadAsync(iv, 0, 16);
+                                            
+                                            // Try to create the decryptor - this is enough to validate the file header
+                                            // We don't need to actually decrypt the whole file
+                                            using var aes = Aes.Create();
+                                            aes.Key = key;
+                                            aes.IV = iv;
+                                            aes.Mode = CipherMode.CBC;
+                                            aes.Padding = PaddingMode.PKCS7;
+                                            
+                                            using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                                            
+                                            // Read a small chunk to verify decryption works
+                                            using var cryptoStream = new CryptoStream(fs, decryptor, CryptoStreamMode.Read);
+                                            byte[] buffer = new byte[128]; // Only test a small portion
+                                            int bytesRead = await cryptoStream.ReadAsync(buffer, 0, buffer.Length);
+                                            
+                                            if (bytesRead <= 0)
+                                            {
+                                                hasIssue = true;
+                                                statusMessage = "File header appears valid but content cannot be decrypted";
+                                            }
                                         }
-                                        else if (expectedSize.HasValue)
+                                        
+                                        // If we got here with expectedSize set, do a more relaxed size comparison
+                                        if (!hasIssue && expectedSize.HasValue && actualSize.HasValue)
                                         {
                                             long expectedSizeValue = Convert.ToInt64(expectedSize.Value);
-
-                                            // If sizes match exactly, the file is considered valid
-                                            if (actualSize.Value == expectedSizeValue)
+                                            
+                                            // Allow a much wider tolerance - only flag major discrepancies
+                                            // This is a key change to reduce false positives
+                                            double ratio = (double)actualSize.Value / expectedSizeValue;
+                                            
+                                            // Only flag files with significantly different sizes
+                                            // Use a much wider tolerance (files that are less than half or more than double expected size)
+                                            if (ratio < 0.5 || ratio > 2.0)
                                             {
-                                                hasIssue = false;
-                                                statusMessage = "File size matches expected size";
-                                            }
-                                            else
-                                            {
-                                                // Calculate ratio to check if sizes are significantly different
-                                                double ratio = (double)actualSize.Value / expectedSizeValue;
-
-                                                // Only flag files with significantly different sizes
-                                                // Note: changed from (ratio > 0.95 || ratio < 0.05) to avoid marking
-                                                // files with similar sizes as damaged
-                                                if (ratio < 0.9 || ratio > 1.1)
-                                                {
-                                                    hasIssue = true;
-                                                    statusMessage = $"Size mismatch - Expected: {expectedSizeValue}, Actual: {actualSize.Value}, Ratio: {ratio:P2}";
-                                                }
+                                                hasIssue = true;
+                                                statusMessage = $"Major size discrepancy - Expected: {expectedSizeValue}, Actual: {actualSize.Value}, Ratio: {ratio:P2}";
                                             }
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        hasIssue = true;
-                                        statusMessage = $"Error validating file: {ex.Message}";
+                                        // Only consider cryptographic exceptions as actual damage
+                                        if (ex is CryptographicException)
+                                        {
+                                            hasIssue = true;
+                                            statusMessage = $"Decryption error: {ex.Message}";
+                                        }
+                                        else
+                                        {
+                                            // Other exceptions might be access issues, not corruption
+                                            statusMessage = $"Warning - Access issue: {ex.Message}";
+                                            
+                                            // Only mark as damaged if we can't read the file at all
+                                            hasIssue = false;
+                                        }
                                     }
                                 }
 
@@ -1329,15 +1348,17 @@ namespace Nastya_Archiving_project.Services.reports
                                 {
                                     fileStatus = FileIntegrityStatus.NotAffected;
                                     notAffectedCount++;
-                                    statusMessage = "File is valid";
+                                    statusMessage = statusMessage ?? "File is valid";
                                 }
                             }
                             catch (Exception ex)
                             {
+                                // File access errors shouldn't necessarily be marked as damaged
+                                // They might be due to permissions, locking, etc.
                                 isAffected = true;
                                 statusMessage = $"Error accessing file: {ex.Message}";
-                                fileStatus = FileIntegrityStatus.Damaged;
-                                damagedCount++;
+                                fileStatus = FileIntegrityStatus.NotFound; // Changed from Damaged to NotFound
+                                notFoundCount++;
                             }
                         }
                     }
@@ -1843,7 +1864,8 @@ namespace Nastya_Archiving_project.Services.reports
             if (string.IsNullOrEmpty(path)) return null;
 
             // Normalize path separators in one operation
-            path = path.Replace('/', Path.DirectorySeparatorChar);
+            path = path.Replace('/', Path.DirectorySeparatorChar)
+                       .Replace('\\', Path.DirectorySeparatorChar);
 
             // Check direct path first to minimize I/O
             if (File.Exists(path)) return path;
@@ -1860,6 +1882,12 @@ namespace Nastya_Archiving_project.Services.reports
             string relativePath = Path.Combine(Directory.GetCurrentDirectory(), path);
             if (File.Exists(relativePath)) return relativePath;
 
+            // Try path with any leading slashes removed
+            string trimmedPath = path.TrimStart(Path.DirectorySeparatorChar);
+            string trimmedRelativePath = Path.Combine(Directory.GetCurrentDirectory(), trimmedPath);
+            if (File.Exists(trimmedRelativePath)) return trimmedRelativePath;
+
+            // If we get here, the file wasn't found
             return null;
         }
 

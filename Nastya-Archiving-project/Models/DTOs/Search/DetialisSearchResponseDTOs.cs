@@ -15,6 +15,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Search
         public int? supdocType { get; set; }
         public string? ReferenceTo { get; set; }
         public string? BoxOn { get; set; }
+        public bool? HasJoinedDocs { get; set; }
         public string? fileType { get; set; }
         public string? Notice { get; set; }
         public string? docsTitle { get; set; }
