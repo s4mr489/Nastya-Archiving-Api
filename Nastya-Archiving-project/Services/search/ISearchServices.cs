@@ -41,6 +41,7 @@ namespace Nastya_Archiving_project.Services.search
         Task<BaseResponseDTOs> TreeSearch(TreeSearchViewForm req);
         //that implmention for cases Serach that make filter on the realated document 
         Task<BaseResponseDTOs> CasesSearch(CasesSearchViewForm req);
-
+        //that implmention for azber search 
+        Task<BaseResponseDTOs> AzberSearch(string azberNo);
     }
 }

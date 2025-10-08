@@ -5,7 +5,7 @@
         public string? CaseNumber { get; set; }
         public DateTime? from { get; set; }
         public DateTime? to { get; set; }
-
+        public string? ReferenceNumber { get; set; }
         public int pageSize { get; set; } = 15;
         public int pageNumber { get; set; } = 1;
 

@@ -108,5 +108,15 @@ namespace Nastya_Archiving_project.Controllers
                 return Ok(result);
             return BadRequest(result);
         }
+
+
+        [HttpGet("Azber-Search-Docs")]
+        public async Task<IActionResult> AzberSearch([FromQuery] string? azberNo)
+        {
+            var result = await _searchServices.AzberSearch(azberNo);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return BadRequest(result);
+        }
     }
 }

@@ -19,6 +19,7 @@ namespace Nastya_Archiving_project.Models.DTOs.Search.QuikSearch
         public int? supDocsType { get; set; }
         public int? source { get; set; }
         public int? ReferenceTo { get; set; }
+        public string? editor { get; set; }
         public string? relateTo { get; set; }
         public string? wordToSearch { get; set; } 
         public string? boxFile { get; set; }

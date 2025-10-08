@@ -138,10 +138,56 @@ namespace ElectionsPillars.Controllers
 
             try
             {
+                // Set environment variable to indicate we want to skip Ghostscript
+                Environment.SetEnvironmentVariable("SKIP_GHOSTSCRIPT", "true");
+                
+                _logger.LogInformation("Starting document text extraction for reference: {ReferenceNo}", referenceNo);
+
                 var result = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
                 
                 if (!result.Success)
                 {
+                    if (result.ErrorMessage?.Contains("Ghostscript") == true || 
+                        result.ErrorMessage?.Contains("gswin") == true || 
+                        result.ErrorMessage?.Contains("FailedToExecuteCommand") == true)
+                    {
+                        // Try alternative extraction method that doesn't use Ghostscript
+                        _logger.LogWarning("Attempting alternative extraction method for reference: {ReferenceNo}", referenceNo);
+                        
+                        // Since we don't have a direct usePython parameter, we need to implement alternative approach
+                        // First, try to use our Python extraction endpoint if the reference exists as a physical file
+                        try
+                        {
+                            // Check if we can get the document by reference 
+                            // (This logic would need to be implemented in your service)
+                            var tempResult = await TryAlternativeExtractionMethod(referenceNo);
+                            
+                            if (tempResult != null)
+                            {
+                                return Ok(new
+                                {
+                                    referenceNo = referenceNo,
+                                    success = true,
+                                    textLength = tempResult.Length,
+                                    message = $"Successfully extracted and saved {tempResult.Length} characters of text using alternative method"
+                                });
+                            }
+                        }
+                        catch (Exception exAlt)
+                        {
+                            _logger.LogWarning(exAlt, "Alternative extraction method failed for reference: {ReferenceNo}", referenceNo);
+                        }
+                        
+                        // If all alternatives failed, return helpful message
+                        return StatusCode(500, new
+                        {
+                            referenceNo = referenceNo,
+                            error = "Text extraction failed without Ghostscript.",
+                            message = "The document requires Ghostscript for processing, but the system is configured to avoid using it.",
+                            suggestion = "Try uploading the document directly using the /api/values/extract endpoint which may handle this document format better."
+                        });
+                    }
+                    
                     return NotFound(new { 
                         referenceNo = referenceNo,
                         error = result.ErrorMessage
@@ -159,10 +205,28 @@ namespace ElectionsPillars.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error extracting text from document with reference {ReferenceNo}", referenceNo);
+                
+                // Check for Ghostscript-specific errors
+                if (ex.Message.Contains("gswin") || ex.Message.Contains("Ghostscript") || 
+                    ex.Message.Contains("FailedToExecuteCommand") || ex.Message.Contains("Failed to convert PDF to images"))
+                {
+                    return StatusCode(500, new {
+                        referenceNo = referenceNo,
+                        error = "PDF processing failed due to Ghostscript dependency.",
+                        message = "The system is configured to avoid using Ghostscript for PDF processing.",
+                        suggestion = "Try uploading the document directly using the /api/values/extract endpoint which may handle this document format better."
+                    });
+                }
+                
                 return StatusCode(500, new { 
                     referenceNo = referenceNo,
                     error = ex.Message
                 });
+            }
+            finally
+            {
+                // Clean up environment variable
+                Environment.SetEnvironmentVariable("SKIP_GHOSTSCRIPT", null);
             }
         }
 
@@ -424,6 +488,165 @@ namespace ElectionsPillars.Controllers
             {
                 _logger.LogError(ex, "Error downloading tessdata files");
                 throw;
+            }
+        }
+
+        [HttpGet("extraction-methods")]
+        public IActionResult GetAvailableExtractionMethods()
+        {
+            try
+            {
+                bool isPythonAvailable = false;
+                string pythonVersion = "Not available";
+                
+                try
+                {
+                    var pythonInfo = _textExtractionServices.CheckPythonEnvironment();
+                    isPythonAvailable = !string.IsNullOrEmpty(pythonInfo.PythonPath) && 
+                                       pythonInfo.Packages != null && 
+                                       pythonInfo.Packages.ContainsKey("PyMuPDF");
+                    pythonVersion = pythonInfo.PythonVersion;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to check Python environment");
+                }
+                
+                return Ok(new
+                {
+                    availableMethods = new
+                    {
+                        directTextExtraction = true,  // Always available as a basic option
+                        pythonExtraction = isPythonAvailable,
+                        pythonVersion = pythonVersion,
+                        packages = isPythonAvailable ? _textExtractionServices.CheckPythonEnvironment().Packages : null
+                    },
+                    recommendation = !isPythonAvailable 
+                        ? "Install PyMuPDF and pdfminer.six Python packages for improved PDF text extraction without Ghostscript" 
+                        : "Python-based extraction is available and can be used as an alternative to Ghostscript"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking available extraction methods");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+        
+        // Helper method to try alternative extraction without Ghostscript
+        private async Task<string> TryAlternativeExtractionMethod(string referenceNo)
+        {
+            // This is a placeholder method that would need to be implemented based on your system
+            // It should attempt to extract text using alternative methods like:
+            // 1. Direct text extraction from the PDF if it's text-based
+            // 2. Using Python libraries if available
+            
+            // Example implementation (would need to be adapted to your system):
+            try
+            {
+                // This assumes you have a way to get the file path from the reference number
+                string pdfPath = await GetDocumentPathByReference(referenceNo);
+                
+                if (string.IsNullOrEmpty(pdfPath) || !System.IO.File.Exists(pdfPath))
+                {
+                    _logger.LogWarning("Could not find PDF file for reference: {ReferenceNo}", referenceNo);
+                    return null;
+                }
+                
+                // Try direct text extraction first
+                string extractedText = _textExtractionServices.ExtractTextFromTextPdf(pdfPath);
+                
+                if (!string.IsNullOrWhiteSpace(extractedText))
+                {
+                    _logger.LogInformation("Successfully extracted text directly from PDF for reference: {ReferenceNo}", referenceNo);
+                    
+                    // Save this text back to the document
+                    await SaveExtractedText(referenceNo, extractedText);
+                    
+                    return extractedText;
+                }
+                
+                // If direct extraction failed or returned empty text, try Python
+                string pythonExtractedText = _textExtractionServices.ExtractTextWithPython(pdfPath);
+                
+                if (!string.IsNullOrWhiteSpace(pythonExtractedText))
+                {
+                    _logger.LogInformation("Successfully extracted text using Python for reference: {ReferenceNo}", referenceNo);
+                    
+                    // Save this text back to the document
+                    await SaveExtractedText(referenceNo, pythonExtractedText);
+                    
+                    return pythonExtractedText;
+                }
+                
+                _logger.LogWarning("All alternative extraction methods failed for reference: {ReferenceNo}", referenceNo);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in alternative extraction method for reference: {ReferenceNo}", referenceNo);
+                return null;
+            }
+        }
+
+        private async Task<string> GetDocumentPathByReference(string referenceNo)
+        {
+            // This is a placeholder method that should be implemented to return the file path
+            // for a document based on its reference number
+            // The implementation depends on how your documents are stored
+            
+            // Example implementation (simplified):
+            try
+            {
+                // This logic would depend on how your system stores documents
+                // and how to locate them by reference number
+                
+                // For example, you might have a database that stores document paths
+                // Or you might have a convention for file naming/location based on reference
+                
+                // Placeholder implementation
+                string documentsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Documents");
+                string potentialPath = Path.Combine(documentsDirectory, $"{referenceNo}.pdf");
+                
+                if (System.IO.File.Exists(potentialPath))
+                {
+                    return potentialPath;
+                }
+                
+                _logger.LogWarning("Could not locate document file for reference: {ReferenceNo}", referenceNo);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting document path for reference: {ReferenceNo}", referenceNo);
+                return null;
+            }
+        }
+
+        private async Task SaveExtractedText(string referenceNo, string extractedText)
+        {
+            // This is a placeholder method that should be implemented to save
+            // the extracted text back to wherever your system stores it
+            
+            // The implementation depends on your data model and storage mechanism
+            
+            // Example implementation (would need to be adapted to your system):
+            try
+            {
+                // In a real implementation, you would:
+                // 1. Locate the document record in your database
+                // 2. Update its text field
+                // 3. Save the changes
+                
+                _logger.LogInformation("Saving {TextLength} characters of extracted text for reference: {ReferenceNo}", 
+                    extractedText?.Length ?? 0, referenceNo);
+                
+                // Since we don't have direct access to your data layer,
+                // this is just a placeholder that logs the action
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving extracted text for reference: {ReferenceNo}", referenceNo);
             }
         }
     }

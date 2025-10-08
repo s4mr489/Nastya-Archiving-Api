@@ -2,6 +2,7 @@
 using DocumentFormat.OpenXml.Office2010.Excel;
 using DocumentFormat.OpenXml.Wordprocessing;
 using FYP.Extentions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Nastya_Archiving_project.Data;
@@ -186,6 +187,8 @@ namespace Nastya_Archiving_project.Services.search
                 {
                     query = query.Where(d => d.Subject != null && d.Subject.Contains(req.subject));
                 }
+                if(!string.IsNullOrEmpty(req.editor))
+                    query = query.Where(d => d.Editor != null && d.Editor.Contains(req.editor));
                 if (!string.IsNullOrWhiteSpace(req.systemId))
                 {
                     query = query.Where(d => d.RefrenceNo != null && d.RefrenceNo == req.systemId);
@@ -1241,62 +1244,84 @@ namespace Nastya_Archiving_project.Services.search
         }
 
         public async Task<BaseResponseDTOs> CasesSearch(CasesSearchViewForm req)
-{
-    var query = _context.JoinedDocs.AsQueryable();
+        {
+            var query = _context.JoinedDocs.AsQueryable();
 
-    // Fixed the condition - only filter when CaseNumber is NOT empty
-    if (!string.IsNullOrEmpty(req.CaseNumber))
-        query = query.Where(q => q.BreafcaseNo == req.CaseNumber);
-    if (req.from.HasValue)
-        query = query.Where(d => d.editDate.HasValue && d.editDate.Value >= req.from);
-    if (req.to.HasValue)
-        query = query.Where(d => d.editDate.HasValue && d.editDate.Value <= req.to);
+            // Fixed the condition - only filter when CaseNumber is NOT empty
+            if (!string.IsNullOrEmpty(req.CaseNumber))
+                query = query.Where(q => q.BreafcaseNo == req.CaseNumber);
 
-    var pagedList = await PagedList<T_JoinedDoc>.Create(
-        query.OrderBy(d => d.ParentRefrenceNO),
-        req.pageNumber,
-        req.pageSize);
 
-    // Get all referenced documents to fetch their image paths
-    var allRefNos = pagedList.Items
-        .SelectMany(d => new[] { d.ParentRefrenceNO, d.ChildRefrenceNo })
-        .Where(refNo => !string.IsNullOrEmpty(refNo))
-        .Distinct()
-        .ToList();
+            if(!string.IsNullOrEmpty(req.ReferenceNumber))
+                query = query.Where(q => q.ParentRefrenceNO == req.ReferenceNumber || q.ChildRefrenceNo == req.ReferenceNumber);
+            if (req.from.HasValue)
+                query = query.Where(d => d.editDate.HasValue && d.editDate.Value >= req.from);
+            if (req.to.HasValue)
+                query = query.Where(d => d.editDate.HasValue && d.editDate.Value <= req.to);
 
-    // Get document details including image paths
-    var docDetails = await _context.ArcivingDocs
-        .Where(d => allRefNos.Contains(d.RefrenceNo))
-        .Select(d => new { d.RefrenceNo, d.ImgUrl })
-        .ToDictionaryAsync(d => d.RefrenceNo, d => d.ImgUrl);
+            var pagedList = await PagedList<T_JoinedDoc>.Create(
+                query.OrderBy(d => d.ParentRefrenceNO),
+                req.pageNumber,
+                req.pageSize);
 
-    var groupedResult = pagedList.Items
-       .GroupBy(d => d.ParentRefrenceNO)
-       .Select(g => new
-       {
-           ParentRefrenceNO = g.Key,
-           imgUrl = docDetails.TryGetValue(g.Key, out var parentImgUrl) ? parentImgUrl : null,
-           // Include BreafcaseNo at the parent level - using the first item in the group
-           BreafcaseNo = g.FirstOrDefault()?.BreafcaseNo,
-           ChildDocuments = g.Select(j => new
-           {
-               j.ChildRefrenceNo,
-               j.BreafcaseNo,
-               j.editDate,
-               imgUrl = docDetails.TryGetValue(j.ChildRefrenceNo, out var childImgUrl) ? childImgUrl : null
-           }).ToList()
-       })
-       .ToList();
+            // Get all referenced documents to fetch their image paths
+            var allRefNos = pagedList.Items
+                .SelectMany(d => new[] { d.ParentRefrenceNO, d.ChildRefrenceNo })
+                .Where(refNo => !string.IsNullOrEmpty(refNo))
+                .Distinct()
+                .ToList();
 
-    return new BaseResponseDTOs(new
-    {
-        Data = groupedResult,
-        TotalCount = pagedList.TotalCount,
-        TotalPages = pagedList.TotalPages,
-        PageNumber = pagedList.PageNumber,
-        PageSize = pagedList.PageSize
-    }, 200, null);
-}
+            // Get document details including image paths
+            var docDetails = await _context.ArcivingDocs
+                .Where(d => allRefNos.Contains(d.RefrenceNo))
+                .Select(d => new { d.RefrenceNo, d.ImgUrl })
+                .ToDictionaryAsync(d => d.RefrenceNo, d => d.ImgUrl);
 
+            var groupedResult = pagedList.Items
+               .GroupBy(d => d.ParentRefrenceNO)
+               .Select(g => new
+               {
+                   ParentRefrenceNO = g.Key,
+                   imgUrl = docDetails.TryGetValue(g.Key, out var parentImgUrl) ? parentImgUrl : null,
+                   // Include BreafcaseNo at the parent level - using the first item in the group
+                   BreafcaseNo = g.FirstOrDefault()?.BreafcaseNo,
+                   ChildDocuments = g.Select(j => new
+                   {
+                       j.ChildRefrenceNo,
+                       j.BreafcaseNo,
+                       j.editDate,
+                       imgUrl = docDetails.TryGetValue(j.ChildRefrenceNo, out var childImgUrl) ? childImgUrl : null
+                   }).ToList()
+               })
+               .ToList();
+
+            return new BaseResponseDTOs(new
+            {
+                Data = groupedResult,
+                TotalCount = pagedList.TotalCount,
+                TotalPages = pagedList.TotalPages,
+                PageNumber = pagedList.PageNumber,
+                PageSize = pagedList.PageSize
+            }, 200, null);
+        }
+
+
+        public async Task<BaseResponseDTOs> AzberSearch(string azberNo)
+        {
+            if (string.IsNullOrEmpty(azberNo))
+            {
+                var azbers = await _context.JoinedDocs.ToListAsync();
+                if (azbers.Count == 0 || !azbers.Any())
+                    return new BaseResponseDTOs(null, 400, "There is No Azbera Number");
+
+                return new BaseResponseDTOs(azbers, 200, null);
+            }
+
+            var azber = await _context.JoinedDocs.FirstOrDefaultAsync(a => a.BreafcaseNo == azberNo);
+            if (azber == null)
+                return new BaseResponseDTOs(null, 404, $"No case found with Azbera number: {azberNo}");
+
+            return new BaseResponseDTOs(azber, 200, null);
+        }
     }
 }
