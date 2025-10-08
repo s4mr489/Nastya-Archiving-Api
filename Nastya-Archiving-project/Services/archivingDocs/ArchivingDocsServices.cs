@@ -877,5 +877,21 @@ namespace Nastya_Archiving_project.Services.archivingDocs
                 return new BaseResponseDTOs(null, 500, $"An error occurred while retrieving the document: {ex.Message}");
             }
         }
+
+        public async Task<string> GetAzberNo(string referneceNo)
+        {
+            if (string.IsNullOrEmpty(referneceNo))
+                return "404"; // Invalid reference number
+
+            var docs = await _context.JoinedDocs.FirstOrDefaultAsync(d => d.ParentRefrenceNO == referneceNo || d.ChildRefrenceNo == referneceNo);
+            if (docs == null)
+                return "404"; // Document not found
+
+            // Check if the BreafcaseNo is null or empty
+            if (string.IsNullOrEmpty(docs.BreafcaseNo))
+                return "404"; // No Azbera number found
+
+            return docs.BreafcaseNo;
+        }
     }
 }
