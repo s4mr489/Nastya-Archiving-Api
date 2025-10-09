@@ -288,7 +288,7 @@ namespace Nastya_Archiving_project.Services.search
         //            file = d.ImgUrl,
         //            editDate = d.EditDate,
         //            docsNumber = d.DocNo,
-        //            docsDate = d.DocDate.HasValue ? d.DocDate.Value : null,
+        //            docsDate = d.DocDate,
         //            subject = d.Subject,
         //            source = d.DocSource != null ? d.DocSource.ToString() : null,
         //            ReferenceTo = d.ReferenceTo,
@@ -723,269 +723,6 @@ namespace Nastya_Archiving_project.Services.search
             return new BaseResponseDTOs(result, 200);
         }
 
-        public async Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req)
-        {
-            // Get user ID
-            var userIdResult = await _systemInfoServices.GetUserId();
-            if (userIdResult.Id == null)
-                return new BaseResponseDTOs(null, 401, "You must Login"); // Unauthorized
-
-            // Parse the user ID to integer
-            if (!int.TryParse(userIdResult.Id, out int userIdInt))
-                return new BaseResponseDTOs(null, 400, "user Id format is invalid"); // Bad request - invalid user ID format
-
-            // Get user details
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
-            if (user == null)
-                return new BaseResponseDTOs(null, 400, "user Id Not Found"); // User not found
-
-            // Get user permissions
-            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
-            if (userPermissions == null)
-                return new BaseResponseDTOs(null, 400, $"that User don't Have Any Permission"); // No permissions found
-
-            // Check department access permission
-            if (userPermissions.AllowViewTheOther == 0 && req.departId.HasValue && req.departId != user.DepariId)
-            {
-                // If user doesn't have general permission to view other departments,
-                // check if they have specific permission for the requested department
-                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(req.departId ?? 0, userIdInt);
-                if (!hasAccess)
-                    return new BaseResponseDTOs(null, 400, "user don't have permission to view Other Department"); // Forbidden - cannot view other departments
-            }
-
-            var query = _context.ArcivingDocs.AsQueryable();
-
-            // Filter for docs that have ReferenceTo set (not null or empty)
-            query = query.Where(d => !string.IsNullOrEmpty(d.ReferenceTo));
-
-            // Apply all possible filters from QuikeSearchViewForm
-            // Document filters
-            query = query.Where(d => !string.IsNullOrEmpty(d.ReferenceTo));
-
-            // Apply all possible filters from QuikeSearchViewForm
-            // Document filters
-            if (!string.IsNullOrWhiteSpace(req.systemId))
-                query = query.Where(d => d.RefrenceNo != null && d.RefrenceNo.Contains(req.systemId));
-
-            if (!string.IsNullOrWhiteSpace(req.docsNumber))
-            {
-                if (req.exactMatch)
-                    query = query.Where(d => d.DocNo != null && d.DocNo == req.docsNumber);
-                else
-                    query = query.Where(d => d.DocNo != null && d.DocNo.Contains(req.docsNumber));
-            }
-
-            if (!string.IsNullOrWhiteSpace(req.subject))
-                query = query.Where(d => d.Subject != null && d.Subject.Contains(req.subject));
-
-            if (req.docsType.HasValue)
-                query = query.Where(d => d.DocType == req.docsType.Value);
-
-            if (req.supDocsType.HasValue)
-                query = query.Where(d => d.SubDocType.HasValue && d.SubDocType.Value == req.supDocsType.Value);
-
-            if (req.source.HasValue)
-                query = query.Where(d => d.DocSource != null && d.DocSource.Value == req.source.Value);
-
-            // Check for related document references
-            if (!string.IsNullOrEmpty(req.relateTo))
-            {
-                // Look for documents that either:
-                // 1. Have the relateTo value directly in their ReferenceTo field
-                // 2. Have an entry in the JoinedDocs table where this document is the parent
-                var joinedDocRefs = _context.JoinedDocs
-                    .Where(j => j.ParentRefrenceNO == req.relateTo)
-                    .Select(j => j.ChildRefrenceNo)
-                    .ToList();
-
-                if (joinedDocRefs.Any())
-                {
-                    // If we found related documents in JoinedDocs, include documents with matching RefrenceNo
-                    query = query.Where(d =>
-                        (d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo)) ||
-                        joinedDocRefs.Contains(d.RefrenceNo));
-                }
-                else
-                {
-                    // If no joined documents found, just check the ReferenceTo field
-                    query = query.Where(d => d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo));
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(req.wordToSearch))
-                query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
-
-            // Rest of the
-            if (!string.IsNullOrWhiteSpace(req.wordToSearch))
-                query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
-
-            if (!string.IsNullOrWhiteSpace(req.boxFile))
-                query = query.Where(d => d.BoxfileNo != null && d.BoxfileNo.Contains(req.boxFile));
-
-            if (req.fileType.HasValue)
-                query = query.Where(d => d.FileType.HasValue && d.FileType.Value == (int)req.fileType.Value);
-
-            if (req.departId.HasValue)
-                query = query.Where(d => d.DepartId.HasValue && d.DepartId.Value == req.departId.Value);
-
-            // Date filters
-            if (req.docsDate == true)
-            {
-                if (req.from.HasValue)
-                    query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value >= DateOnly.FromDateTime(req.from.Value));
-                if (req.to.HasValue)
-                    query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value <= DateOnly.FromDateTime(req.to.Value));
-            }
-
-            if (req.editDate == true)
-            {
-                if (req.from.HasValue)
-                    query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value >= req.from.Value);
-                if (req.to.HasValue)
-                    query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value <= req.to.Value);
-            }
-
-            // Paging
-            int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
-            int pageSize = req.pageSize > 0 ? req.pageSize : 20;
-
-            // Count total results for pagination info
-            int totalCount = await query.CountAsync();
-            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-            // Get paged results
-            var pagedDocs = await query
-                .OrderByDescending(d => d.Id)
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            // Get document types for names
-            var docTypeIds = pagedDocs.Select(d => d.DocType).Distinct().ToList();
-            var docTypes = await _context.ArcivDocDscrps
-                .Where(dt => docTypeIds.Contains(dt.Id))
-                .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
-
-            // Get reference information from JoinedDocs table
-            var refNos = pagedDocs.Select(d => d.RefrenceNo).ToList();
-            var joinedDocs = await _context.JoinedDocs
-                .Where(j => refNos.Contains(j.ChildRefrenceNo))
-                .ToDictionaryAsync(j => j.ChildRefrenceNo, j => j.ParentRefrenceNO);
-
-            // Collect all parent reference numbers
-            var allParentRefNos = new HashSet<string>();
-
-            foreach (var doc in pagedDocs)
-            {
-                if (joinedDocs.TryGetValue(doc.RefrenceNo, out var parentRef))
-                {
-                    allParentRefNos.Add(parentRef);
-                }
-                else if (!string.IsNullOrEmpty(doc.ReferenceTo))
-                {
-                    allParentRefNos.Add(doc.ReferenceTo);
-                }
-            }
-
-            // Get parent document details
-            var parentDocs = await _context.ArcivingDocs
-                .Where(d => allParentRefNos.Contains(d.RefrenceNo))
-                .ToListAsync();
-
-            // Create a dictionary for quick lookup of parent documents by reference number
-            var parentDocsByRef = parentDocs.ToDictionary(d => d.RefrenceNo, d => d);
-
-            // Get parent document type names
-            var parentDocTypeIds = parentDocs.Select(d => d.DocType).Distinct().ToList();
-            var parentDocTypes = await _context.ArcivDocDscrps
-                .Where(dt => parentDocTypeIds.Contains(dt.Id))
-                .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
-
-            // Prepare the result items with parent reference information
-            var resultItems = pagedDocs.Select(d =>
-            {
-                // Determine parent reference number
-                string parentRefNo = joinedDocs.TryGetValue(d.RefrenceNo, out var joinedParentRef)
-                    ? joinedParentRef
-                    : d.ReferenceTo;
-
-                // Try to get parent document
-                bool hasParentDoc = parentDocsByRef.TryGetValue(parentRefNo, out var parentDoc);
-
-                return new
-                {
-                    d.Id,
-                    d.RefrenceNo,
-                    d.ImgUrl,
-                    d.DocNo,
-                    d.DocDate,
-                    d.DocTarget,
-                    d.DocSource,
-                    d.DocType,
-                    DocTypeName = docTypes.TryGetValue(d.DocType, out var typeName) ? typeName : null,
-                    d.BoxfileNo,
-                    d.Subject,
-                    ParentReferenceNo = parentRefNo,
-                    ParentDocument = hasParentDoc ? new
-                    {
-                        parentDoc.Id,
-                        parentDoc.RefrenceNo,
-                        parentDoc.ImgUrl,
-                        parentDoc.DocNo,
-                        parentDoc.DocDate,
-                        parentDoc.DocTarget,
-                        parentDoc.DocSource,
-                        parentDoc.DocType,
-                        DocTypeName = parentDocTypes.TryGetValue(parentDoc.DocType, out var parentTypeName) ? parentTypeName : null,
-                        parentDoc.BoxfileNo,
-                        parentDoc.Subject
-                    } : null
-                };
-            }).ToList();
-
-            if (resultItems.Count == 0)
-                return new BaseResponseDTOs(null, 404, "No documents found with ReferenceTo matching your criteria.");
-
-            // Group results by parent reference number
-            var groupedResult = resultItems
-                .GroupBy(item => item.ParentReferenceNo)
-                .OrderBy(group => group.Key)
-                .Select(group => new
-                {
-                    ParentReferenceNo = group.Key,
-                    ParentDocument = group.First().ParentDocument, // Include parent document information
-                    Documents = group.Select(doc => new
-                    {
-                        doc.Id,
-                        doc.RefrenceNo,
-                        doc.ImgUrl,
-                        doc.DocNo,
-                        doc.DocDate,
-                        doc.DocTarget,
-                        doc.DocSource,
-                        doc.DocType,
-                        doc.DocTypeName,
-                        doc.BoxfileNo,
-                        doc.Subject
-                    }).ToList()
-                })
-                .ToList();
-
-            return new BaseResponseDTOs(
-                new
-                {
-                    Data = groupedResult,
-                    TotalCount = totalCount,
-                    TotalPages = totalPages,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize
-                },
-                200,
-                null
-            );
-        }
-
         public async Task<BaseResponseDTOs> SearchForJoinedDocs(string systemId)
         {
             var query = _context.JoinedDocs.AsQueryable();
@@ -1046,7 +783,6 @@ namespace Nastya_Archiving_project.Services.search
 
             return new BaseResponseDTOs(result, 200, null);
         }
-
 
         public async Task<BaseResponseDTOs> TreeSearch(TreeSearchViewForm req)
         {
@@ -1231,7 +967,6 @@ namespace Nastya_Archiving_project.Services.search
             }, 200, null);
         }
 
-
         public async Task<BaseResponseDTOs> AzberSearch(string azberNo)
         {
             if (string.IsNullOrEmpty(azberNo))
@@ -1249,5 +984,456 @@ namespace Nastya_Archiving_project.Services.search
 
             return new BaseResponseDTOs(azber, 200, null);
         }
+
+        public async Task<BaseResponseDTOs> SearchForJoinedDocsFilter(QuikeSearchViewForm req)
+        {
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return new BaseResponseDTOs(null, 401, "You must Login"); // Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return new BaseResponseDTOs(null, 400, "user Id format is invalid"); // Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+                return new BaseResponseDTOs(null, 400, "user Id Not Found"); // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return new BaseResponseDTOs(null, 400, $"that User don't Have Any Permission"); // No permissions found
+
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && req.departId.HasValue && req.departId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(req.departId ?? 0, userIdInt);
+                if (!hasAccess)
+                    return new BaseResponseDTOs(null, 400, "user don't have permission to view Other Department"); // Forbidden - cannot view other departments
+            }
+
+            var query = _context.ArcivingDocs.AsQueryable();
+
+            // Filter for docs that have ReferenceTo set (not null or empty)
+            query = query.Where(d => !string.IsNullOrEmpty(d.ReferenceTo));
+
+            // Apply all possible filters from QuikeSearchViewForm
+            // Document filters
+            if (!string.IsNullOrWhiteSpace(req.systemId))
+                query = query.Where(d => d.RefrenceNo != null && d.RefrenceNo.Contains(req.systemId));
+
+            if (!string.IsNullOrWhiteSpace(req.docsNumber))
+            {
+                if (req.exactMatch)
+                    query = query.Where(d => d.DocNo != null && d.DocNo == req.docsNumber);
+                else
+                    query = query.Where(d => d.DocNo != null && d.DocNo.Contains(req.docsNumber));
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.subject))
+                query = query.Where(d => d.Subject != null && d.Subject.Contains(req.subject));
+
+            if (req.docsType.HasValue)
+                query = query.Where(d => d.DocType == req.docsType.Value);
+
+            if (req.supDocsType.HasValue)
+                query = query.Where(d => d.SubDocType.HasValue && d.SubDocType.Value == req.supDocsType.Value);
+
+            if (req.source.HasValue)
+                query = query.Where(d => d.DocSource != null && d.DocSource.Value == req.source.Value);
+
+            // Check for related document references
+            if (!string.IsNullOrEmpty(req.relateTo))
+            {
+                // Look for documents that either:
+                // 1. Have the relateTo value directly in their ReferenceTo field
+                // 2. Have an entry in the JoinedDocs table where this document is the parent
+                var joinedDocRefs = _context.JoinedDocs
+                    .Where(j => j.ParentRefrenceNO == req.relateTo)
+                    .Select(j => j.ChildRefrenceNo)
+                    .ToList();
+
+                if (joinedDocRefs.Any())
+                {
+                    // If we found related documents in JoinedDocs, include documents with matching RefrenceNo
+                    query = query.Where(d =>
+                        (d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo)) ||
+                        joinedDocRefs.Contains(d.RefrenceNo));
+                }
+                else
+                {
+                    // If no joined documents found, just check the ReferenceTo field
+                    query = query.Where(d => d.ReferenceTo != null && d.ReferenceTo.Contains(req.relateTo));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.wordToSearch))
+                query = query.Where(d => d.Notes != null && d.Notes.Contains(req.wordToSearch));
+
+            if (!string.IsNullOrWhiteSpace(req.boxFile))
+                query = query.Where(d => d.BoxfileNo != null && d.BoxfileNo.Contains(req.boxFile));
+
+            if (req.fileType.HasValue)
+                query = query.Where(d => d.FileType.HasValue && d.FileType.Value == (int)req.fileType.Value);
+
+            if (req.departId.HasValue)
+                query = query.Where(d => d.DepartId.HasValue && d.DepartId.Value == req.departId.Value);
+
+            // Date filters
+            if (req.docsDate == true)
+            {
+                if (req.from.HasValue)
+                    query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value >= DateOnly.FromDateTime(req.from.Value));
+                if (req.to.HasValue)
+                    query = query.Where(d => d.DocDate.HasValue && d.DocDate.Value <= DateOnly.FromDateTime(req.to.Value));
+            }
+
+            if (req.editDate == true)
+            {
+                if (req.from.HasValue)
+                    query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value >= req.from.Value);
+                if (req.to.HasValue)
+                    query = query.Where(d => d.EditDate.HasValue && d.EditDate.Value <= req.to.Value);
+            }
+
+            // Paging
+            int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
+            int pageSize = req.pageSize > 0 ? req.pageSize : 20;
+
+            // Count total results for pagination info
+            int totalCount = await query.CountAsync();
+            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            // Get paged results
+            var pagedDocs = await query
+                .OrderByDescending(d => d.Id)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            // Get document types for names
+            var docTypeIds = pagedDocs.Select(d => d.DocType).Distinct().ToList();
+            var docTypes = await _context.ArcivDocDscrps
+                .Where(dt => docTypeIds.Contains(dt.Id))
+                .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
+
+            // Get reference information from JoinedDocs table
+            var refNos = pagedDocs.Select(d => d.RefrenceNo).ToList();
+            var joinedDocs = await _context.JoinedDocs
+                .Where(j => refNos.Contains(j.ChildRefrenceNo))
+                .ToDictionaryAsync(j => j.ChildRefrenceNo, j => j.ParentRefrenceNO);
+
+            // Collect all parent reference numbers
+            var allParentRefNos = new HashSet<string>();
+
+            foreach (var doc in pagedDocs)
+            {
+                if (joinedDocs.TryGetValue(doc.RefrenceNo, out var parentRef))
+                {
+                    allParentRefNos.Add(parentRef);
+                }
+                else if (!string.IsNullOrEmpty(doc.ReferenceTo))
+                {
+                    allParentRefNos.Add(doc.ReferenceTo);
+                }
+            }
+
+            // Get parent document details
+            var parentDocs = await _context.ArcivingDocs
+                .Where(d => allParentRefNos.Contains(d.RefrenceNo))
+                .ToListAsync();
+
+            // Create a dictionary for quick lookup of parent documents by reference number
+            var parentDocsByRef = parentDocs.ToDictionary(d => d.RefrenceNo, d => d);
+
+            // Get parent document type names
+            var parentDocTypeIds = parentDocs.Select(d => d.DocType).Distinct().ToList();
+            var parentDocTypes = await _context.ArcivDocDscrps
+                .Where(dt => parentDocTypeIds.Contains(dt.Id))
+                .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
+
+            // Prepare the result items with parent reference information
+            var resultItems = pagedDocs.Select(d =>
+            {
+                // Determine parent reference number
+                string parentRefNo = joinedDocs.TryGetValue(d.RefrenceNo, out var joinedParentRef)
+                    ? joinedParentRef
+                    : d.ReferenceTo;
+
+                // Try to get parent document
+                bool hasParentDoc = parentDocsByRef.TryGetValue(parentRefNo, out var parentDoc);
+
+                return new
+                {
+                    d.Id,
+                    d.RefrenceNo,
+                    d.ImgUrl,
+                    d.DocNo,
+                    d.DocDate,
+                    d.DocTarget,
+                    d.DocSource,
+                    d.DocType,
+                    DocTypeName = docTypes.TryGetValue(d.DocType, out var typeName) ? typeName : null,
+                    d.BoxfileNo,
+                    d.Subject,
+                    ParentReferenceNo = parentRefNo,
+                    ParentDocument = hasParentDoc ? new
+                    {
+                        parentDoc.Id,
+                        parentDoc.RefrenceNo,
+                        parentDoc.ImgUrl,
+                        parentDoc.DocNo,
+                        parentDoc.DocDate,
+                        parentDoc.DocTarget,
+                        parentDoc.DocSource,
+                        parentDoc.DocType,
+                        DocTypeName = parentDocTypes.TryGetValue(parentDoc.DocType, out var parentTypeName) ? parentTypeName : null,
+                        parentDoc.BoxfileNo,
+                        parentDoc.Subject
+                    } : null
+                };
+            }).ToList();
+
+            if (resultItems.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No documents found with ReferenceTo matching your criteria.");
+
+            // Group results by parent reference number
+            var groupedResult = resultItems
+                .GroupBy(item => item.ParentReferenceNo)
+                .OrderBy(group => group.Key)
+                .Select(group => new
+                {
+                    ParentReferenceNo = group.Key,
+                    ParentDocument = group.First().ParentDocument, // Include parent document information
+                    Documents = group.Select(doc => new
+                    {
+                        doc.Id,
+                        doc.RefrenceNo,
+                        doc.ImgUrl,
+                        doc.DocNo,
+                        doc.DocDate,
+                        doc.DocTarget,
+                        doc.DocSource,
+                        doc.DocType,
+                        doc.DocTypeName,
+                        doc.BoxfileNo,
+                        doc.Subject
+                    }).ToList()
+                })
+                .ToList();
+
+            return new BaseResponseDTOs(
+                new
+                {
+                    Data = groupedResult,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize
+                },
+                200,
+                null
+            );
+        }
+
+        public async Task<BaseResponseDTOs> SearchForAllJoinedDocs(QuikeSearchViewForm req)
+        {
+            // Get user ID
+            var userIdResult = await _systemInfoServices.GetUserId();
+            if (userIdResult.Id == null)
+                return new BaseResponseDTOs(null, 401, "You must Login"); // Unauthorized
+
+            // Parse the user ID to integer
+            if (!int.TryParse(userIdResult.Id, out int userIdInt))
+                return new BaseResponseDTOs(null, 400, "user Id format is invalid"); // Bad request - invalid user ID format
+
+            // Get user details
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userIdInt);
+            if (user == null)
+                return new BaseResponseDTOs(null, 400, "user Id Not Found"); // User not found
+
+            // Get user permissions
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(p => p.UserId == userIdInt);
+            if (userPermissions == null)
+                return new BaseResponseDTOs(null, 400, $"that User don't Have Any Permission"); // No permissions found
+
+            // Check department access permission
+            if (userPermissions.AllowViewTheOther == 0 && req.departId.HasValue && req.departId != user.DepariId)
+            {
+                // If user doesn't have general permission to view other departments,
+                // check if they have specific permission for the requested department
+                bool hasAccess = await _systemInfoServices.CheckUserHaveDepart(req.departId ?? 0, userIdInt);
+                if (!hasAccess)
+                    return new BaseResponseDTOs(null, 400, "user don't have permission to view Other Department"); // Forbidden - cannot view other departments
+            }
+
+            // Start with JoinedDocs query to get all joined documents
+            var joinedDocsQuery = _context.JoinedDocs.AsQueryable();
+
+            // Apply filters to the joined documents based on search criteria
+            if (!string.IsNullOrEmpty(req.relateTo))
+            {
+                joinedDocsQuery = joinedDocsQuery.Where(j => 
+                    j.ParentRefrenceNO == req.relateTo || 
+                    j.ChildRefrenceNo == req.relateTo);
+            }
+
+            // Date filters on joined docs
+            if (req.editDate == true)
+            {
+                if (req.from.HasValue)
+                    joinedDocsQuery = joinedDocsQuery.Where(j => j.editDate.HasValue && j.editDate.Value >= req.from.Value);
+                if (req.to.HasValue)
+                    joinedDocsQuery = joinedDocsQuery.Where(j => j.editDate.HasValue && j.editDate.Value <= req.to.Value);
+            }
+
+            // Apply paging
+            int pageNumber = req.pageNumber > 0 ? req.pageNumber : 1;
+            int pageSize = req.pageSize > 0 ? req.pageSize : 20;
+
+            // Count total results for pagination info
+            int totalCount = await joinedDocsQuery.CountAsync();
+            int totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            // Get paged joined documents
+            var pagedJoinedDocs = await joinedDocsQuery
+                .OrderByDescending(j => j.ParentRefrenceNO)
+                .ThenByDescending(j => j.editDate)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            if (pagedJoinedDocs.Count == 0)
+                return new BaseResponseDTOs(null, 404, "No joined documents found matching your criteria.");
+
+            // Get all child reference numbers to fetch document details
+            var childRefNos = pagedJoinedDocs.Select(j => j.ChildRefrenceNo).Distinct().ToList();
+
+            // Get child document details from ArcivingDocs
+            var childDocs = await _context.ArcivingDocs
+                .Where(d => childRefNos.Contains(d.RefrenceNo))
+                .ToListAsync();
+
+            // Create a dictionary for quick lookup of child documents by reference number
+            var childDocsByRef = childDocs.ToDictionary(d => d.RefrenceNo, d => d);
+
+            // Get document types for names
+            var docTypeIds = childDocs.Select(d => d.DocType).Distinct().ToList();
+            var docTypes = await _context.ArcivDocDscrps
+                .Where(dt => docTypeIds.Contains(dt.Id))
+                .ToDictionaryAsync(dt => dt.Id, dt => dt.Dscrp);
+
+            // Apply additional filters on child documents if needed
+            var filteredJoinedDocs = pagedJoinedDocs.Where(j =>
+            {
+                if (!childDocsByRef.TryGetValue(j.ChildRefrenceNo, out var childDoc))
+                    return false;
+
+                // Apply document-specific filters
+                if (!string.IsNullOrWhiteSpace(req.systemId) && !childDoc.RefrenceNo.Contains(req.systemId))
+                    return false;
+
+                if (!string.IsNullOrWhiteSpace(req.docsNumber))
+                {
+                    if (req.exactMatch && childDoc.DocNo != req.docsNumber)
+                        return false;
+                    else if (!req.exactMatch && (childDoc.DocNo == null || !childDoc.DocNo.Contains(req.docsNumber)))
+                        return false;
+                }
+
+                if (!string.IsNullOrWhiteSpace(req.subject) && 
+                    (childDoc.Subject == null || !childDoc.Subject.Contains(req.subject)))
+                    return false;
+
+                if (req.docsType.HasValue && childDoc.DocType != req.docsType.Value)
+                    return false;
+
+                if (req.supDocsType.HasValue && 
+                    (!childDoc.SubDocType.HasValue || childDoc.SubDocType.Value != req.supDocsType.Value))
+                    return false;
+
+                if (req.source.HasValue && 
+                    (!childDoc.DocSource.HasValue || childDoc.DocSource.Value != req.source.Value))
+                    return false;
+
+                if (!string.IsNullOrWhiteSpace(req.wordToSearch) && 
+                    (childDoc.Notes == null || !childDoc.Notes.Contains(req.wordToSearch)))
+                    return false;
+
+                if (!string.IsNullOrWhiteSpace(req.boxFile) && 
+                    (childDoc.BoxfileNo == null || !childDoc.BoxfileNo.Contains(req.boxFile)))
+                    return false;
+
+                if (req.fileType.HasValue && 
+                    (!childDoc.FileType.HasValue || childDoc.FileType.Value != (int)req.fileType.Value))
+                    return false;
+
+                if (req.departId.HasValue && 
+                    (!childDoc.DepartId.HasValue || childDoc.DepartId.Value != req.departId.Value))
+                    return false;
+
+                // Document date filters
+                if (req.docsDate == true)
+                {
+                    if (req.from.HasValue && 
+                        (!childDoc.DocDate.HasValue || childDoc.DocDate.Value < DateOnly.FromDateTime(req.from.Value)))
+                        return false;
+                    if (req.to.HasValue && 
+                        (!childDoc.DocDate.HasValue || childDoc.DocDate.Value > DateOnly.FromDateTime(req.to.Value)))
+                        return false;
+                }
+
+                return true;
+            }).ToList();
+
+            // Group results by parent reference number
+            var groupedResult = filteredJoinedDocs
+                .GroupBy(j => j.ParentRefrenceNO)
+                .OrderBy(group => group.Key)
+                .Select(group => new
+                {
+                    ParentReferenceNo = group.Key,
+                    BreafcaseNo = group.First().BreafcaseNo, // Include briefcase number from JoinedDocs table
+                    Documents = group.Select(j =>
+                    {
+                        var childDoc = childDocsByRef.TryGetValue(j.ChildRefrenceNo, out var doc) ? doc : null;
+                        return new
+                        {
+                            Id = childDoc?.Id,
+                            RefrenceNo = j.ChildRefrenceNo,
+                            ImgUrl = childDoc?.ImgUrl,
+                            DocNo = childDoc?.DocNo,
+                            DocDate = childDoc?.DocDate,
+                            DocTarget = childDoc?.DocTarget,
+                            DocSource = childDoc?.DocSource,
+                            DocType = childDoc?.DocType,
+                            DocTypeName = childDoc != null && docTypes.TryGetValue(childDoc.DocType, out var typeName) ? typeName : null,
+                            BoxfileNo = childDoc?.BoxfileNo,
+                            Subject = childDoc?.Subject,
+                            EditDate = j.editDate
+                        };
+                    }).ToList()
+                })
+                .ToList();
+
+            return new BaseResponseDTOs(
+                new
+                {
+                    Data = groupedResult,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize
+                },
+                200,
+                null
+            );
+        }
+
+        // ...existing methods...
     }
 }

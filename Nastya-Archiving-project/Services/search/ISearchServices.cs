@@ -43,5 +43,11 @@ namespace Nastya_Archiving_project.Services.search
         Task<BaseResponseDTOs> CasesSearch(CasesSearchViewForm req);
         //that implmention for azber search 
         Task<BaseResponseDTOs> AzberSearch(string azberNo);
+        /// <summary>
+        /// Returns all joined documents with their parent reference numbers and briefcase numbers
+        /// </summary>
+        /// <param name="req">Search parameters</param>
+        /// <returns>BaseResponseDTOs containing all joined documents grouped by parent reference</returns>
+        Task<BaseResponseDTOs> SearchForAllJoinedDocs(QuikeSearchViewForm req);
     }
 }

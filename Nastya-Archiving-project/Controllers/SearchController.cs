@@ -118,5 +118,14 @@ namespace Nastya_Archiving_project.Controllers
                 return Ok(result);
             return BadRequest(result);
         }
+
+        [HttpGet("All-Child-docs")]
+        public async Task<IActionResult> SearchForAllJoinedDocs([FromQuery] QuikeSearchViewForm req)
+        {
+            var result = await _searchServices.SearchForAllJoinedDocs(req);
+            if (result.StatusCode == 200)
+                return Ok(result);
+            return BadRequest(result);
+        }
     }
 }
