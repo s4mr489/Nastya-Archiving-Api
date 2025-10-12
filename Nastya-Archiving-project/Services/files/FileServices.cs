@@ -1559,14 +1559,14 @@ namespace Nastya_Archiving_project.Services.files
             }
         }
 
-        // Update this helper method to use ILimitationServices and check current storage usage
+        // Update this helper method to use ILimitationServices and return TotalStorageMB from license
         private async Task<double> GetLicenseStorageLimitMB()
         {
             try
             {
                 // Use the ILimitationServices to read the encrypted license file
                 var licenseResponse = await _limitationServices.ReadEncryptedTextFile();
-                
+
                 if (licenseResponse.StatusCode != 200 || licenseResponse.Data == null)
                     return 0; // Return 0 if unable to read license
 
@@ -1574,54 +1574,25 @@ namespace Nastya_Archiving_project.Services.files
                 {
                     // Extract the license data from the response
                     dynamic responseData = licenseResponse.Data;
-                    
-                    double maxStorageGB = 0;
-                    double currentStorageMB = 0;
-                    
-                    // Get the maximum storage limit from license
-                    if (responseData.License?.SystemLimits?.MaxStorageGB != null)
-                    {
-                        maxStorageGB = (double)responseData.License.SystemLimits.MaxStorageGB;
-                    }
-                    else if (responseData.Debug?.RawDecryptedData != null)
-                    {
-                        var debugData = responseData.Debug.RawDecryptedData as IDictionary<string, object>;
-                        if (debugData != null && debugData.TryGetValue("NASTYA-ARCHIVING-LICENSE.MaxStorageGB", out object maxStorageValue))
-                        {
-                            if (double.TryParse(maxStorageValue?.ToString(), out double storageGB))
-                            {
-                                maxStorageGB = storageGB;
-                            }
-                        }
-                    }
-                    
-                    // Get the current storage usage from license
+
+                    // Get the TotalStorageMB (current storage) from license
                     if (responseData.License?.SystemLimits?.CurrentStorageMB != null)
                     {
-                        currentStorageMB = (double)responseData.License.SystemLimits.CurrentStorageMB;
+                        double totalStorageMB = (double)responseData.License.SystemLimits.CurrentStorageMB;
+                        return totalStorageMB;
                     }
-                    else if (responseData.Debug?.RawDecryptedData != null)
+
+                    // If not available in structured format, try to get it from debug data
+                    if (responseData.Debug?.RawDecryptedData != null)
                     {
                         var debugData = responseData.Debug.RawDecryptedData as IDictionary<string, object>;
-                        if (debugData != null && debugData.TryGetValue("NASTYA-ARCHIVING-LICENSE.CurrentStorageMB", out object currentStorageValue))
+                        if (debugData != null && debugData.TryGetValue("NASTYA-ARCHIVING-LICENSE.TotalStorageMB", out object totalStorageValue))
                         {
-                            if (double.TryParse(currentStorageValue?.ToString(), out double currentMB))
+                            if (double.TryParse(totalStorageValue?.ToString(), out double totalMB))
                             {
-                                currentStorageMB = currentMB;
+                                return totalMB;
                             }
                         }
-                    }
-                    
-                    if (maxStorageGB > 0)
-                    {
-                        // Convert GB to MB
-                        double maxStorageMB = maxStorageGB * 1024.0;
-                        
-                        // Calculate remaining storage available
-                        double remainingStorageMB = maxStorageMB - currentStorageMB;
-                        
-                        // Return the remaining available storage (cannot be negative)
-                        return Math.Max(0, remainingStorageMB);
                     }
                 }
                 catch (Exception ex)
@@ -1630,8 +1601,8 @@ namespace Nastya_Archiving_project.Services.files
                     Console.WriteLine($"Error parsing license data: {ex.Message}");
                 }
 
-                // Default if parsing fails - return a reasonable default instead of 10 MB
-                return 1024; // Default 1 GB limit (1024 MB) when license data cannot be parsed
+                // Default if parsing fails - return 0 to indicate no available storage
+                return 0;
             }
             catch (Exception ex)
             {
