@@ -65,40 +65,42 @@ namespace Nastya_Archiving_project.Controllers
         }
 
 
-        //that should remove when i done from it because it's danger 
-        [HttpGet("test")]
-        public async Task<IActionResult> Test(
-            )
-        {
-            var users = await _context.Users.ToListAsync();
+        ////that should remove when i done from it because it's danger 
+        //[HttpGet("test")]
+        //public async Task<IActionResult> Test(
+        //    )
+        //{
+        //    var users = await _context.Users.ToListAsync();
 
-            // Create a projection with decrypted password, do not save to DB
-            var result = users.Select(user => new
-            {
-                user.Id,
-                RealName = user.Realname,
-                // Add null checks before decryption
-                DecryptedUserName = user.UserName != null ? _encryptionServices.DecryptString256Bit(user.UserName) : null,
-                DecryptedPassword = user.UserPassword != null ? _encryptionServices.DecryptString256Bit(user.UserPassword) : null,
-                user.GroupId,
-                DecryptedPermtype = user.Permtype != null ? _encryptionServices.DecryptString256Bit(user.Permtype) : null,
-                DecryptedAdminst = user.Adminst != null ? _encryptionServices.DecryptString256Bit(user.Adminst) : null,
-                user.Editor,
-                user.EditDate,
-                user.AccountUnitId,
-                user.GobStep,
-                user.DepariId,
-                user.DevisionId,
-                user.BranchId,
-                user.AsWfuser,
-                user.AsmailCenter,
-                user.JobTitle,
-                user.Stoped
-            }).ToList();
+        //    // Create a projection with decrypted password, do not save to DB
+        //    var result = users.Select(user => new
+        //    {
+        //        user.Id,
+        //        RealName = user.Realname,
+        //        // Add null checks before decryption
+        //        DecryptedUserName = user.UserName != null ? _encryptionServices.DecryptString256Bit(user.UserName) : null,
+        //        DecryptedPassword = user.UserPassword != null ? _encryptionServices.DecryptString256Bit(user.UserPassword) : null,
+        //        user.GroupId,
+        //        DecryptedPermtype = user.Permtype != null ? _encryptionServices.DecryptString256Bit(user.Permtype) : null,
+        //        DecryptedAdminst = user.Adminst != null ? _encryptionServices.DecryptString256Bit(user.Adminst) : null,
+        //        user.Editor,
+        //        user.EditDate,
+        //        user.AccountUnitId,
+        //        user.GobStep,
+        //        user.DepariId,
+        //        user.DevisionId,
+        //        user.BranchId,
+        //        user.AsWfuser,
+        //        user.AsmailCenter,
+        //        user.JobTitle,
+        //        user.Stoped
+        //    }).ToList();
 
-            return Ok(result);
+        //    return Ok(result);
 
-        }
+        //}
+
+
         [HttpGet("ShowRegistered-Users")]
         public async Task<IActionResult> ShowRegisteredUsers()
         {
@@ -118,6 +120,8 @@ namespace Nastya_Archiving_project.Controllers
             return StatusCode(result.StatusCode, result);
 
         }
+
+        [Authorize]
         [HttpPut("change-password")]
         public async Task<IActionResult> ChangeUserPassword([FromBody] ChangePasswordViewFrom pass)
         {
@@ -131,6 +135,8 @@ namespace Nastya_Archiving_project.Controllers
             };
         }
 
+
+        [Authorize]
         [HttpPut("edit-user/{id}")]
         public async Task<IActionResult> EditUser(int id, [FromBody] RegisterViewForm form, [FromQuery] bool isAdmin = false)
         {
@@ -140,6 +146,8 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(user);
         }
 
+
+        [Authorize]
         [HttpGet("GetAllUsers")]
         public async Task<IActionResult> GetAllUsers([FromQuery]string? realName ,[FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
         {
@@ -149,6 +157,8 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(users);
         }
 
+
+        [Authorize]
         [HttpDelete("remove-user/{id}")]
         public async Task<IActionResult> RemoveUser(int id)
         {
@@ -158,6 +168,8 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(new { message = "User removed successfully." });
         }
 
+
+        [Authorize]
         [HttpGet("search-users")]
         public async Task<IActionResult> SearchUsers([FromQuery] string? realName, [FromQuery] int departId = 0, [FromQuery] string? userName = null)
         {
@@ -168,6 +180,7 @@ namespace Nastya_Archiving_project.Controllers
         }
 
 
+        [Authorize]
         [HttpGet("Depart-for-user/{userId}")]
         public async Task<IActionResult> GetDepartForUsers(int userId)
         {
@@ -178,6 +191,8 @@ namespace Nastya_Archiving_project.Controllers
             return Ok(response);
         }
 
+
+        [Authorize]
         [HttpPatch("active-or-deactiv-user/{id}")]
         public async Task<IActionResult> ActiveOrDeActivUser(int id, [FromQuery] bool status)
         {

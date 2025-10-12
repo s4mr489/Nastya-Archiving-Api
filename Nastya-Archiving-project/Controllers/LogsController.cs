@@ -1,9 +1,12 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models.DTOs.Logs;
 using Nastya_Archiving_project.Services.logs;
 
 namespace Nastya_Archiving_project.Controllers
 {
+
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class LogsController : ControllerBase

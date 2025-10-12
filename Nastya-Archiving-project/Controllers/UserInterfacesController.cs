@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Nastya_Archiving_project.Models.DTOs.UserInterface;
 using Nastya_Archiving_project.Services.userInterface;
@@ -7,6 +8,7 @@ namespace Nastya_Archiving_project.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class UserInterfacesController : ControllerBase
     {
         private readonly IUserInterfaceServices _userInterfaceServices;

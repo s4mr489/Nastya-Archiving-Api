@@ -35,7 +35,7 @@ namespace Nastya_Archiving_project.Controllers
         /// <param name="exportDirectory">Directory path where the export files will be stored</param>
         /// <returns>Tuple containing success status, message, file path and file content for direct download</returns>
         [HttpPost("backup-all-databases-TO-Excel")]
-        [Authorize(Roles = "Admin")]
+        [Authorize]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -59,7 +59,7 @@ namespace Nastya_Archiving_project.Controllers
         /// </summary>
         /// <returns>Result of the backup operation with file path</returns>
         [HttpPost("advanced-backup")]
-        [Authorize(Roles = "Admin")]
+        [Authorize]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -82,6 +82,8 @@ namespace Nastya_Archiving_project.Controllers
         /// <param name="sourcePath"></param>
         /// <param name="accountUnit"></param>
         /// <returns></returns>
+        /// 
+        [Authorize]
         [HttpPost("Back-Up-Files-To-Path")]
         public async Task<BaseResponseDTOs> BackUpFiles(int archivePointId , bool allFiles =false)
         {
@@ -89,6 +91,8 @@ namespace Nastya_Archiving_project.Controllers
             return result;
         }
 
+
+        [Authorize]
         [HttpGet("Get-Backup-path")]
         public async Task<IActionResult> GetBackupPath(int departId)
         {
@@ -111,6 +115,8 @@ namespace Nastya_Archiving_project.Controllers
             }
         }
 
+
+        [Authorize]
         [HttpGet("Get-Last-Four-Parttions-For-BackUp")]
         public async Task<IActionResult> BackUpParttions()
         {
@@ -118,6 +124,8 @@ namespace Nastya_Archiving_project.Controllers
             return StatusCode(result.StatusCode , result);
         }
 
+
+        [Authorize]
         [HttpGet("Get-Storage-For-Arcive")]
         public async Task<IActionResult> Storage()
         {

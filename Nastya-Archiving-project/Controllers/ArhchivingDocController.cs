@@ -20,6 +20,7 @@ namespace Nastya_Archiving_project.Controllers
     /// - Managing document relationships (joining, unbinding)
     /// - Handling deleted document restoration
     /// </remarks>
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class ArhchivingDocController : ControllerBase

@@ -1,3 +1,4 @@
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -5,18 +6,19 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nastya_Archiving_project.Models.DTOs.TextExtraction;
 using Nastya_Archiving_project.Services.textExtraction;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace ElectionsPillars.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class ValuesController : ControllerBase
     {
         private readonly ITextExtractionServices _textExtractionServices;
@@ -29,10 +31,10 @@ namespace ElectionsPillars.Controllers
         }
 
         /// <summary>
-        /// ??????? ???? ?? ??????? ???????? ??? ?????? ????? ?? ????? ????????
+        /// استخراج النص من المستند باستخدام رقم المرجع وحفظه في قاعدة البيانات
         /// </summary>
-        /// <param name="referenceNo">??? ?????? ???????</param>
-        /// <returns>????? ????? ??????? ????</returns>
+        /// <param name="referenceNo">رقم المرجع للمستند</param>
+        /// <returns>نتيجة عملية استخراج النص</returns>
         [HttpPost("extract-by-reference")]
         public async Task<IActionResult> ExtractTextByReference([FromQuery] string referenceNo)
         {
@@ -41,7 +43,7 @@ namespace ElectionsPillars.Controllers
                 _logger.LogWarning("No reference number provided for text extraction");
                 return BadRequest(new { 
                     error = "Reference number is required",
-                    message = "??? ????? ??? ?????? ???????",
+                    message = "يجب توفير رقم المرجع للمستند",
                     referenceNo = referenceNo 
                 });
             }
@@ -53,7 +55,7 @@ namespace ElectionsPillars.Controllers
                 // Start timing the extraction process
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
                 
-                // ??????? ???? ?? ??????? ????? ?? ????? ????????
+                // استخراج النص من المستند وحفظه في قاعدة البيانات
                 var result = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
                 
                 stopwatch.Stop();
@@ -64,21 +66,21 @@ namespace ElectionsPillars.Controllers
                         "Text length: {TextLength}, Processing time: {ProcessingTimeMs}ms", 
                         referenceNo, result.TextLength, stopwatch.ElapsedMilliseconds);
                     
-                    // ????? ????? ???? ?????? ????? ??? ??? ?????
+                    // تطبيق تنسيق النص العربي إضافي إذا لزم الأمر
                     string formattedText = result.ExtractedText;
                     string detectedLanguage = "unknown";
                     bool isArabic = false;
                     
                     try
                     {
-                        // ?????? ?? ???? ???? ??????
+                        // التحقق من وجود النص العربي
                         isArabic = ContainsArabicText(formattedText);
                         
                         if (isArabic)
                         {
                             detectedLanguage = "arabic";
                             
-                            // ????? ????? ????? ???? ??????
+                            // تطبيق تنسيق إضافي للنص العربي
                             formattedText = NormalizeArabicText(formattedText);
                             formattedText = CleanAndFormatArabicText(formattedText);
                             
@@ -94,7 +96,7 @@ namespace ElectionsPillars.Controllers
                     
                     return Ok(new { 
                         success = true,
-                        message = "?? ??????? ???? ????? ?????",
+                        message = "تم استخراج النص وحفظه بنجاح",
                         data = new {
                             referenceNo = result.ReferenceNo,
                             extractedText = formattedText,
@@ -115,7 +117,7 @@ namespace ElectionsPillars.Controllers
                     return StatusCode(500, new { 
                         success = false,
                         error = "Text extraction failed",
-                        message = $"??? ?? ??????? ????: {result.ErrorMessage}",
+                        message = $"فشل في استخراج النص: {result.ErrorMessage}",
                         referenceNo = result.ReferenceNo,
                         errorDetails = result.ErrorMessage,
                         processingTimeMs = stopwatch.ElapsedMilliseconds
@@ -126,13 +128,13 @@ namespace ElectionsPillars.Controllers
             {
                 _logger.LogError(ex, "Error during text extraction for document with reference {ReferenceNo}", referenceNo);
                 
-                // ????? ??? ????? ?????? ????? ??????
+                // تحديد نوع الخطأ وإرجاع رسالة مناسبة
                 if (ex.Message.Contains("not found") || ex.Message.Contains("Document with reference"))
                 {
                     return NotFound(new {
                         success = false,
                         error = "Document not found",
-                        message = $"?? ??? ?????? ??? ??????? ???? ??????: {referenceNo}",
+                        message = $"لم يتم العثور على المستند برقم المرجع: {referenceNo}",
                         referenceNo = referenceNo,
                         details = ex.Message
                     });
@@ -143,7 +145,7 @@ namespace ElectionsPillars.Controllers
                     return BadRequest(new {
                         success = false,
                         error = "No file associated with document",
-                        message = $"?? ???? ??? ????? ???????? ???? ??????: {referenceNo}",
+                        message = $"لا يوجد ملف مرتبط بالمستند برقم المرجع: {referenceNo}",
                         referenceNo = referenceNo,
                         details = ex.Message
                     });
@@ -154,18 +156,18 @@ namespace ElectionsPillars.Controllers
                     return StatusCode(500, new {
                         success = false,
                         error = "File decryption failed",
-                        message = $"??? ?? ?? ????? ????? ??????? ???? ??????: {referenceNo}",
+                        message = $"فشل في فك تشفير الملف للمستند برقم المرجع: {referenceNo}",
                         referenceNo = referenceNo,
                         details = ex.Message,
-                        solution = "???? ?? ??? ???? ????? ???????? ???????"
+                        solution = "تأكد من صحة مسار الملف وإعدادات التشفير"
                     });
                 }
                 
-                // ??? ???
+                // خطأ عام
                 return StatusCode(500, new { 
                     success = false,
                     error = "Text extraction error",
-                    message = $"??? ??? ????? ??????? ???? ??????? ???? ??????: {referenceNo}",
+                    message = $"حدث خطأ أثناء استخراج النص للمستند برقم المرجع: {referenceNo}",
                     referenceNo = referenceNo,
                     details = ex.Message,
                     stackTrace = ex.StackTrace
