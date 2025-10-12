@@ -28,6 +28,151 @@ namespace ElectionsPillars.Controllers
             _logger = logger;
         }
 
+        /// <summary>
+        /// ??????? ???? ?? ??????? ???????? ??? ?????? ????? ?? ????? ????????
+        /// </summary>
+        /// <param name="referenceNo">??? ?????? ???????</param>
+        /// <returns>????? ????? ??????? ????</returns>
+        [HttpPost("extract-by-reference")]
+        public async Task<IActionResult> ExtractTextByReference([FromQuery] string referenceNo)
+        {
+            if (string.IsNullOrWhiteSpace(referenceNo))
+            {
+                _logger.LogWarning("No reference number provided for text extraction");
+                return BadRequest(new { 
+                    error = "Reference number is required",
+                    message = "??? ????? ??? ?????? ???????",
+                    referenceNo = referenceNo 
+                });
+            }
+
+            try
+            {
+                _logger.LogInformation("Starting text extraction for document with reference: {ReferenceNo}", referenceNo);
+                
+                // Start timing the extraction process
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                
+                // ??????? ???? ?? ??????? ????? ?? ????? ????????
+                var result = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
+                
+                stopwatch.Stop();
+                
+                if (result.Success)
+                {
+                    _logger.LogInformation("Successfully extracted and saved text for document {ReferenceNo}. " +
+                        "Text length: {TextLength}, Processing time: {ProcessingTimeMs}ms", 
+                        referenceNo, result.TextLength, stopwatch.ElapsedMilliseconds);
+                    
+                    // ????? ????? ???? ?????? ????? ??? ??? ?????
+                    string formattedText = result.ExtractedText;
+                    string detectedLanguage = "unknown";
+                    bool isArabic = false;
+                    
+                    try
+                    {
+                        // ?????? ?? ???? ???? ??????
+                        isArabic = ContainsArabicText(formattedText);
+                        
+                        if (isArabic)
+                        {
+                            detectedLanguage = "arabic";
+                            
+                            // ????? ????? ????? ???? ??????
+                            formattedText = NormalizeArabicText(formattedText);
+                            formattedText = CleanAndFormatArabicText(formattedText);
+                            
+                            _logger.LogDebug("Applied additional Arabic formatting. Final length: {FormattedLength}", 
+                                formattedText?.Length ?? 0);
+                        }
+                    }
+                    catch (Exception formatEx)
+                    {
+                        _logger.LogWarning(formatEx, "Error during additional text formatting for document {ReferenceNo}", referenceNo);
+                        // Continue with original extracted text if formatting fails
+                    }
+                    
+                    return Ok(new { 
+                        success = true,
+                        message = "?? ??????? ???? ????? ?????",
+                        data = new {
+                            referenceNo = result.ReferenceNo,
+                            extractedText = formattedText,
+                            originalTextLength = result.ExtractedText?.Length ?? 0,
+                            formattedTextLength = formattedText?.Length ?? 0,
+                            detectedLanguage = detectedLanguage,
+                            processingTimeMs = stopwatch.ElapsedMilliseconds,
+                            rtl = isArabic,
+                            extractionMethod = "document_reference"
+                        }
+                    });
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to extract text for document {ReferenceNo}: {ErrorMessage}", 
+                        referenceNo, result.ErrorMessage);
+                    
+                    return StatusCode(500, new { 
+                        success = false,
+                        error = "Text extraction failed",
+                        message = $"??? ?? ??????? ????: {result.ErrorMessage}",
+                        referenceNo = result.ReferenceNo,
+                        errorDetails = result.ErrorMessage,
+                        processingTimeMs = stopwatch.ElapsedMilliseconds
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during text extraction for document with reference {ReferenceNo}", referenceNo);
+                
+                // ????? ??? ????? ?????? ????? ??????
+                if (ex.Message.Contains("not found") || ex.Message.Contains("Document with reference"))
+                {
+                    return NotFound(new {
+                        success = false,
+                        error = "Document not found",
+                        message = $"?? ??? ?????? ??? ??????? ???? ??????: {referenceNo}",
+                        referenceNo = referenceNo,
+                        details = ex.Message
+                    });
+                }
+                
+                if (ex.Message.Contains("no file path") || ex.Message.Contains("ImgUrl"))
+                {
+                    return BadRequest(new {
+                        success = false,
+                        error = "No file associated with document",
+                        message = $"?? ???? ??? ????? ???????? ???? ??????: {referenceNo}",
+                        referenceNo = referenceNo,
+                        details = ex.Message
+                    });
+                }
+                
+                if (ex.Message.Contains("decrypt") || ex.Message.Contains("GetDecryptedFileStreamAsync"))
+                {
+                    return StatusCode(500, new {
+                        success = false,
+                        error = "File decryption failed",
+                        message = $"??? ?? ?? ????? ????? ??????? ???? ??????: {referenceNo}",
+                        referenceNo = referenceNo,
+                        details = ex.Message,
+                        solution = "???? ?? ??? ???? ????? ???????? ???????"
+                    });
+                }
+                
+                // ??? ???
+                return StatusCode(500, new { 
+                    success = false,
+                    error = "Text extraction error",
+                    message = $"??? ??? ????? ??????? ???? ??????? ???? ??????: {referenceNo}",
+                    referenceNo = referenceNo,
+                    details = ex.Message,
+                    stackTrace = ex.StackTrace
+                });
+            }
+        }
+
         [HttpPost("extract")]
         public async Task<IActionResult> ExtractArabicText(IFormFile pdfFile)
         {
@@ -156,134 +301,8 @@ namespace ElectionsPillars.Controllers
             }
         }
 
-        [HttpPost("extract-python")]
-        public async Task<IActionResult> ExtractWithPython(IFormFile pdfFile)
-        {
-            if (pdfFile == null || pdfFile.Length == 0)
-                return BadRequest("No file uploaded.");
-
-            try
-            {
-                _logger.LogInformation("Starting PDF extraction with Python for file: {FileName}, Size: {FileSize}", 
-                    pdfFile.FileName, pdfFile.Length);
-                
-                // Start timing the extraction process
-                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                
-                // Extract text using Python
-                var result = await _textExtractionServices.ExtractTextWithPythonAsync(pdfFile);
-                
-                // Check for errors
-                if (!string.IsNullOrEmpty(result.Error))
-                {
-                    _logger.LogError("Python extraction error: {Error}", result.Error);
-                    return StatusCode(500, new { 
-                        error = result.Error,
-                        pythonInfo = result.PythonInfo,
-                        fileName = pdfFile.FileName,
-                        fileSize = pdfFile.Length
-                    });
-                }
-                
-                _logger.LogDebug("Python extraction completed in {ElapsedMs}ms. Text length: {TextLength}, RTL: {IsRtl}", 
-                    stopwatch.ElapsedMilliseconds, result.Text?.Length ?? 0, result.IsRightToLeft);
-                
-                // Apply the same Arabic text formatting for consistency
-                string formattedText = result.Text;
-                string detectedLanguage = "unknown";
-                
-                try
-                {
-                    // Double-check if the text is Arabic, regardless of what the service reported
-                    bool isArabic = result.IsRightToLeft || ContainsArabicText(formattedText);
-                    
-                    if (isArabic)
-                    {
-                        detectedLanguage = "arabic";
-                        stopwatch.Restart();
-                        
-                        // Normalize Arabic text (handle special cases and character variations)
-                        formattedText = NormalizeArabicText(formattedText);
-                        
-                        // Use the same enhanced formatting method
-                        formattedText = CleanAndFormatArabicText(formattedText);
-                        
-                        _logger.LogDebug("Arabic text formatting completed in {ElapsedMs}ms. Formatted length: {FormattedLength}", 
-                            stopwatch.ElapsedMilliseconds, formattedText?.Length ?? 0);
-                    }
-                }
-                catch (ArgumentException ex) when (ex.Message.Contains("same key"))
-                {
-                    _logger.LogError(ex, "Dictionary key conflict while processing text. Key: {Key}", 
-                        ex.Message.Contains("Key:") ? ex.Message.Substring(ex.Message.IndexOf("Key:")) : "unknown");
-                    
-                    // Return the original text without formatting to avoid the error
-                    formattedText = result.Text;
-                    detectedLanguage = result.IsRightToLeft ? "arabic (unformatted)" : "unknown";
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error during text formatting");
-                    // Return the original text without formatting
-                    formattedText = result.Text;
-                    detectedLanguage = "unknown (formatting error)";
-                }
-                
-                stopwatch.Stop();
-
-                return Ok(new
-                {
-                    text = formattedText,
-                    rtl = result.IsRightToLeft,
-                    source = result.Source,
-                    textLength = result.TextLength,
-                    pythonInfo = result.PythonInfo,
-                    originalLength = result.Text?.Length ?? 0,
-                    formattedLength = formattedText?.Length ?? 0,
-                    detectedLanguage = detectedLanguage,
-                    processingTimeMs = stopwatch.ElapsedMilliseconds,
-                    fileName = pdfFile.FileName,
-                    fileSize = pdfFile.Length
-                });
-            }
-            catch (ArgumentException ex) when (ex.Message.Contains("same key"))
-            {
-                _logger.LogError(ex, "Dictionary key error with file: {FileName}. Error: {Error}", 
-                    pdfFile.FileName, ex.Message);
-                
-                return StatusCode(500, new { 
-                    error = "Text extraction error - duplicate dictionary key",
-                    message = ex.Message,
-                    fileName = pdfFile.FileName,
-                    fileSize = pdfFile.Length,
-                    solution = "Please try again with a different PDF file or contact support."
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in ExtractWithPython: {FileName}", pdfFile.FileName);
-                
-                // Check for Python-specific errors
-                if (ex.Message.Contains("Python") || ex.Message.Contains("python"))
-                {
-                    return StatusCode(500, new { 
-                        error = "Python environment error",
-                        message = "The Python environment is not properly configured for PDF extraction.",
-                        details = ex.Message,
-                        fileName = pdfFile.FileName,
-                        solution = "Please check the Python installation and required packages."
-                    });
-                }
-                
-                return StatusCode(500, new { 
-                    error = "Text extraction failed",
-                    message = ex.Message,
-                    fileName = pdfFile.FileName,
-                    fileSize = pdfFile.Length
-                });
-            }
-        }
         
+
         [HttpGet("python-check")]
         public async Task<IActionResult> CheckPythonEnvironment()
         {
@@ -505,334 +524,6 @@ namespace ElectionsPillars.Controllers
             }
         }
 
-        [HttpPost("extract-document/{referenceNo}")]
-        public async Task<IActionResult> ExtractDocumentText(string referenceNo)
-        {
-            if (string.IsNullOrEmpty(referenceNo))
-                return BadRequest("Reference number is required.");
-
-            try
-            {
-                _logger.LogInformation("Starting document text extraction for reference: {ReferenceNo}", referenceNo);
-                
-                // Start timing the operation for performance measurement
-                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                
-                // Find the document path
-                string pdfPath = GetDocumentPath(referenceNo);
-                if (string.IsNullOrEmpty(pdfPath) || !System.IO.File.Exists(pdfPath))
-                {
-                    return NotFound(new { 
-                        referenceNo = referenceNo,
-                        error = "Document file not found."
-                    });
-                }
-
-                // Create a file stream to read the document
-                using (var fileStream = new FileStream(pdfPath, FileMode.Open, FileAccess.Read))
-                {
-                    // Create an IFormFile from the file stream to use the same extraction approach as ExtractArabicText
-                    var fileName = Path.GetFileName(pdfPath);
-                    var formFile = new FormFile(fileStream, 0, fileStream.Length, null, fileName)
-                    {
-                        Headers = new HeaderDictionary(),
-                        ContentType = "application/pdf"
-                    };
-                    
-                    _logger.LogInformation("Extracting text from document: {FileName}, Size: {FileSize}", 
-                        fileName, formFile.Length);
-
-                    // Extract text using the same method as ExtractArabicText
-                    var result = await _textExtractionServices.ExtractTextFromPdfAsync(formFile);
-                    
-                    // Log initial extraction result
-                    _logger.LogDebug("Raw extraction completed in {ElapsedMs}ms. Text length: {TextLength}, RTL: {IsRtl}", 
-                        stopwatch.ElapsedMilliseconds, result.Text?.Length ?? 0, result.IsRightToLeft);
-                    
-                    // Format the Arabic text properly
-                    string formattedText = result.Text;
-                    string detectedLanguage = "unknown";
-                    
-                    try
-                    {
-                        // Double-check if the text is Arabic, regardless of what the service reported
-                        bool isArabic = result.IsRightToLeft || ContainsArabicText(formattedText);
-                        
-                        // Apply Arabic text processing if needed
-                        if (isArabic)
-                        {
-                            detectedLanguage = "arabic";
-                            stopwatch.Restart();
-                            
-                            // Normalize Arabic text (handle special cases and character variations)
-                            formattedText = NormalizeArabicText(formattedText);
-                            
-                            // Apply enhanced Arabic text formatting 
-                            formattedText = CleanAndFormatArabicText(formattedText);
-                            
-                            _logger.LogDebug("Arabic text formatting completed in {ElapsedMs}ms. Formatted length: {FormattedLength}", 
-                                stopwatch.ElapsedMilliseconds, formattedText?.Length ?? 0);
-                        }
-                    }
-                    catch (ArgumentException ex) when (ex.Message.Contains("same key"))
-                    {
-                        _logger.LogError(ex, "Dictionary key conflict while processing text. Key: {Key}", 
-                            ex.Message.Contains("Key:") ? ex.Message.Substring(ex.Message.IndexOf("Key:")) : "unknown");
-                        
-                        // Return the original text without formatting to avoid the error
-                        formattedText = result.Text;
-                        detectedLanguage = result.IsRightToLeft ? "arabic (unformatted)" : "unknown";
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error during text formatting");
-                        // Return the original text without formatting
-                        formattedText = result.Text;
-                        detectedLanguage = "unknown (formatting error)";
-                    }
-                    
-                    // Here you would save the extracted text back to your document storage
-                    // This would be implementation-specific based on your data storage approach
-                    
-                    stopwatch.Stop();
-
-                    // Return comprehensive result with timing information
-                    return Ok(new 
-                    { 
-                        referenceNo = referenceNo,
-                        success = true,
-                        text = formattedText, 
-                        rtl = result.IsRightToLeft,
-                        originalLength = result.Text?.Length ?? 0,
-                        formattedLength = formattedText?.Length ?? 0,
-                        source = result.Source,
-                        detectedLanguage = detectedLanguage,
-                        processingTimeMs = stopwatch.ElapsedMilliseconds,
-                        fileName = fileName,
-                        fileSize = formFile.Length
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error extracting text from document with reference {ReferenceNo}", referenceNo);
-                
-                // Check for Ghostscript-specific errors
-                if (ex.Message.Contains("gswin") || ex.Message.Contains("Ghostscript") || 
-                    ex.Message.Contains("FailedToExecuteCommand") || ex.Message.Contains("Failed to convert PDF to images"))
-                {
-                    return StatusCode(500, new {
-                        referenceNo = referenceNo,
-                        error = "PDF processing failed due to Ghostscript dependency.",
-                        message = "The system is configured to avoid using Ghostscript for PDF processing.",
-                        suggestion = "Try alternative extraction methods."
-                    });
-                }
-                
-                // Check for file format errors
-                if (ex.Message.Contains("not a PDF") || ex.Message.Contains("invalid PDF"))
-                {
-                    return BadRequest(new {
-                        error = "Invalid PDF file format",
-                        message = "The document appears not to be a valid PDF document.",
-                        details = ex.Message,
-                        referenceNo = referenceNo
-                    });
-                }
-                
-                return StatusCode(500, new { 
-                    referenceNo = referenceNo,
-                    error = ex.Message
-                });
-            }
-        }
-
-        [HttpPost("extract-and-save/{referenceNo}")]
-        public async Task<IActionResult> ExtractAndSaveDocumentText(string referenceNo)
-        {
-            if (string.IsNullOrEmpty(referenceNo))
-                return BadRequest("Reference number is required.");
-            
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-            try
-            {
-                _logger.LogInformation("Starting text extraction and saving for document with reference: {ReferenceNo}", referenceNo);
-                
-                // First try to get the document path to check if it exists
-                string docPath = GetDocumentPath(referenceNo);
-                string extractedText = null;
-                
-                // If document exists as a file, try to extract with Python method first (better for Arabic)
-                if (!string.IsNullOrEmpty(docPath) && System.IO.File.Exists(docPath))
-                {
-                    try
-                    {
-                        _logger.LogInformation("Attempting extraction with Python for document: {ReferenceNo}", referenceNo);
-                        
-                        // Set an environment variable to indicate preference for Python extraction
-                        Environment.SetEnvironmentVariable("PREFER_PYTHON_EXTRACTION", "true");
-                        
-                        // Extract using Python method which typically handles Arabic better
-                        extractedText = _textExtractionServices.ExtractTextWithPython(docPath);
-                        
-                        if (!string.IsNullOrEmpty(extractedText))
-                        {
-                            _logger.LogInformation("Successfully extracted {Length} characters using Python method", extractedText.Length);
-                            
-                            // Apply enhanced Arabic text processing
-                            string processedText = EnhancedProcessArabicText(extractedText);
-                            
-                            // Use the service to save the processed text
-                            var pythonResult = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
-                            
-                            if (pythonResult.Success)
-                            {
-                                stopwatch.Stop();
-                                return Ok(new
-                                {
-                                    referenceNo = referenceNo,
-                                    success = true,
-                                    textLength = processedText.Length,
-                                    processingTimeMs = stopwatch.ElapsedMilliseconds,
-                                    extractionMethod = "python",
-                                    message = $"Successfully extracted and saved {processedText.Length} characters of text using Python extraction method"
-                                });
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Python extraction method failed for {ReferenceNo}, falling back to standard method", referenceNo);
-                        extractedText = null; // Reset to try standard method
-                    }
-                    finally
-                    {
-                        Environment.SetEnvironmentVariable("PREFER_PYTHON_EXTRACTION", null);
-                    }
-                }
-                
-                // Set environment variable to try skipping Ghostscript which can cause issues with Arabic
-                Environment.SetEnvironmentVariable("SKIP_GHOSTSCRIPT", "true");
-                
-                try
-                {
-                    // Use the standard extraction method as fallback
-                    var result = await _textExtractionServices.ExtractAndSaveDocumentTextByReferenceAsync(referenceNo);
-                    
-                    if (!result.Success)
-                    {
-                        return NotFound(new
-                        {
-                            referenceNo = referenceNo,
-                            error = result.ErrorMessage,
-                            message = "Failed to extract text from the document."
-                        });
-                    }
-                    
-                    // Process the extracted text for better Arabic quality
-                    if (!string.IsNullOrEmpty(result.ExtractedText))
-                    {
-                        // Apply enhanced Arabic text processing to fix common issues
-                        string processedText = EnhancedProcessArabicText(result.ExtractedText);
-                        
-                        // Here you would ideally update the saved text with the better-formatted version
-                        // Since we don't have direct access to update the text, we'll return the improved version
-                        
-                        stopwatch.Stop();
-                        return Ok(new
-                        {
-                            referenceNo = result.ReferenceNo,
-                            success = result.Success,
-                            textLength = processedText.Length,
-                            processingTimeMs = stopwatch.ElapsedMilliseconds,
-                            extractionMethod = "standard",
-                            message = $"Successfully extracted and saved {result.TextLength} characters of text."
-                        });
-                    }
-                    
-                    stopwatch.Stop();
-                    return Ok(new
-                    {
-                        referenceNo = result.ReferenceNo,
-                        success = result.Success,
-                        textLength = result.TextLength,
-                        processingTimeMs = stopwatch.ElapsedMilliseconds,
-                        message = $"Successfully extracted and saved {result.TextLength} characters of text."
-                    });
-                }
-                finally
-                {
-                    // Clean up environment variable
-                    Environment.SetEnvironmentVariable("SKIP_GHOSTSCRIPT", null);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error extracting and saving text for document with reference {ReferenceNo}", referenceNo);
-                
-                // Check for Ghostscript-specific errors
-                if (ex.Message.Contains("gswin") || ex.Message.Contains("Ghostscript") || 
-                    ex.Message.Contains("FailedToExecuteCommand") || ex.Message.Contains("Failed to convert PDF to images"))
-                {
-                    return StatusCode(500, new
-                    {
-                        referenceNo = referenceNo,
-                        error = "PDF processing failed due to Ghostscript dependency.",
-                        message = "The system is configured to avoid using Ghostscript for PDF processing.",
-                        suggestion = "Try uploading the document directly using the /api/values/extract endpoint which may handle this document format better."
-                    });
-                }
-                
-                return StatusCode(500, new
-                {
-                    referenceNo = referenceNo,
-                    error = ex.Message
-                });
-            }
-        }
-
-        /// <summary>
-        /// Helper method to find document paths
-        /// </summary>
-        /// <param name="referenceNo">The document reference number</param>
-        /// <returns>The path to the document or null if not found</returns>
-        private string GetDocumentPath(string referenceNo)
-        {
-            try
-            {
-                string baseDocumentPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Documents");
-                
-                // You might need to adjust this pattern based on how you organize files
-                string[] possiblePaths = {
-                    Path.Combine(baseDocumentPath, $"{referenceNo}.pdf"),
-                    Path.Combine(baseDocumentPath, referenceNo, "document.pdf"),
-                    Path.Combine(baseDocumentPath, $"{referenceNo}", $"{referenceNo}.pdf")
-                };
-                
-                // Handle potential short referenceNo values
-                if (referenceNo.Length >= 2)
-                {
-                    var additionalPath = Path.Combine(baseDocumentPath, referenceNo.Substring(0, 2), $"{referenceNo}.pdf");
-                    possiblePaths = possiblePaths.Append(additionalPath).ToArray();
-                }
-                
-                foreach (var path in possiblePaths)
-                {
-                    if (System.IO.File.Exists(path))
-                    {
-                        return path;
-                    }
-                }
-                
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error finding document path for reference: {ReferenceNo}", referenceNo);
-                return null;
-            }
-        }
 
         /// <summary>
         /// Checks if text contains Arabic characters
@@ -1052,212 +743,6 @@ namespace ElectionsPillars.Controllers
         private bool IsWhitespace(string text)
         {
             return string.IsNullOrEmpty(text) || text.All(char.IsWhiteSpace);
-        }
-
-        /// <summary>
-        /// Enhanced processing for Arabic text that fixes common extraction issues
-        /// </summary>
-        /// <param name="text">Raw extracted Arabic text</param>
-        /// <returns>Properly formatted Arabic text</returns>
-        private string EnhancedProcessArabicText(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return text;
-                
-            try
-            {
-                _logger.LogDebug("Starting enhanced Arabic text processing");
-                
-                // Step 1: Fix character spacing issues (most common problem in extracted Arabic text)
-                // Remove spaces between Arabic characters that shouldn't be separated
-                text = FixArabicCharacterSpacing(text);
-                
-                // Step 2: Add proper right-to-left mark for correct display
-                const char RLM = '\u200F'; // Unicode RIGHT-TO-LEFT MARK
-                
-                if (!text.StartsWith(RLM.ToString()))
-                {
-                    text = RLM + text;
-                }
-                
-                // Step 3: Remove control characters and other problematic invisible characters
-                text = Regex.Replace(text, @"[\p{Cc}\p{Cf}&&[^\u200F\r\n\t]]", "");
-                
-                // Step 4: Normalize and clean Arabic text
-                text = NormalizeArabicText(text);
-                
-                // Step 5: Fix common formatting issues with Arabic text
-                text = FixArabicFormatting(text);
-                
-                _logger.LogDebug("Enhanced Arabic text processing completed");
-                return text;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in EnhancedProcessArabicText: {ErrorMessage}", ex.Message);
-                return text; // Return original text if processing fails
-            }
-        }
-
-        /// <summary>
-        /// Fixes the common issue of spaces being incorrectly inserted between Arabic characters
-        /// during text extraction from PDFs
-        /// </summary>
-        private string FixArabicCharacterSpacing(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return text;
-            
-            try
-            {
-                // This pattern matches Arabic letters separated by spaces
-                // and joins them back together
-                StringBuilder result = new StringBuilder();
-                bool inArabicSequence = false;
-                bool previousWasSpace = false;
-                
-                for (int i = 0; i < text.Length; i++)
-                {
-                    char currentChar = text[i];
-                    bool isArabic = IsArabicCharacter(currentChar);
-                    
-                    if (isArabic)
-                    {
-                        // If we're in an Arabic sequence and the previous character was a space,
-                        // we ignore the space because it was likely incorrectly inserted during extraction
-                        if (inArabicSequence && previousWasSpace)
-                        {
-                            // Replace the last space with nothing (remove it)
-                            result.Remove(result.Length - 1, 1);
-                        }
-                        
-                        result.Append(currentChar);
-                        inArabicSequence = true;
-                        previousWasSpace = false;
-                    }
-                    else if (currentChar == ' ' || currentChar == '\t' || currentChar == '\u00A0')
-                    {
-                        // Only keep meaningful spaces (not between Arabic characters)
-                        result.Append(currentChar);
-                        previousWasSpace = true;
-                    }
-                    else
-                    {
-                        // For non-Arabic, non-space characters
-                        result.Append(currentChar);
-                        inArabicSequence = false;
-                        previousWasSpace = false;
-                    }
-                }
-                
-                // After joining characters, normalize line breaks
-                string processed = result.ToString();
-                processed = processed.Replace("\r\n", "\n").Replace("\r", "\n");
-                
-                // Replace multiple spaces with a single space
-                processed = Regex.Replace(processed, @"\s+", " ");
-                
-                return processed;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fixing Arabic character spacing");
-                return text;
-            }
-        }
-
-        /// <summary>
-        /// Fixes common formatting issues with Arabic text
-        /// </summary>
-        private string FixArabicFormatting(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return text;
-            
-            try
-            {
-                // Step 1: Ensure proper RTL direction for paragraphs
-                var paragraphs = text.Split('\n');
-                
-                for (int i = 0; i < paragraphs.Length; i++)
-                {
-                    if (!string.IsNullOrWhiteSpace(paragraphs[i]) && ContainsArabicText(paragraphs[i]))
-                    {
-                        const char RLM = '\u200F';
-                        
-                        // Add RTL mark at start of paragraph if not present
-                        if (!paragraphs[i].StartsWith(RLM.ToString()))
-                        {
-                            paragraphs[i] = RLM + paragraphs[i];
-                        }
-                        
-                        // Fix common punctuation issues
-                        paragraphs[i] = FixArabicPunctuation(paragraphs[i]);
-                    }
-                }
-                
-                // Rejoin paragraphs with proper line breaks
-                text = string.Join(Environment.NewLine, paragraphs);
-                
-                // Fix numbers that might be reversed
-                text = FixArabicNumbers(text);
-                
-                return text;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fixing Arabic formatting");
-                return text;
-            }
-        }
-
-        /// <summary>
-        /// Fixes Arabic numbers that may be reversed or incorrectly formatted
-        /// </summary>
-        private string FixArabicNumbers(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return text;
-            
-            try
-            {
-                // Replace Arabic numerals with Western numerals for consistency
-                var arabicToWesternMap = new Dictionary<char, char>
-                {
-                    {'?', '0'},
-                    {'?', '1'},
-                    {'?', '2'},
-                    {'?', '3'},
-                    {'?', '4'},
-                    {'?', '5'},
-                    {'?', '6'},
-                    {'?', '7'},
-                    {'?', '8'},
-                    {'?', '9'}
-                };
-                
-                foreach (var kvp in arabicToWesternMap)
-                {
-                    text = text.Replace(kvp.Key, kvp.Value);
-                }
-                
-                // Fix reversed number sequences
-                // This regex finds numbers surrounded by Arabic text and ensures they're in the correct order
-                text = Regex.Replace(text, @"(?<=[\u0600-\u06FF])\d+(?=[\u0600-\u06FF])", match => 
-                {
-                    char[] numChars = match.Value.ToCharArray();
-                    // Numbers in RTL context need special handling - we preserve their left-to-right order
-                    // but ensure they display correctly within Arabic text
-                    return new string(numChars);
-                });
-                
-                return text;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fixing Arabic numbers");
-                return text;
-            }
         }
     }
 }

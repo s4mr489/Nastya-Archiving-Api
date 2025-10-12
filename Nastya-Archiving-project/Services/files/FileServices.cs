@@ -7,6 +7,7 @@ using Nastya_Archiving_project.Data;
 using Nastya_Archiving_project.Models.DTOs.file;
 using Nastya_Archiving_project.Services.encrpytion;
 using Nastya_Archiving_project.Services.SystemInfo;
+using Nastya_Archiving_project.Services.Limitation;
 using PuppeteerSharp;
 using System.Buffers;
 using System.IO.Compression;
@@ -24,17 +25,21 @@ namespace Nastya_Archiving_project.Services.files
         private readonly IConfiguration _configuration;
         private readonly IEncryptionServices _encryptionServices;
         private readonly ISystemInfoServices _systemInfoServices;
+        private readonly ILimitationServices _limitationServices;
+        
         public FileServices(AppDbContext context,
                             IHttpContextAccessor httpcontext,
                             ISystemInfoServices systeminfo,
                             IConfiguration configuration,
-                            IEncryptionServices encryptionServices) : base(null, context)
+                            IEncryptionServices encryptionServices,
+                            ILimitationServices limitationServices) : base(null, context)
         {
             _context = context;
             _httpContext = httpcontext;
             _systemInfo = systeminfo;
             _configuration = configuration;
             _encryptionServices = encryptionServices;
+            _limitationServices = limitationServices;
         }
 
         //upload single pdf file and encrypt it using AES encryption
@@ -53,13 +58,13 @@ namespace Nastya_Archiving_project.Services.files
                 return (null, 0, "No file was provided.");
 
             long fileSize = file.Length;
-            var licenseLimit = await GetLicenseStorageLimitMB();
-            if (licenseLimit <= 0)
-                return (null, fileSize, "Unable to determine storage limit from license.");
+            var availableStorageMB = await GetLicenseStorageLimitMB();
+            if (availableStorageMB <= 0)
+                return (null, fileSize, "Unable to determine available storage from license or storage quota exceeded.");
 
             double fileSizeMB = Math.Ceiling(fileSize / (1024.0 * 1024.0));
-            if (fileSizeMB > licenseLimit)
-                return (null, fileSize, $"  حجم الملف المراد رفعه هو : {fileSizeMB} , وهو يتجاوز الحد المسموح به : {licenseLimit}.");
+            if (fileSizeMB > availableStorageMB)
+                return (null, fileSize, $"حجم الملف المراد رفعه هو : {fileSizeMB:N1} ميجابايت، والمساحة المتاحة هي : {availableStorageMB:N1} ميجابايت. لا توجد مساحة كافية لرفع الملف.");
 
             var depr = _context.GpDepartments.FirstOrDefault(d => d.Id == user.DepariId);
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
@@ -332,17 +337,17 @@ namespace Nastya_Archiving_project.Services.files
                     return (null, $"File '{file.FileName}' is not a PDF document.");
             }
 
-            // Check file size against license limits
-            var licenseLimit = await GetLicenseStorageLimitMB();
-            if (licenseLimit <= 0)
-                return (null, "Unable to determine storage limit from license.");
+            // Check file size against available storage
+            var availableStorageMB = await GetLicenseStorageLimitMB();
+            if (availableStorageMB <= 0)
+                return (null, "Unable to determine available storage from license or storage quota exceeded.");
 
             // Calculate total size of uploaded files
             long totalUploadedSize = files.Sum(f => f.Length);
             double totalUploadedSizeMB = Math.Ceiling(totalUploadedSize / (1024.0 * 1024.0));
 
-            if (totalUploadedSizeMB > licenseLimit)
-                return (null, $"Total file size ({totalUploadedSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+            if (totalUploadedSizeMB > availableStorageMB)
+                return (null, $"Total file size ({totalUploadedSizeMB:N1} MB) exceeds the available storage of {availableStorageMB:N1} MB.");
 
             // Create unique temp file paths with clear naming
             var tempId = Guid.NewGuid().ToString("N");
@@ -369,8 +374,8 @@ namespace Nastya_Archiving_project.Services.files
 
                     // Estimate the final size (sum of all files with some overhead)
                     double estimatedFinalSizeMB = originalFileSizeMB + totalUploadedSizeMB;
-                    if (estimatedFinalSizeMB > licenseLimit)
-                        return (null, $"Estimated size of merged file ({estimatedFinalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                    if (estimatedFinalSizeMB > availableStorageMB)
+                        return (null, $"Estimated size of merged file ({estimatedFinalSizeMB:N1} MB) exceeds the available storage of {availableStorageMB:N1} MB.");
                 }
 
                 bool isCompressed = originalPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
@@ -433,8 +438,8 @@ namespace Nastya_Archiving_project.Services.files
                 // Check size of merged file
                 var mergedFileInfo = new FileInfo(mergedPdfPath);
                 double mergedFileSizeMB = Math.Ceiling(mergedFileInfo.Length / (1024.0 * 1024.0));
-                if (mergedFileSizeMB > licenseLimit)
-                    return (null, $"Merged file size ({mergedFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                if (mergedFileSizeMB > availableStorageMB)
+                    return (null, $"Merged file size ({mergedFileSizeMB:N1} MB) exceeds the available storage of {availableStorageMB:N1} MB.");
 
                 // 6. Read encryption keys
                 byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"]);
@@ -772,10 +777,10 @@ namespace Nastya_Archiving_project.Services.files
             if (files == null || files.Count < 1)
                 return (null, null, "At least one additional file is required.");
 
-            // Get license storage limit in MB
-            var licenseLimit = await GetLicenseStorageLimitMB();
-            if (licenseLimit <= 0)
-                return (null, null, "Unable to determine storage limit from license.");
+            // Get available storage in MB (this considers current usage vs. license limit)
+            var availableStorageMB = await GetLicenseStorageLimitMB();
+            if (availableStorageMB <= 0)
+                return (null, null, "Unable to determine available storage from license or storage quota exceeded.");
 
             // Check original file size and extension
             var originalFileInfo = new FileInfo(originalFilePath);
@@ -783,23 +788,23 @@ namespace Nastya_Archiving_project.Services.files
                 return (null, null, "Original file must be in .docx format.");
 
             double originalFileSizeMB = Math.Ceiling(originalFileInfo.Length / (1024.0 * 1024.0));
-            if (originalFileSizeMB > licenseLimit)
-                return (null, null, $"Original file size ({originalFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+            if (originalFileSizeMB > availableStorageMB)
+                return (null, null, $"Original file size ({originalFileSizeMB:N1} MB) exceeds the available storage of {availableStorageMB:N1} MB.");
 
             // Calculate total size of all files
             long uploadedFilesSize = files.Sum(f => f.Length);
             double totalSizeMB = originalFileSizeMB + Math.Ceiling(uploadedFilesSize / (1024.0 * 1024.0));
 
-            // Check if total size exceeds the license limit
-            if (totalSizeMB > licenseLimit)
-                return (null, null, $"Total file size ({totalSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+            // Check if total size exceeds the available storage
+            if (totalSizeMB > availableStorageMB)
+                return (null, null, $"Total file size ({totalSizeMB:N1} MB) exceeds the available storage of {availableStorageMB:N1} MB.");
 
             // Check individual uploaded files
             foreach (var file in files)
             {
                 double fileSizeMB = Math.Ceiling(file.Length / (1024.0 * 1024.0));
-                if (fileSizeMB > licenseLimit)
-                    return (null, null, $"File '{file.FileName}' size ({fileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                if (fileSizeMB > availableStorageMB)
+                    return (null, null, $"File '{file.FileName}' size ({fileSizeMB:N1} MB) exceeds the available storage of {availableStorageMB:N1} MB.");
 
                 if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".docx")
                     return (null, null, "All files must be .docx format.");
@@ -849,8 +854,8 @@ namespace Nastya_Archiving_project.Services.files
                 // Check the size of the merged file
                 var mergedFileInfo = new FileInfo(outputFile);
                 double mergedFileSizeMB = Math.Ceiling(mergedFileInfo.Length / (1024.0 * 1024.0));
-                if (mergedFileSizeMB > licenseLimit)
-                    return (null, null, $"Merged file size ({mergedFileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                if (mergedFileSizeMB > availableStorageMB)
+                    return (null, null, $"Merged file size ({mergedFileSizeMB:N1} MB) exceeds the available storage of {availableStorageMB:N1} MB.");
 
                 // Return the merged file as bytes and its file name
                 var mergedBytes = await File.ReadAllBytesAsync(outputFile);
@@ -994,25 +999,25 @@ namespace Nastya_Archiving_project.Services.files
             if (user == null)
                 return (null, "User not found.");
 
-            // Get license storage limit in MB
-            var licenseLimit = await GetLicenseStorageLimitMB();
-            if (licenseLimit <= 0)
-                return (null, "Unable to determine storage limit from license.");
+            // Get available storage in MB (this considers current usage vs. license limit)
+            var availableStorageMB = await GetLicenseStorageLimitMB();
+            if (availableStorageMB <= 0)
+                return (null, "Unable to determine available storage from license or storage quota exceeded.");
 
             // Calculate total size of all files
             long totalSize = filesForm.Files.Sum(f => f.Length);
             double totalSizeMB = Math.Ceiling(totalSize / (1024.0 * 1024.0));
 
-            // Check if total size exceeds the license limit
-            if (totalSizeMB > licenseLimit)
-                return (null, $"  حجم الملف المراد رفعه هو : {totalSizeMB} , وهو يتجاوز الحد المسموح به : {licenseLimit}.");
+            // Check if total size exceeds the available storage
+            if (totalSizeMB > availableStorageMB)
+                return (null, $"حجم الملفات المراد رفعها هو : {totalSizeMB:N1} ميجابايت، والمساحة المتاحة هي : {availableStorageMB:N1} ميجابايت. لا توجد مساحة كافية لرفع الملفات.");
 
-            // Also check individual files to make sure none exceed the limit
+            // Also check individual files to make sure none exceed the available storage
             foreach (var file in filesForm.Files)
             {
                 double fileSizeMB = Math.Ceiling(file.Length / (1024.0 * 1024.0));
-                if (fileSizeMB > licenseLimit)
-                    return (null, $"File '{file.FileName}' size ({fileSizeMB:N1} MB) exceeds the license limit of {licenseLimit} MB.");
+                if (fileSizeMB > availableStorageMB)
+                    return (null, $"الملف '{file.FileName}' حجمه ({fileSizeMB:N1} ميجابايت) يتجاوز المساحة المتاحة ({availableStorageMB:N1} ميجابايت).");
             }
 
             var fileList = new List<(string filePath, string fileType, string? notice)>();
@@ -1066,214 +1071,151 @@ namespace Nastya_Archiving_project.Services.files
             return (fileList, null);
         }
 
-        public async Task<(Stream? fileStream, string? contentType, string? error)> GetFileAsync(string relativePath)
+        public async Task<List<string>> UploadFiles(List<IFormFile> files, string subFolder)
         {
-            var userId = (await _systemInfo.GetUserId()).Id;
+            var uploadedFilePaths = new List<string>();
+
+            if (files == null || files.Count == 0)
+                return uploadedFilePaths;
+
+            // Create a unique subfolder for this upload
+            string datePath = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+            string storagePath = Path.Combine("Uploads", subFolder, datePath);
+
+            // For testing - map directly to wwwroot/uploads
+            string wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", storagePath);
+
+            if (!Directory.Exists(wwwrootPath))
+                Directory.CreateDirectory(wwwrootPath);
+
+            foreach (var file in files)
+            {
+                if (file == null || file.Length == 0)
+                    continue;
+
+                // Validate file type and size here if needed
+
+                // Create a safe file name (e.g., using GUID)
+                string safeFileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+
+                // Combine the safe file name with the storage path
+                string filePath = Path.Combine(wwwrootPath, safeFileName);
+
+                using (var fileStream = new FileStream(filePath, FileMode.Create))
+                {
+                    await file.CopyToAsync(fileStream);
+                }
+
+                // Add to the list of uploaded file paths (relative to wwwroot)
+                uploadedFilePaths.Add(Path.Combine(storagePath, safeFileName).Replace("\\", "/"));
+            }
+
+            return uploadedFilePaths;
+        }
+
+        // Test method to trigger file uploads
+        public async Task<IActionResult> TestUpload(List<IFormFile> files)
+        {
+            var uploads = await UploadFiles(files, "TestUploads");
+            return new JsonResult(new { Success = true, FilePaths = uploads });
+        }
+
+        // Test method to download a file (specified by relative path)
+        public async Task<IActionResult> TestDownload(string relativePath)
+        {
+            // Map the relative path to the server file system
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath.TrimStart('/').Replace('/', '\\'));
+
+            if (!System.IO.File.Exists(filePath))
+                return new NotFoundResult();
+
+            var contentType = GetContentType(filePath);
+            var fileName = Path.GetFileName(filePath);
+
+            // Return the file as a download
+            return new FileStreamResult(new FileStream(filePath, FileMode.Open, FileAccess.Read), contentType)
+            {
+                FileDownloadName = fileName
+            };
+        }
+
+        public long GetTotalStorageUsage()
+        {
+            var userId = _systemInfo.GetUserId().Result.Id;
             var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
 
+            if (user == null)
+                return 0;
 
-            try
+            string userFolder = _encryptionServices.DecryptString256Bit(user.Realname) ?? "UnknownUser";
+
+            long totalSize = 0;
+            string targetPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", userFolder);
+
+            if (Directory.Exists(targetPath))
             {
-                // Convert relative path to full path
-                var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", $"{_encryptionServices.DecryptString256Bit(user.Realname)
-                    }", relativePath);
-
-                if (!System.IO.File.Exists(fullPath))
+                try
                 {
-                    return (null, null, "File not found.");
+                    totalSize = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories)
+                                .Sum(file => new FileInfo(file).Length);
                 }
-
-                // Get content type
-                var contentType = GetContentType(fullPath);
-
-                // Create file stream
-                var fileStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read);
-                return (fileStream, contentType, null);
-            }
-            catch (Exception ex)
-            {
-                return (null, null, $"Error reading file: {ex.Message}");
-            }
-        }
-
-        public async Task<(IActionResult, string? error)> DownloadPdf(MultiFileFormViewForm filesForm)
-        {
-            var userId = await _systemInfoServices.GetUserId();
-            if (userId.Id == null)
-                return (null, "403"); // Unauthorized
-            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
-            if (userPermissions.AllowDownload == 0)
-                return (null, "403"); // Forbidden
-            try
-            {
-                Guid Id = Guid.NewGuid();
-                var fileName = $"{Id}.pdf";
-
-                var pdfDierctoryPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "pdf"); // output directory
-
-                if (!System.IO.File.Exists(pdfDierctoryPath))
+                catch (Exception ex)
                 {
-                    Directory.CreateDirectory(pdfDierctoryPath);
-                }
-                var path = Path.Combine(pdfDierctoryPath, fileName);
-                var browserFetcherOptions = new BrowserFetcherOptions();
-                var browserFetcher = new BrowserFetcher(browserFetcherOptions);
-                await browserFetcher.DownloadAsync();
-                using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true }))
-                using (var page = await browser.NewPageAsync())
-                {
-                    var xForm = await GetHtml(filesForm);
-                    await page.SetContentAsync(xForm);
-                    await page.PdfAsync(path);
-                    var pdfBytes = await System.IO.File.ReadAllBytesAsync(path);
-                    await using var stream = new FileStream(path, FileMode.Create);
-                    stream.Write(pdfBytes);
-                    var filePath = Path.Combine("pdf", fileName);
-                    return (null, filePath);
+                    Console.WriteLine($"Error calculating total storage usage: {ex.Message}");
                 }
             }
-            catch (Exception ex)
-            {
-                return (new BadRequestObjectResult(ex.Message), ex.Message);
-            }
-        }
-        public void MergeDocxFiles(string[] sourceFiles, string outputFile)
-        {
-            File.Copy(sourceFiles[0], outputFile, true);
-            using (WordprocessingDocument mainDoc = WordprocessingDocument.Open(outputFile, true))
-            {
-                var mainBody = mainDoc.MainDocumentPart.Document.Body;
-                for (int i = 1; i < sourceFiles.Length; i++)
-                {
-                    using (WordprocessingDocument tempDoc = WordprocessingDocument.Open(sourceFiles[i], true))
-                    {
-                        foreach (var element in tempDoc.MainDocumentPart.Document.Body.Elements())
-                        {
-                            mainBody.Append(element.CloneNode(true));
-                        }
-                    }
-                }
-                mainDoc.MainDocumentPart.Document.Save();
-            }
-        }
-        public async Task<string> GetHtml(MultiFileFormViewForm filesForm)
-        {
-            var path = Path.Combine(Directory.GetCurrentDirectory(), "Forms", "documents_form.html");
-            string htmlCode = await System.IO.File.ReadAllTextAsync(path);
-            var base64Files = new List<string>();
-            foreach (var file in filesForm.Files)
-            {
-                using (var ms = new MemoryStream())
-                {
-                    file.CopyTo(ms);
-                    var fileBytes = ms.ToArray();
-                    base64Files.Add(Convert.ToBase64String(fileBytes));
-                }
-            }
-            htmlCode.Replace("hello", "world");
-            for (int i = 0; i < base64Files.Count; i++)
-            {
-                htmlCode.Replace($"document_image_{i}", base64Files[i]);
-            }
-            return (htmlCode);
-        }
-        //save system icons to wwwroot 
 
-        public async Task<(string? file, string? error)> SaveToWwwrootAsync(FileViewForm fileForm)
-        {
-
-            var file = fileForm.File;
-            if (file == null || file.Length == 0)
-            {
-                return (null, "No file was provided or the file is empty.");
-            }
-
-            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-
-            // Save to wwwroot/Attachments (ensure this folder exists in your project)
-            var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments");
-            if (!Directory.Exists(wwwrootPath))
-            {
-                Directory.CreateDirectory(wwwrootPath);
-            }
-
-            var fileName = $"{Guid.NewGuid()}{extension}";
-            var filePath = Path.Combine(wwwrootPath, fileName);
-
-            await using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(stream);
-            }
-
-            // Return the relative path for web access
-            var relativePath = Path.Combine("Attachments", fileName).Replace("\\", "/");
-            return (relativePath, null);
+            return totalSize;
         }
 
-        // Method to decrypt a file using AES encryption
-        private async Task<MemoryStream> DecryptFileAsync(string filePath, byte[] key)
+        // Example method to demonstrate encryption and decryption
+        public async Task<IActionResult> EncryptDecryptDemo()
         {
-            byte[] iv = new byte[16];
-            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-            await fileStream.ReadAsync(iv, 0, iv.Length);
+            string original = "Hello, this is a test string for encryption!";
 
-            using var aes = Aes.Create();
-            aes.Key = key;
-            aes.IV = iv;
+            // Encrypt
+            byte[] key = Convert.FromBase64String(_configuration["FileEncrypt:key"]);
+            byte[] iv = new byte[16]; // Use a new IV for each encryption
 
-            using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-            using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
-            var memoryStream = new MemoryStream();
-            await cryptoStream.CopyToAsync(memoryStream);
-            memoryStream.Position = 0;
-            return memoryStream;
-        }
-
-        // Method to compress a stream to GZip format
-        private async Task CompressToStreamAsync(Stream input, Stream output)
-        {
-            using (var gzipStream = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
-            {
-                await input.CopyToAsync(gzipStream);
-            }
-        }
-        //Method To DeCompress a stream To GZip Format
-        private static async Task<MemoryStream> DecompressGZipAsync(Stream compressedStream)
-        {
-            var decompressedStream = new MemoryStream();
-            using (var gzip = new System.IO.Compression.GZipStream(compressedStream, System.IO.Compression.CompressionMode.Decompress, leaveOpen: true))
-            {
-                await gzip.CopyToAsync(decompressedStream);
-            }
-            decompressedStream.Position = 0;
-            return decompressedStream;
-        }
-
-        // Compress a stream to GZip format
-        private async Task CompressToGZipAsync(Stream input, Stream output)
-        {
-            using (var gzipStream = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
-            {
-                await input.CopyToAsync(gzipStream);
-            }
-        }
-
-        // Encrypt a stream and write to a file using AES
-        private async Task EncryptStreamToFileAsync(Stream input, string filePath, byte[] key, byte[] iv)
-        {
             using (var aes = Aes.Create())
             {
                 aes.Key = key;
                 aes.IV = iv;
-                using var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
-                using var outFileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-                await outFileStream.WriteAsync(aes.IV, 0, aes.IV.Length);
-                using var cryptoStream = new CryptoStream(outFileStream, encryptor, CryptoStreamMode.Write);
-                await input.CopyToAsync(cryptoStream);
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+
+                using (var encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
+                using (var ms = new MemoryStream())
+                {
+                    // Prepend IV to the encrypted data (for use in decryption)
+                    ms.Write(iv, 0, iv.Length);
+
+                    using (var cryptoStream = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                    {
+                        byte[] originalBytes = Encoding.UTF8.GetBytes(original);
+                        await cryptoStream.WriteAsync(originalBytes, 0, originalBytes.Length);
+                        await cryptoStream.FlushAsync();
+                    }
+
+                    byte[] encrypted = ms.ToArray();
+                    string encryptedBase64 = Convert.ToBase64String(encrypted);
+
+                    // Decrypt
+                    using (var decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
+                    using (var msDecrypt = new MemoryStream(encrypted))
+                    using (var cryptoStreamDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read))
+                    {
+                        byte[] decryptedBytes = new byte[original.Length];
+                        int decryptedSize = await cryptoStreamDecrypt.ReadAsync(decryptedBytes, 0, decryptedBytes.Length);
+
+                        string decrypted = Encoding.UTF8.GetString(decryptedBytes, 0, decryptedSize);
+
+                        return new JsonResult(new { Original = original, Encrypted = encryptedBase64, Decrypted = decrypted });
+                    }
+                }
             }
         }
 
-      
         /// <summary>
         /// Creates a file download response for decrypted files that can be downloaded by the client
         /// </summary>
@@ -1617,77 +1559,85 @@ namespace Nastya_Archiving_project.Services.files
             }
         }
 
-        // Add this helper method to read license storage limit
+        // Update this helper method to use ILimitationServices and check current storage usage
         private async Task<double> GetLicenseStorageLimitMB()
         {
             try
             {
-                // Define path to license file
-                string licensePath = Path.Combine("wwwroot", "licenses", "Limit.txt");
-                if (!File.Exists(licensePath))
-                    return 10; // If no license file found, use default 10 MB limit
+                // Use the ILimitationServices to read the encrypted license file
+                var licenseResponse = await _limitationServices.ReadEncryptedTextFile();
+                
+                if (licenseResponse.StatusCode != 200 || licenseResponse.Data == null)
+                    return 0; // Return 0 if unable to read license
 
-                // Read the license file content
-                string fileContent = await File.ReadAllTextAsync(licensePath);
-
-                // Parse the license data to find currentStorageMB instead of MaxStorageGB
-                double storageLimit = 0;
-                string storageLimitEncrypted = null;
-
-                using (StringReader reader = new StringReader(fileContent))
+                try
                 {
-                    string line;
-                    string currentSection = null;
-
-                    while ((line = reader.ReadLine()) != null)
+                    // Extract the license data from the response
+                    dynamic responseData = licenseResponse.Data;
+                    
+                    double maxStorageGB = 0;
+                    double currentStorageMB = 0;
+                    
+                    // Get the maximum storage limit from license
+                    if (responseData.License?.SystemLimits?.MaxStorageGB != null)
                     {
-                        // Skip empty lines
-                        if (string.IsNullOrWhiteSpace(line))
-                            continue;
-
-                        // Check if this is a section header
-                        if (line.StartsWith("[") && line.EndsWith("]"))
+                        maxStorageGB = (double)responseData.License.SystemLimits.MaxStorageGB;
+                    }
+                    else if (responseData.Debug?.RawDecryptedData != null)
+                    {
+                        var debugData = responseData.Debug.RawDecryptedData as IDictionary<string, object>;
+                        if (debugData != null && debugData.TryGetValue("NASTYA-ARCHIVING-LICENSE.MaxStorageGB", out object maxStorageValue))
                         {
-                            currentSection = line.Trim('[', ']');
-                            continue;
+                            if (double.TryParse(maxStorageValue?.ToString(), out double storageGB))
+                            {
+                                maxStorageGB = storageGB;
+                            }
                         }
-
-                        // Check for currentStorageMB entry
-                        if (currentSection == "NASTYA-ARCHIVING-LICENSE" && line.StartsWith("currentStorageMB="))
+                    }
+                    
+                    // Get the current storage usage from license
+                    if (responseData.License?.SystemLimits?.CurrentStorageMB != null)
+                    {
+                        currentStorageMB = (double)responseData.License.SystemLimits.CurrentStorageMB;
+                    }
+                    else if (responseData.Debug?.RawDecryptedData != null)
+                    {
+                        var debugData = responseData.Debug.RawDecryptedData as IDictionary<string, object>;
+                        if (debugData != null && debugData.TryGetValue("NASTYA-ARCHIVING-LICENSE.CurrentStorageMB", out object currentStorageValue))
                         {
-                            storageLimitEncrypted = line.Substring("currentStorageMB=".Length).Trim();
-                            break;
+                            if (double.TryParse(currentStorageValue?.ToString(), out double currentMB))
+                            {
+                                currentStorageMB = currentMB;
+                            }
                         }
+                    }
+                    
+                    if (maxStorageGB > 0)
+                    {
+                        // Convert GB to MB
+                        double maxStorageMB = maxStorageGB * 1024.0;
+                        
+                        // Calculate remaining storage available
+                        double remainingStorageMB = maxStorageMB - currentStorageMB;
+                        
+                        // Return the remaining available storage (cannot be negative)
+                        return Math.Max(0, remainingStorageMB);
                     }
                 }
-
-                // Decrypt the value if found
-                if (storageLimitEncrypted != null)
+                catch (Exception ex)
                 {
-                    try
-                    {
-                        string decryptedValue = _encryptionServices.DecryptString256Bit(storageLimitEncrypted);
-                        if (double.TryParse(decryptedValue, out storageLimit))
-                        {
-                            // No conversion needed since we're already working in MB
-                            // Force the maximum limit to be 10 MB
-                            return Math.Min(storageLimit, 10);
-                        }
-                    }
-                    catch
-                    {
-                        // If decryption fails, don't return a default value
-                        return 0;
-                    }
+                    // Log error but don't fail the operation
+                    Console.WriteLine($"Error parsing license data: {ex.Message}");
                 }
 
-                // Default if not found or couldn't parse - enforce 10 MB limit
-                return 10;
+                // Default if parsing fails - return a reasonable default instead of 10 MB
+                return 1024; // Default 1 GB limit (1024 MB) when license data cannot be parsed
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // If any error occurs, don't return a default value
-                return 0;
+                // Log error but don't fail the operation
+                Console.WriteLine($"Error reading license file: {ex.Message}");
+                return 0; // Return 0 to indicate license read failure
             }
         }
 
@@ -1786,6 +1736,173 @@ namespace Nastya_Archiving_project.Services.files
             catch (Exception ex)
             {
                 return (null, $"Error updating file path: {ex.Message}");
+            }
+        }
+
+        public async Task<(Stream? fileStream, string? contentType, string? error)> GetFileAsync(string relativePath)
+        {
+            var userId = (await _systemInfo.GetUserId()).Id;
+            var user = _context.Users.FirstOrDefault(u => u.Id.ToString() == userId);
+
+            try
+            {
+                // Convert relative path to full path
+                var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments", $"{_encryptionServices.DecryptString256Bit(user.Realname)
+                    }", relativePath);
+
+                if (!System.IO.File.Exists(fullPath))
+                {
+                    return (null, null, "File not found.");
+                }
+
+                // Get content type
+                var contentType = GetContentType(fullPath);
+
+                // Create file stream
+                var fileStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read);
+                return (fileStream, contentType, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, null, $"Error reading file: {ex.Message}");
+            }
+        }
+
+        public async Task<(IActionResult, string? error)> DownloadPdf(MultiFileFormViewForm filesForm)
+        {
+            var userId = await _systemInfo.GetUserId();
+            if (userId.Id == null)
+                return (null, "403"); // Unauthorized
+            var userPermissions = await _context.UsersOptionPermissions.FirstOrDefaultAsync(u => u.UserId.ToString() == userId.Id);
+            if (userPermissions.AllowDownload == 0)
+                return (null, "403"); // Forbidden
+            try
+            {
+                Guid Id = Guid.NewGuid();
+                var fileName = $"{Id}.pdf";
+
+                var pdfDierctoryPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "pdf"); // output directory
+
+                if (!System.IO.File.Exists(pdfDierctoryPath))
+                {
+                    Directory.CreateDirectory(pdfDierctoryPath);
+                }
+                var path = Path.Combine(pdfDierctoryPath, fileName);
+                var browserFetcherOptions = new BrowserFetcherOptions();
+                var browserFetcher = new BrowserFetcher(browserFetcherOptions);
+                await browserFetcher.DownloadAsync();
+                using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true }))
+                using (var page = await browser.NewPageAsync())
+                {
+                    var xForm = await GetHtml(filesForm);
+                    await page.SetContentAsync(xForm);
+                    await page.PdfAsync(path);
+                    var pdfBytes = await System.IO.File.ReadAllBytesAsync(path);
+                    await using var stream = new FileStream(path, FileMode.Create);
+                    stream.Write(pdfBytes);
+                    var filePath = Path.Combine("pdf", fileName);
+                    return (null, filePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                return (new BadRequestObjectResult(ex.Message), ex.Message);
+            }
+        }
+
+        public async Task<string> GetHtml(MultiFileFormViewForm filesForm)
+        {
+            var path = Path.Combine(Directory.GetCurrentDirectory(), "Forms", "documents_form.html");
+            string htmlCode = await System.IO.File.ReadAllTextAsync(path);
+            var base64Files = new List<string>();
+            foreach (var file in filesForm.Files)
+            {
+                using (var ms = new MemoryStream())
+                {
+                    file.CopyTo(ms);
+                    var fileBytes = ms.ToArray();
+                    base64Files.Add(Convert.ToBase64String(fileBytes));
+                }
+            }
+            htmlCode.Replace("hello", "world");
+            for (int i = 0; i < base64Files.Count; i++)
+            {
+                htmlCode.Replace($"document_image_{i}", base64Files[i]);
+            }
+            return (htmlCode);
+        }
+
+        //save system icons to wwwroot 
+        public async Task<(string? file, string? error)> SaveToWwwrootAsync(FileViewForm fileForm)
+        {
+            var file = fileForm.File;
+            if (file == null || file.Length == 0)
+            {
+                return (null, "No file was provided or the file is empty.");
+            }
+
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+            // Save to wwwroot/Attachments (ensure this folder exists in your project)
+            var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Attachments");
+            if (!Directory.Exists(wwwrootPath))
+            {
+                Directory.CreateDirectory(wwwrootPath);
+            }
+
+            var fileName = $"{Guid.NewGuid()}{extension}";
+            var filePath = Path.Combine(wwwrootPath, fileName);
+
+            await using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // Return the relative path for web access
+            var relativePath = Path.Combine("Attachments", fileName).Replace("\\", "/");
+            return (relativePath, null);
+        }
+
+        // Method to decrypt a file using AES encryption
+        private async Task<MemoryStream> DecryptFileAsync(string filePath, byte[] key)
+        {
+            byte[] iv = new byte[16];
+            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+            await fileStream.ReadAsync(iv, 0, iv.Length);
+
+            using var aes = Aes.Create();
+            aes.Key = key;
+            aes.IV = iv;
+
+            using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+            using var cryptoStream = new CryptoStream(fileStream, decryptor, CryptoStreamMode.Read);
+            var memoryStream = new MemoryStream();
+            await cryptoStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            return memoryStream;
+        }
+
+        // Compress a stream to GZip format
+        private async Task CompressToGZipAsync(Stream input, Stream output)
+        {
+            using (var gzipStream = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+            {
+                await input.CopyToAsync(gzipStream);
+            }
+        }
+
+        // Encrypt a stream and write to a file using AES
+        private async Task EncryptStreamToFileAsync(Stream input, string filePath, byte[] key, byte[] iv)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = key;
+                aes.IV = iv;
+                using var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+                using var outFileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                await outFileStream.WriteAsync(aes.IV, 0, aes.IV.Length);
+                using var cryptoStream = new CryptoStream(outFileStream, encryptor, CryptoStreamMode.Write);
+                await input.CopyToAsync(cryptoStream);
             }
         }
     }
